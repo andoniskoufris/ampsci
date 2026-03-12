@@ -365,6 +365,9 @@ public:
     return m_Pcore.at(Angular::kappa_to_kindex(kappa));
   }
 
+  //! Reads qpq from disk if available, or forms it
+  void construct_qpiq(const std::string &identity);
+
 private:
   // forms Qk matrices, as well as dri, drj
   void form_qk();
