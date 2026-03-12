@@ -494,6 +494,20 @@ Feynman::green_basis(int kappa, std::complex<double> en,
 }
 
 //==============================================================================
+ComplexGMatrix
+Feynman::green_basis(int kappa, std::complex<double> en,
+                     const std::vector<DiracSpinor> &basis) const {
+  ComplexGMatrix Gmat(m_i0, m_stride, m_subgrid_points, true, m_grid);
+  for (const auto &n : basis) {
+    if (n.kappa() != kappa)
+      continue;
+    const auto inv_de = 1.0 / (en - std::complex<double>{n.en()});
+    Gmat.add(n, n, inv_de);
+  }
+  return Gmat;
+}
+
+//==============================================================================
 ComplexGMatrix Feynman::green_core(int kappa, std::complex<double> en) const {
   // G_core = \sum_a |a><a|/(e_r + i*e_i-ea), for all a with a.kappa() = k
   ComplexGMatrix Gcore(m_i0, m_stride, m_subgrid_points, m_include_G, m_grid);
