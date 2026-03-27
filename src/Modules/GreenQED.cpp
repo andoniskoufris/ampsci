@@ -11,6 +11,9 @@ namespace Module {
 
 DiracSpinor FourierTransformF(const DiracSpinor &F);
 
+double aTerm(const double &p, const double &E);
+double bTerm(const double &p, const double &E);
+
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
@@ -107,6 +110,36 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     }
     std::cout << "\n";
   }
+
+  //========================== CALCULATING SELF-ENERGY CORRECTIONS
+
+  std::cout << std::endl << std::endl;
+
+  std::cout << "Calculating electron self-energy" << std::endl << std::endl;
+  std::cout << "State " << "  \u03A3(0) " << "   "
+            << "  \u03A3(1) " << "    " << "  \u03A3(2+) " << std::endl;
+
+  for (const auto &v : wf.valence()) {
+
+    const auto FourierFv = FourierTransformF(v);
+    const auto ev = v.en();
+    double E = 0.0;
+
+    for (int i = FourierFv.min_pt(); i < FourierFv.max_pt(); i++) {
+      E += grid.r(i) * grid.r(i) *
+           (aTerm(grid.r(i), ev) * (FourierFv.f(i) * FourierFv.f(i) -
+                                    FourierFv.g(i) * FourierFv.g(i)) +
+            bTerm(grid.r(i), ev) *
+              (ev * (FourierFv.f(i) * FourierFv.f(i) +
+                     FourierFv.g(i) * FourierFv.g(i)) +
+               2 * grid.r(i) * FourierFv.f(i) * FourierFv.g(i))) *
+           grid.drdu(i) * grid.du();
+    }
+
+    E *= PhysConst::alpha / (32.0 * M_PI_4);
+
+    std::cout << v.shortSymbol() << "   " << E << std::endl;
+  }
 }
 
 DiracSpinor FourierTransformF(const DiracSpinor &F) {
@@ -117,24 +150,37 @@ DiracSpinor FourierTransformF(const DiracSpinor &F) {
 
   for (int i = 0; i < grid.num_points(); i++) {
     for (int j = F.min_pt(); j < F.max_pt(); j++) {
-      FTransform.f(i) += grid.r(j - 1) * F.f(j - 1) *
-                         SphericalBessel::JL(F.l(), grid.r(i) * grid.r(j - 1)) *
-                         grid.drdu(j - 1) * grid.du();
+      FTransform.f(i) += grid.r(j) * F.f(j) *
+                         SphericalBessel::JL(F.l(), grid.r(i) * grid.r(j)) *
+                         grid.drdu(j) * grid.du();
       if (FTransform.kappa() < 0) {
         FTransform.g(i) +=
-          grid.r(j - 1) * F.g(j - 1) *
-          SphericalBessel::JL(F.l() + 1, grid.r(i) * grid.r(j - 1)) *
-          grid.drdu(j - 1) * grid.du();
+          grid.r(j) * F.g(j) *
+          SphericalBessel::JL(F.l() + 1, grid.r(i) * grid.r(j)) * grid.drdu(j) *
+          grid.du();
       } else {
         FTransform.g(i) +=
-          grid.r(j - 1) * F.g(j - 1) *
-          SphericalBessel::JL(F.l() - 1, grid.r(i) * grid.r(j - 1)) *
-          grid.drdu(j - 1) * grid.du();
+          grid.r(j) * F.g(j) *
+          SphericalBessel::JL(F.l() - 1, grid.r(i) * grid.r(j)) * grid.drdu(j) *
+          grid.du();
       }
     }
     FTransform.f(i) *= 4 * M_PI;
     FTransform.g(i) *= 4 * M_PI;
   }
+
+  return FTransform;
+}
+
+double aTerm(const double &p, const double &E) {
+  return 2.0 * (1 + 2.0 * ((1.0 - E * E + p * p) / (E * E - p * p)) *
+                      log(1.0 - E * E + p * p));
+}
+
+double bTerm(const double &p, const double &E) {
+  return ((-1.0 - E * E + p * p) / (E * E - p * p)) *
+         (1.0 +
+          ((1.0 - E * E + p * p) / (E * E - p * p)) * log(1.0 - E * E + p * p));
 }
 
 } // namespace Module
