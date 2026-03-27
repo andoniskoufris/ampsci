@@ -9,6 +9,8 @@
 
 namespace Module {
 
+DiracSpinor FourierTransformF(const DiracSpinor &F);
+
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
@@ -48,6 +50,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   assert(size > 1 && stride > 0);
 
   // actual r0,rmax might be slightly different, due to finite grid, stride
+  const auto grid = wf.grid();
   const auto r0 = wf.grid().r(i0);
   const auto rmax = wf.grid().r(i0 + stride * size);
   fmt::print(
@@ -103,6 +106,34 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
       std::cout << v << " " << value << " " << expected << " " << eps << "\n";
     }
     std::cout << "\n";
+  }
+}
+
+DiracSpinor FourierTransformF(const DiracSpinor &F) {
+  // initialise Fourier transform to be on the same grid as the position space wave function
+  DiracSpinor FTransform(F.n(), F.kappa(), F.grid_sptr());
+
+  const auto grid = F.grid();
+
+  for (int i = 0; i < grid.num_points(); i++) {
+    for (int j = F.min_pt(); j < F.max_pt(); j++) {
+      FTransform.f(i) += grid.r(j - 1) * F.f(j - 1) *
+                         SphericalBessel::JL(F.l(), grid.r(i) * grid.r(j - 1)) *
+                         grid.drdu(j - 1) * grid.du();
+      if (FTransform.kappa() < 0) {
+        FTransform.g(i) +=
+          grid.r(j - 1) * F.g(j - 1) *
+          SphericalBessel::JL(F.l() + 1, grid.r(i) * grid.r(j - 1)) *
+          grid.drdu(j - 1) * grid.du();
+      } else {
+        FTransform.g(i) +=
+          grid.r(j - 1) * F.g(j - 1) *
+          SphericalBessel::JL(F.l() - 1, grid.r(i) * grid.r(j - 1)) *
+          grid.drdu(j - 1) * grid.du();
+      }
+    }
+    FTransform.f(i) *= 4 * M_PI;
+    FTransform.g(i) *= 4 * M_PI;
   }
 }
 
