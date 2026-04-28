@@ -3,13 +3,15 @@
 #include "IO/InputBlock.hpp"
 #include "MBPT/Feynman.hpp"
 #include "MBPT/SpinorMatrix.hpp"
+#include "Physics/UnitConv_conversions.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
 #include <complex>
 
 namespace Module {
 
-DiracSpinor FourierTransformF(const DiracSpinor &F);
+DiracSpinor FourierTransformF(const DiracSpinor &F,
+                              std::shared_ptr<const Grid> pGrid);
 
 double aTerm(const double &p, const double &E);
 double bTerm(const double &p, const double &E);
@@ -111,7 +113,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "\n";
   }
 
-  //========================== CALCULATING SELF-ENERGY CORRECTIONS
+  //========================================== CALCULATING SELF-ENERGY CORRECTIONS
 
   std::cout << std::endl << std::endl;
 
@@ -119,50 +121,89 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "State " << "  \u03A3(0) " << "   "
             << "  \u03A3(1) " << "    " << "  \u03A3(2+) " << std::endl;
 
+  //! initialise momentum-space grid
+  const auto pGrid = std::make_shared<const Grid>(
+    GridParameters{2000, 1e-7, 600.0, 4.0, "logarithmic", 0.0});
+  const auto p = pGrid->r();
+
   for (const auto &v : wf.valence()) {
 
-    const auto FourierFv = FourierTransformF(v);
+    const auto FourierFv = FourierTransformF(v, pGrid);
     const auto ev = v.en();
     double E = 0.0;
 
-    for (int i = FourierFv.min_pt(); i < FourierFv.max_pt(); i++) {
-      E += grid.r(i) * grid.r(i) *
-           (aTerm(grid.r(i), ev) * (FourierFv.f(i) * FourierFv.f(i) -
-                                    FourierFv.g(i) * FourierFv.g(i)) +
-            bTerm(grid.r(i), ev) *
-              (ev * (FourierFv.f(i) * FourierFv.f(i) +
-                     FourierFv.g(i) * FourierFv.g(i)) +
-               2 * grid.r(i) * FourierFv.f(i) * FourierFv.g(i))) *
-           grid.drdu(i) * grid.du();
+    for (int i = 0; i < pGrid->num_points(); i++) {
+      E +=
+        PhysConst::alpha * p[i] * PhysConst::alpha * p[i] *
+        (aTerm(p[i], ev) *
+           (FourierFv.f(i) * FourierFv.f(i) - FourierFv.g(i) * FourierFv.g(i)) +
+         bTerm(p[i], ev) *
+           ((PhysConst::alpha2 * ev + 1.0) * (FourierFv.f(i) * FourierFv.f(i) +
+                                              FourierFv.g(i) * FourierFv.g(i)) +
+            2 * PhysConst::alpha * p[i] * FourierFv.f(i) * FourierFv.g(i))) *
+        pGrid->drdu(i) * pGrid->du();
     }
 
-    E *= PhysConst::alpha / (32.0 * M_PI_4);
+    E *= PhysConst::alpha / (32.0 * pow(M_PI, 4));
 
-    std::cout << v.shortSymbol() << "   " << E << std::endl;
+    // convert to atomic units and then print
+    std::cout << v.shortSymbol() << "     " << UnitConv::Energy_invcm_to_au * E
+              << std::endl;
   }
+
+  std::cout << std::endl;
+
+  const auto Fv1s = wf.valence()[0];
+  const auto FvTransform1s = FourierTransformF(Fv1s, pGrid);
+
+  const auto Fv5g = wf.valence()[22];
+  const auto FvTransform5g = FourierTransformF(Fv5g, pGrid);
+
+  //!Fourier wave function tests
+
+  // std::cout << "p         1s+ wf                         5g+ wf" << std::endl;
+
+  // for (int i = 0; i < int(pGrid->num_points() / 10); i++) {
+  //   std::cout << p[10 * i] << "  (" << FvTransform1s.f(10 * i) << ", "
+  //             << FvTransform1s.g(10 * i) << ")        ("
+  //             << FvTransform5g.f(10 * i) << ", " << FvTransform5g.g(10 * i)
+  //             << ")" << std::endl;
+  // }
+
+  // std::cout << PhysConst::alpha2 * Fv.en() * Fv.en() << std::endl;
+
+  // for (int i = 0; i < int(pGrid->num_points() / 10); i++) {
+  //   std::cout << pGrid->r(10 * i) << "   " << FvTransform.f(10 * i) << "   "
+  //             << FvTransform.g(10 * i) << "   "
+  //             << aTerm(pGrid->r(10 * i), Fv.en()) << "   "
+  //             << bTerm(pGrid->r(10 * i), Fv.en()) << std::endl;
+  // }
 }
 
-DiracSpinor FourierTransformF(const DiracSpinor &F) {
-  // initialise Fourier transform to be on the same grid as the position space wave function
-  DiracSpinor FTransform(F.n(), F.kappa(), F.grid_sptr());
+//!============================== FUNCTIONS
+
+DiracSpinor FourierTransformF(const DiracSpinor &F,
+                              std::shared_ptr<const Grid> pGrid) {
+  // initialise Fourier transform to be on momentum space grid
+  DiracSpinor FTransform(F.n(), F.kappa(), pGrid);
 
   const auto grid = F.grid();
+  const auto r = F.grid().r();
+  const auto p = pGrid->r();
 
-  for (int i = 0; i < grid.num_points(); i++) {
+  for (int i = 0; i < pGrid->num_points(); i++) {
     for (int j = F.min_pt(); j < F.max_pt(); j++) {
-      FTransform.f(i) += grid.r(j) * F.f(j) *
-                         SphericalBessel::JL(F.l(), grid.r(i) * grid.r(j)) *
+      FTransform.f(i) += r[j] * F.f(j) *
+                         SphericalBessel::JL(F.l(), p[i] * r[j]) *
                          grid.drdu(j) * grid.du();
       if (FTransform.kappa() < 0) {
-        FTransform.g(i) +=
-          grid.r(j) * F.g(j) *
-          SphericalBessel::JL(F.l() + 1, grid.r(i) * grid.r(j)) * grid.drdu(j) *
-          grid.du();
+        FTransform.g(i) += r[j] * F.g(j) *
+                           SphericalBessel::JL(F.l() + 1, p[i] * r[j]) *
+                           grid.drdu(j) * grid.du();
       } else {
-        FTransform.g(i) +=
-          grid.r(j) * F.g(j) *
-          SphericalBessel::JL(F.l() - 1, grid.r(i) * grid.r(j)) * grid.drdu(j) *
-          grid.du();
+        FTransform.g(i) += r[j] * F.g(j) *
+                           SphericalBessel::JL(F.l() - 1, p[i] * r[j]) *
+                           grid.drdu(j) * grid.du();
       }
     }
     FTransform.f(i) *= 4 * M_PI;
@@ -173,14 +214,26 @@ DiracSpinor FourierTransformF(const DiracSpinor &F) {
 }
 
 double aTerm(const double &p, const double &E) {
-  return 2.0 * (1 + 2.0 * ((1.0 - E * E + p * p) / (E * E - p * p)) *
-                      log(1.0 - E * E + p * p));
+  // put E and p into same units and then add back rest mass energy
+  const auto alphan2 = 1.0 / (PhysConst::alpha2);
+  const auto Enu = PhysConst::alpha2 * (E + alphan2);
+  const auto pnu = PhysConst::alpha * p;
+
+  return 2.0 *
+         (1.0 + 2.0 *
+                  ((1.0 - Enu * Enu + pnu * pnu) / (Enu * Enu - pnu * pnu)) *
+                  log(1.0 - Enu * Enu + pnu * pnu));
 }
 
 double bTerm(const double &p, const double &E) {
-  return ((-1.0 - E * E + p * p) / (E * E - p * p)) *
-         (1.0 +
-          ((1.0 - E * E + p * p) / (E * E - p * p)) * log(1.0 - E * E + p * p));
+  // put E and p into same units and then add back rest mass energy
+  const auto alphan2 = 1.0 / (PhysConst::alpha2);
+  const auto Enu = PhysConst::alpha2 * (E + alphan2);
+  const auto pnu = PhysConst::alpha * p;
+
+  return ((-1.0 - Enu * Enu + pnu * pnu) / (Enu * Enu - pnu * pnu)) *
+         (1.0 + ((1.0 - Enu * Enu + pnu * pnu) / (Enu * Enu - pnu * pnu)) *
+                  log(1.0 - Enu * Enu + pnu * pnu));
 }
 
 } // namespace Module
