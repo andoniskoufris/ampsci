@@ -159,6 +159,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
      {"Breit", "Include Breit into HF? true/false, or scale factor. Scale "
                "factor for Breit Hamiltonian is usially 0.0 (no "
                "Breit) or 1.0 (full Breit), but can take any value. [false]"},
+     {"FrequencyBreit", "Include frequency-dependent Breit into HF?. [false]"},
      {"QED",
       "Include QED? Three options: true, false, valence. If 'valence, will "
       "include QED only into valence states, but not the core. Detailed QED "
@@ -173,6 +174,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
   const auto x_Breit =
     tf_Breit ? 1.0 : input.get({"HartreeFock"}, "Breit", 0.0);
   const auto valence = input.get({"HartreeFock"}, "valence", ""s);
+  const auto freq_Breit = input.get({"HartreeFock"}, "FrequencyBreit", false);
 
   // Decide if to include QED into core+valence, just core, or not at all
   const auto qed_input = input.getBlock("RadPot");
