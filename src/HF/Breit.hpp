@@ -280,6 +280,9 @@ public:
   */
   void fill_gb(const std::vector<DiracSpinor> &basis, int t_max_k = 99);
 
+  //! Returns the scaling factor for the frequency in Breit integrals
+  double lambda_f() const { return m_lambda_f; };
+
   //! Returns the overall scaling factor
   double scale_factor() const { return m_scale; };
 
@@ -558,6 +561,7 @@ public:
     @details
     - Automatically determines frequency, based on DiracSpinors
     - Frequency-dependent analogue of @ref Bk_abcd(). See @ref Bkv_bcd_freqw().
+    - For off-shell matrix elements takes average of matrix elements evaluated w_ac and w_bd
   */
   double Bk_abcd_freqw(int k, const DiracSpinor &Fa, const DiracSpinor &Fb,
                        const DiracSpinor &Fc, const DiracSpinor &Fd) const;

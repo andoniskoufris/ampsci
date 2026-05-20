@@ -325,11 +325,11 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
   std::cout << std::flush;
   const auto h1 =
     Brueckner ?
-      CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false) :
+      CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false, wf) :
     wf.Sigma() ?
       CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(), include_Sigma1) :
       CI::calculate_h1_table(ci_sp_basis, core_s1, excited_s1, qk,
-                             include_Sigma1);
+                             include_Sigma1, wf);
 
   //----------------------------------------------------------------------------
   // Breit and QED
@@ -357,8 +357,14 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
     std::cout << "For: " << DiracSpinor::state_config(Breit_basis) << "\n";
     std::cout << std::flush;
 
+    // add extra f if we have frequency-dependent Breit or not
+    // might not always want this to follow what's in HF if we are testing
+    // impact of FD-Breit
+    const std::string fBreit_string =
+      wf.vHF()->vBreit()->lambda_f() == 0.0 ? "" : "f";
+
     const auto bk_filename =
-      input.get("bk_file", wf.identity() + br_string + ".bk");
+      input.get("bk_file", wf.identity() + fBreit_string + br_string + ".bk");
 
     Bk = CI::calculate_Bk(bk_filename, wf.vHF()->vBreit(), Breit_basis,
                           max_k_Coulomb, no_new_integralsQ);

@@ -6,6 +6,7 @@
 #include "MBPT/CorrelationPotential.hpp"
 #include "MBPT/Sigma2.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
+#include "Wavefunction/Wavefunction.hpp"
 #include <vector>
 
 namespace CI {
@@ -231,7 +232,8 @@ Coulomb::meTable<double>
 calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
                    const std::vector<DiracSpinor> &s1_basis_core,
                    const std::vector<DiracSpinor> &s1_basis_excited,
-                   const Coulomb::QkTable &qk, bool include_Sigma1) {
+                   const Coulomb::QkTable &qk, bool include_Sigma1,
+                   const Wavefunction &wf) {
   // Create lookup table for one-particle matrix elements, h1
   Coulomb::meTable<double> h1;
 
@@ -249,7 +251,11 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
         continue;
       if (w.kappa() != v.kappa())
         continue;
-      const auto h0_vw = v == w ? v.en() : 0.0;
+      // const auto h0_vw = v == w ? v.en() : 0.0;
+
+      // if we have frequency-dependent Breit, no longer have eigenstates of
+      // h1, so need to directly evaluate <w|h1|v>
+      const auto h0_vw = wf.Hab(v, w);
 
       // Can use Sigma matrix instead: all-orders?
       const auto Sigma_vw =
@@ -284,7 +290,11 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
         continue;
       if (w.kappa() != v.kappa())
         continue;
-      const auto h0_vw = v == w ? v.en() : 0.0;
+      // const auto h0_vw = v == w ? v.en() : 0.0;
+
+      // if we have frequency-dependent Breit, no longer have eigenstates of
+      // h1, so need to directly evaluate <w|h1|v>
+      const auto h0_vw = v * w;
 
       // Can use Sigma matrix instead: all-orders?
       const auto Sigma_vw = include_Sigma1 ? v * Sigma_w : 0.0;
@@ -311,17 +321,30 @@ Coulomb::WkTable calculate_Bk(const std::string &bk_filename,
 
   if (!no_new_integrals) {
 
-    auto vBr = *pBr;              // copy, so we can fill two-particle 'bk'
-    vBr.fill_gb(ci_basis, max_k); // very quick, and makes below *much* faster
-    //* nb: uses HUGE memory if basis is large; CI basis normally small enough
+    auto vBr = *pBr; // copy, so we can fill two-particle 'bk'
 
-    const auto Bk_function = [&](int k, const DiracSpinor &v,
-                                 const DiracSpinor &w, const DiracSpinor &x,
-                                 const DiracSpinor &y) {
-      return vBr.Bk_abcd_2(k, v, w, x, y);
-    };
+    // if frequency-independent Breit, can pre-fill Breit radial integrals
+    if (vBr.lambda_f() == 0.0) {
+      vBr.fill_gb(ci_basis, max_k); // very quick, and makes below *much* faster
+      //* nb: uses HUGE memory if basis is large; CI basis normally small enough
 
-    Bk.fill(ci_basis, Bk_function, HF::Breit::Bk_SR, max_k, false);
+      const auto Bk_function = [&](int k, const DiracSpinor &v,
+                                   const DiracSpinor &w, const DiracSpinor &x,
+                                   const DiracSpinor &y) {
+        return vBr.Bk_abcd_2(k, v, w, x, y);
+      };
+
+      Bk.fill(ci_basis, Bk_function, HF::Breit::Bk_SR, max_k, false);
+
+    } else {
+      const auto Bk_function = [&](int k, const DiracSpinor &v,
+                                   const DiracSpinor &w, const DiracSpinor &x,
+                                   const DiracSpinor &y) {
+        return vBr.Bk_abcd_freqw(k, v, w, x, y);
+      };
+
+      Bk.fill(ci_basis, Bk_function, HF::Breit::Bk_SR, max_k, false);
+    }
 
     // print summary
     Bk.summary();

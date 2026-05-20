@@ -4,6 +4,7 @@
 #include "Coulomb/meTable.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/Sigma2.hpp" //temp - remove after refactor
+#include "Wavefunction/Wavefunction.hpp"
 #include <string>
 #include <vector>
 class DiracDiracSpinor;
@@ -154,7 +155,8 @@ double Breit_AB(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
 calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
                    const std::vector<DiracSpinor> &s1_basis_core,
                    const std::vector<DiracSpinor> &s1_basis_excited,
-                   const Coulomb::QkTable &qk, bool include_Sigma1);
+                   const Coulomb::QkTable &qk, bool include_Sigma1,
+                   const Wavefunction &wf);
 
 /*!
   @brief Builds the one-body Hamiltonian table using a precomputed
