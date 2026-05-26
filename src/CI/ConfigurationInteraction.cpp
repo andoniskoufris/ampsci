@@ -8,6 +8,7 @@
 #include "IO/InputBlock.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/CorrelationPotential.hpp"
+#include "MBPT/Feynman.hpp"
 #include "MBPT/Sigma2.hpp"
 #include "Physics/AtomData.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
@@ -102,7 +103,9 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
      {"print_details", "Condition to print details of each CI solution "
                        "(otherwise just prints summary) [true]"},
      {"parallel_ci", "Run CI in parallel (solve each J/Pi in parallel). "
-                     "Faster, uses slightly more memory [true]"}});
+                     "Faster, uses slightly more memory [true]"},
+     {"Screening",
+      "Includes screened Coulomb interaction into Sigma_2 integrals [false]"}});
 
   // construct first, for RVO
   std::vector<PsiJPi> levels;
@@ -121,6 +124,10 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
   // options to include MBPT
   const auto include_Sigma1 = input.get("sigma1", false);
   const auto include_Sigma2 = input.get("sigma2", false);
+
+  // option to include screening into Sigma^2
+  // should also add option for hole-particle
+  const auto include_Screening = input.get("Screening", false);
 
   // Use Breuckner states for MBPT
   // nb: currently also use these Bruckner states in place of the "core"
@@ -369,25 +376,53 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
 
   Coulomb::LkTable Sk;
   if (include_Sigma2) {
+    if (!include_Screening) {
+      // Here, write basis info into filename, since these are _internal_ lines!
+      const auto Sk_filename =
+        input.get("sk_file", wf.identity() + "_" + std::to_string(n_min_core) +
+                               "_" + DiracSpinor::state_config(excited_s2) +
+                               (max_k_Coulomb >= 0 && max_k_Coulomb < 50 ?
+                                  "_" + std::to_string(max_k_Coulomb) :
+                                  "") +
+                               br_string + ".sk.abf");
 
-    // Here, write basis info into filename, since these are _internal_ lines!
-    const auto Sk_filename =
-      input.get("sk_file", wf.identity() + "_" + std::to_string(n_min_core) +
-                             "_" + DiracSpinor::state_config(excited_s2) +
-                             (max_k_Coulomb >= 0 && max_k_Coulomb < 50 ?
-                                "_" + std::to_string(max_k_Coulomb) :
-                                "") +
-                             br_string + ".sk.abf");
+      std::cout << "\nCalculate two-body MBPT integrals: Σ^k_abcd\n";
 
-    std::cout << "\nCalculate two-body MBPT integrals: Σ^k_abcd\n";
+      std::cout << "For: " << DiracSpinor::state_config(cis2_basis)
+                << ", using " << DiracSpinor::state_config(excited_s2) << "\n";
+      std::cout << std::flush;
 
-    std::cout << "For: " << DiracSpinor::state_config(cis2_basis) << ", using "
-              << DiracSpinor::state_config(excited_s2) << "\n";
-    std::cout << std::flush;
+      Sk = MBPT::calculate_Sk(Sk_filename, cis2_basis, core_s2, excited_s2, qk,
+                              max_k_Coulomb, exclude_wrong_parity_box,
+                              denominators, no_new_integralsQ);
+    } else {
+      // if we have screening then we have no n_min_core as Green's function contains all n
+      const auto Sk_filename = input.get(
+        "sk_file", wf.identity() + "_" + DiracSpinor::state_config(excited_s2) +
+                     (max_k_Coulomb >= 0 && max_k_Coulomb < 50 ?
+                        "_" + std::to_string(max_k_Coulomb) :
+                        "") +
+                     "_" + "AO" + br_string + ".sk.abf");
 
-    Sk = MBPT::calculate_Sk(Sk_filename, cis2_basis, core_s2, excited_s2, qk,
-                            max_k_Coulomb, exclude_wrong_parity_box,
-                            denominators, no_new_integralsQ);
+      std::cout << "\nCalculate two-body MBPT integrals with all-orders "
+                   "screening: Σ^k_abcd\n";
+
+      // std::cout << "For: " << DiracSpinor::state_config(cis2_basis)
+      //           << ", using " << DiracSpinor::state_config(excited_s2) << "\n";
+      // std::cout << std::flush;
+
+      const int num_points = wf.grid().num_points();
+      const int num_points_subgrid = num_points / 2;
+      const int stride = num_points / num_points_subgrid;
+
+      MBPT::Feynman feyn =
+        MBPT::Feynman(wf.vHF(), wf.grid().getIndex(wf.grid().r0()), stride,
+                      num_points_subgrid, {}, 1, true);
+
+      Sk = MBPT::calculate_Sk_screened(
+        Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,
+        exclude_wrong_parity_box, denominators, feyn, no_new_integralsQ);
+    }
   }
 
   //----------------------------------------------------------------------------
@@ -420,9 +455,9 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
           std::pair{2 * J_odd_list.at(i - J_even_list.size()), -1};
 
       auto &output_stream = parallel_ci ? os.at(i) : std::cout;
-      levels.at(i) =
-        run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
-               Sk, include_Sigma2, print_details, output_stream);
+      levels.at(i) = run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm,
+                            h1, qk, Bk, Sk, include_Sigma2, include_Screening,
+                            print_details, output_stream);
     }
 
     // If doing in parallel, output detailed output at end
@@ -501,7 +536,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               int num_solutions, std::optional<double> all_below_cm,
               const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
-              bool include_Sigma2, bool print_details,
+              bool include_Sigma2, bool include_Screening, bool print_details,
               std::ostream &outstream) {
 
   auto printJ = [](int twoj) {
@@ -534,6 +569,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
   // Construct the CI matrix:
   const auto br_ptr = !Bk.emptyQ() ? &Bk : nullptr;
   const auto s2_ptr = include_Sigma2 ? &Sk : nullptr;
+  // const auto AO_ptr = include_Screening ? &Sk : nullptr; // needed?
   const auto Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr);
 
   //----------------------------------------------------------------------------

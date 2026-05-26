@@ -810,6 +810,37 @@ ComplexRMatrix Feynman::X_screen(const ComplexRMatrix &pik,
 }
 
 //==============================================================================
+ComplexRMatrix Feynman::Q_screen(const int &k, const double &w,
+                                 const bool &hole_particle) const {
+  // Q_screen = -iQPiQ + (-iQPiQ)^2 + ... = [1 + iQ*Pi]^{-1} * Q*Pi*Q
+
+  constexpr auto Iunit = std::complex<double>{0.0, 1.0};
+  const auto qdri = m_qk[k];
+  const auto pik = polarisation_k(k, w, hole_particle);
+  const auto X = X_screen(pik, qdri);
+  return -Iunit * X * qdri * pik.drj() * qdri;
+}
+
+//==============================================================================
+double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
+                   const DiracSpinor &Fb, const DiracSpinor &Fc,
+                   const DiracSpinor &Fd) {
+  double out = 0.0;
+
+  for (auto i = 0ul; i < G.size(); ++i) {
+    const auto si = G.index_to_fullgrid(i);
+    std::complex<double> inner_sum = 0.0;
+    for (auto j = 0ul; j < G.size(); ++j) {
+      const auto sj = G.index_to_fullgrid(j);
+      inner_sum += (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj)) * G(i, j);
+    }
+    out += ((Fa.f(si) * Fc.f(si) + Fa.g(si) * Fc.g(si)) * inner_sum).real();
+  }
+
+  return out;
+}
+
+//==============================================================================
 GMatrix Feynman::Sigma_direct(int kv, double env,
                               std::optional<int> in_k) const {
   // If in_k is set, only calculate for single k
