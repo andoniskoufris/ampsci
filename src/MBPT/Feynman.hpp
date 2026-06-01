@@ -215,6 +215,7 @@ public:
 
 // Calculates the matrix element <ab|G|cd> for radial (not spinor) matrix G
 // Assumes that G already includes dri and drj
+// also assumes that the output is meant to be real; won't always be true!
 double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
                    const DiracSpinor &Fb, const DiracSpinor &Fc,
                    const DiracSpinor &Fd);

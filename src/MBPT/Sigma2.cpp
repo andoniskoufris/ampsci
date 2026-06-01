@@ -116,7 +116,12 @@ double Sk_vwxy_screened(int k, const DiracSpinor &v, const DiracSpinor &w,
     return 0.0;
 
   // should add back in the other diagrams as well
-  return S_Sigma2_screen(k, v, w, x, y, denominators, feyn);
+  return S_Sigma2_screen(k, v, w, x, y, denominators, feyn) +
+         S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators,
+                     true) +
+         S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
+         S_Sigma2_c2(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
+         S_Sigma2_d(k, v, w, x, y, qk, core, excited, SixJ, denominators);
 }
 
 //==============================================================================
@@ -128,7 +133,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                            const std::vector<DiracSpinor> &core,
                            const std::vector<DiracSpinor> &excited,
                            const Angular::SixJTable &SixJ,
-                           Denominators denominators) {
+                           Denominators denominators, const bool &screen) {
 
   // overall selectrion rule tested outside
 
@@ -157,7 +162,8 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
 
       const auto qk_awny = qk.Q(k, a, w, n, y);
       const auto pk_awny = qk.P(k, a, w, n, y, &SixJ);
-      const auto wk_awny = qk_awny + pk_awny;
+      // _DON'T_ include diagram a1 if we are screening, since this would overcount
+      const auto wk_awny = (screen == true) ? pk_awny : qk_awny + pk_awny;
 
       // diagrams a1, a2, a3:
       sum += (qk_vnxa * wk_awny + pk_vnxa * qk_awny) / de;
@@ -167,7 +173,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       const auto pk_vaxn = v == x ? pk_vnxa : qk.P(k, v, a, x, n, &SixJ);
       const auto qk_nway = qk_awny;
       const auto pk_nway = w == y ? pk_awny : qk.P(k, n, w, a, y, &SixJ);
-      const auto wk_nway = qk_nway + pk_nway;
+      const auto wk_nway = (screen == true) ? pk_nway : qk_nway + pk_nway;
 
       // diagrams b1, b2, b3:
       sum += (qk_vaxn * wk_nway + pk_vaxn * qk_nway) / de;

@@ -264,7 +264,8 @@ double S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const Coulomb::QkTable &qk,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
-                   const Angular::SixJTable &SixJ, Denominators denominators);
+                   const Angular::SixJTable &SixJ, Denominators denominators,
+                   const bool &screen = false);
 
 /*!
   @brief Diagram c1 contribution to the reduced two-body Sigma.
