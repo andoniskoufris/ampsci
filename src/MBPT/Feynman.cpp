@@ -68,7 +68,7 @@ Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
 
   if (prefix == "" || prefix == "false") {
     // Don't try to read
-    // form_qpiq();
+    form_qpiq();
   } else {
     std::string qpqname = prefix + ".qpq" + (m_hole_particle ? "h" : "") +
                           (m_screen_Coulomb ? "s" : "") +
