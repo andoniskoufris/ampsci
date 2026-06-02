@@ -115,7 +115,6 @@ double Sk_vwxy_screened(int k, const DiracSpinor &v, const DiracSpinor &w,
   if (!Sk_vwxy_SR(k, v, w, x, y))
     return 0.0;
 
-  // should add back in the other diagrams as well
   return S_Sigma2_screen(k, v, w, x, y, denominators, feyn) +
          S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators,
                      true) +

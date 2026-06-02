@@ -711,29 +711,26 @@ TEST_CASE("Coulomb: operator form", "[Coulomb][integration][k7]") {
   // test calculation of matrix elements with operator method versus direct calculation
   {
     const int num_points = wf.grid().num_points();
-    const int num_points_subgrid = num_points / 2;
+    const int num_points_subgrid = num_points / 4;
     const int stride = num_points / num_points_subgrid;
-    // const int num_points_subgrid = 800;
-    // const int stride = (wf.grid().getIndex(30.0) - wf.grid().getIndex(1.0e-4)) /
-    //                    num_points_subgrid;
-    const int i0 = wf.grid().getIndex(1.0e-6); // default i0 value
+    const int i0 = 0; // default i0 value
 
     MBPT::Feynman feyn =
       MBPT::Feynman(wf.vHF(), i0, stride, num_points_subgrid, {}, 1, true);
 
     const std::pair<double, double> eps_R =
       UnitTest::check_Rkabcd_operator(wf.core(), feyn, 1);
-    // const std::pair<double, double> eps_R2 =
-    //   UnitTest::check_Rkabcd_operator(wf.basis(), feyn, 1);
+    const std::pair<double, double> eps_R2 =
+      UnitTest::check_Rkabcd_operator(wf.basis(), feyn, 1);
 
     // if R^k_{abcd} is small (R <= 1.0e-9) then they only need to agree to parts in 10^-3
     // if R is big (R > 1.0e-9) then they need to agree to parts in 10^-9
     const double eps_threshold_big = 1.0e-9;
     const double eps_threshold_small = 1.0e-3;
     CHECK(std::fabs(eps_R.first) <= eps_threshold_small);
-    // CHECK(std::fabs(eps_R2.first) <= eps_threshold_small);
+    CHECK(std::fabs(eps_R2.first) <= eps_threshold_small);
     CHECK(std::fabs(eps_R.second) <= eps_threshold_big);
-    // CHECK(std::fabs(eps_R2.second) <= eps_threshold_big);
+    CHECK(std::fabs(eps_R2.second) <= eps_threshold_big);
   }
 }
 
@@ -927,10 +924,16 @@ UnitTest::check_Rkabcd_operator(const std::vector<DiracSpinor> &orbs,
             const auto eps = std::fabs((R_exact - R_operator) / R_exact);
 #pragma omp critical(compare_epsR_operator)
             {
+              std::cout << R_exact << "  " << R_operator << " " << eps
+                        << std::endl;
+              if (eps > 1.0e-1) {
+                std::cin.get();
+              }
               if (R_exact >= 1.0e-6) {
                 if (eps > eps_R_big) {
                   eps_R_big = eps;
                 }
+
               } else {
                 if (eps > eps_R_small) {
                   eps_R_small = eps;
