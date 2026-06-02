@@ -275,8 +275,8 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
 //==============================================================================
 Coulomb::meTable<double>
 calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
-                   const MBPT::CorrelationPotential &Sigma,
-                   bool include_Sigma1) {
+                   const MBPT::CorrelationPotential &Sigma, bool include_Sigma1,
+                   const Wavefunction &wf) {
   // Create lookup table for one-particle matrix elements, h1
   Coulomb::meTable<double> h1;
 
@@ -294,7 +294,7 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
 
       // if we have frequency-dependent Breit, no longer have eigenstates of
       // h1, so need to directly evaluate <w|h1|v>
-      const auto h0_vw = v * w;
+      const auto h0_vw = wf.Hab(v, w);
 
       // Can use Sigma matrix instead: all-orders?
       const auto Sigma_vw = include_Sigma1 ? v * Sigma_w : 0.0;

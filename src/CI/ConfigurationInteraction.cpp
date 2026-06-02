@@ -334,7 +334,7 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
     Brueckner ?
       CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false, wf) :
     wf.Sigma() ?
-      CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(), include_Sigma1) :
+      CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(), include_Sigma1, wf) :
       CI::calculate_h1_table(ci_sp_basis, core_s1, excited_s1, qk,
                              include_Sigma1, wf);
 

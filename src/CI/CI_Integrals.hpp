@@ -174,8 +174,8 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
 */
 [[nodiscard]] Coulomb::meTable<double>
 calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
-                   const MBPT::CorrelationPotential &Sigma,
-                   bool include_Sigma1);
+                   const MBPT::CorrelationPotential &Sigma, bool include_Sigma1,
+                   const Wavefunction &wf);
 
 /*!
   @brief Builds or loads the two-body Breit integral table.
