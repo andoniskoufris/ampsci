@@ -413,17 +413,12 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
       std::cout << "\nCalculate two-body MBPT integrals with all-orders "
                    "screening: Σ^k_abcd\n";
 
-      // std::cout << "For: " << DiracSpinor::state_config(cis2_basis)
-      //           << ", using " << DiracSpinor::state_config(excited_s2) << "\n";
-      // std::cout << std::flush;
-
       const int num_points = wf.grid().num_points();
-      const int num_points_subgrid = num_points / 2;
+      const int num_points_subgrid = num_points / 4; // stride of 4
       const int stride = num_points / num_points_subgrid;
 
       MBPT::Feynman feyn =
-        MBPT::Feynman(wf.vHF(), wf.grid().getIndex(wf.grid().r0()), stride,
-                      num_points_subgrid, {}, 1, true);
+        MBPT::Feynman(wf.vHF(), 0, stride, num_points_subgrid, {}, 1, true);
 
       Sk = MBPT::calculate_Sk_screened(
         Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,

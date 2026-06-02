@@ -725,6 +725,8 @@ TEST_CASE("Coulomb: operator form", "[Coulomb][integration][k7]") {
 
     // if R^k_{abcd} is small (R <= 1.0e-9) then they only need to agree to parts in 10^-3
     // if R is big (R > 1.0e-9) then they need to agree to parts in 10^-9
+    //!!!! My threshold for what is big is too large -- need to reduce to ~ 10^-2
+    // run test to see what I mean
     const double eps_threshold_big = 1.0e-9;
     const double eps_threshold_small = 1.0e-3;
     CHECK(std::fabs(eps_R.first) <= eps_threshold_small);

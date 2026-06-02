@@ -162,7 +162,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       const auto qk_awny = qk.Q(k, a, w, n, y);
       const auto pk_awny = qk.P(k, a, w, n, y, &SixJ);
       // _DON'T_ include diagram a1 if we are screening, since this would overcount
-      const auto wk_awny = (screen == true) ? pk_awny : qk_awny + pk_awny;
+      const auto wk_awny = screen ? pk_awny : qk_awny + pk_awny;
 
       // diagrams a1, a2, a3:
       sum += (qk_vnxa * wk_awny + pk_vnxa * qk_awny) / de;
@@ -172,7 +172,8 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       const auto pk_vaxn = v == x ? pk_vnxa : qk.P(k, v, a, x, n, &SixJ);
       const auto qk_nway = qk_awny;
       const auto pk_nway = w == y ? pk_awny : qk.P(k, n, w, a, y, &SixJ);
-      const auto wk_nway = (screen == true) ? pk_nway : qk_nway + pk_nway;
+      // again, we don't include diagram b1 if we are screening
+      const auto wk_nway = screen ? pk_nway : qk_nway + pk_nway;
 
       // diagrams b1, b2, b3:
       sum += (qk_vaxn * wk_nway + pk_vaxn * qk_nway) / de;
