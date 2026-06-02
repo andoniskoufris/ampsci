@@ -3,6 +3,7 @@
 #include "Coulomb/CoulombIntegrals.hpp"
 #include "Coulomb/YkTable.hpp"
 #include "IO/ChronoTimer.hpp"
+#include "MBPT/Feynman.hpp"
 #include "Maths/Grid.hpp"
 #include "Maths/NumCalc_quadIntegrate.hpp"
 #include "Wavefunction/Wavefunction.hpp"
@@ -46,6 +47,10 @@ inline std::vector<double> check_ykab(const std::vector<DiracSpinor> &orbs,
 // functions. Compares them all, and resturns worst comparison.
 inline double check_Rkabcd(const std::vector<DiracSpinor> &orbs,
                            int max_del_n = 99);
+
+inline std::pair<double, double>
+check_Rkabcd_operator(const std::vector<DiracSpinor> &orbs,
+                      const MBPT::Feynman &feyn, int max_del_n = 99);
 
 } // namespace UnitTest
 
@@ -691,6 +696,47 @@ TEST_CASE("Coulomb: formulas", "[Coulomb][integration]") {
   }
 }
 
+//==============================================================================
+//==============================================================================
+//! Unit tests for calculating Coulomb matrix elements from coordinate operator
+TEST_CASE("Coulomb: operator form", "[Coulomb][integration][k7]") {
+
+  // Test the Coulomb formulas
+  Wavefunction wf({900, 1.0e-6, 100.0, 10.0, "loglinear", -1.0},
+                  {"Na", -1, "Fermi", -1.0, -1.0}, 1.0);
+  wf.solve_core("HartreeFock", std::nullopt, "[Ne]");
+  wf.formBasis({"4spd6fg8h8i", 30, 7, 1.0e-3, 1.0e-3, 40.0});
+
+  //============================================================================
+  // test calculation of matrix elements with operator method versus direct calculation
+  {
+    const int num_points = wf.grid().num_points();
+    const int num_points_subgrid = num_points / 2;
+    const int stride = num_points / num_points_subgrid;
+    // const int num_points_subgrid = 800;
+    // const int stride = (wf.grid().getIndex(30.0) - wf.grid().getIndex(1.0e-4)) /
+    //                    num_points_subgrid;
+    const int i0 = wf.grid().getIndex(1.0e-6); // default i0 value
+
+    MBPT::Feynman feyn =
+      MBPT::Feynman(wf.vHF(), i0, stride, num_points_subgrid, {}, 1, true);
+
+    const std::pair<double, double> eps_R =
+      UnitTest::check_Rkabcd_operator(wf.core(), feyn, 1);
+    // const std::pair<double, double> eps_R2 =
+    //   UnitTest::check_Rkabcd_operator(wf.basis(), feyn, 1);
+
+    // if R^k_{abcd} is small (R <= 1.0e-9) then they only need to agree to parts in 10^-3
+    // if R is big (R > 1.0e-9) then they need to agree to parts in 10^-9
+    const double eps_threshold_big = 1.0e-9;
+    const double eps_threshold_small = 1.0e-3;
+    CHECK(std::fabs(eps_R.first) <= eps_threshold_small);
+    // CHECK(std::fabs(eps_R2.first) <= eps_threshold_small);
+    CHECK(std::fabs(eps_R.second) <= eps_threshold_big);
+    // CHECK(std::fabs(eps_R2.second) <= eps_threshold_big);
+  }
+}
+
 //============================================================================
 //============================================================================
 
@@ -840,4 +886,61 @@ double UnitTest::check_Rkabcd(const std::vector<DiracSpinor> &orbs,
     }
   }
   return eps_R;
+}
+
+//============================================================================
+std::pair<double, double>
+UnitTest::check_Rkabcd_operator(const std::vector<DiracSpinor> &orbs,
+                                const MBPT::Feynman &feyn, int max_del_n) {
+  double eps_R_big = 0.0;
+  double eps_R_small = 0.0;
+  const Coulomb::YkTable Yab(orbs);
+#pragma omp parallel for
+  for (auto ia = 0ul; ia < orbs.size(); ia++) {
+    const auto &Fa = orbs[ia];
+    for (auto ib = 0ul; ib < orbs.size(); ib += 2) {
+      const auto &Fb = orbs[ib];
+      for (auto ic = ia; ic < orbs.size(); ic++) {
+        const auto &Fc = orbs[ic];
+        if (std::abs(Fa.n() - Fc.n()) > max_del_n)
+          continue;
+        if (std::abs(Fb.n() - Fc.n()) > max_del_n)
+          continue;
+        for (auto id = ib; id < orbs.size(); id += 2) {
+          const auto &Fd = orbs[id];
+          if (std::abs(Fb.n() - Fd.n()) > max_del_n)
+            continue;
+          const auto [kmin, kmax] = Coulomb::k_minmax_Ck(Fa, Fc);
+          for (int k = kmin; k <= kmax; ++k) {
+            if (!Angular::Ck_kk_SR(k, Fa.kappa(), Fc.kappa()))
+              continue;
+            if (!Angular::Ck_kk_SR(k, Fb.kappa(), Fd.kappa()))
+              continue;
+
+            //---------
+            const auto ybd = Yab.get(k, Fb, Fd);
+
+            const auto R_exact = Coulomb::Rk_abcd(Fa, Fc, *ybd);
+            const auto R_operator =
+              MBPT::two_body_ME(feyn.get_qk(k).dri(), Fa, Fb, Fc, Fd);
+
+            const auto eps = std::fabs((R_exact - R_operator) / R_exact);
+#pragma omp critical(compare_epsR_operator)
+            {
+              if (R_exact >= 1.0e-6) {
+                if (eps > eps_R_big) {
+                  eps_R_big = eps;
+                }
+              } else {
+                if (eps > eps_R_small) {
+                  eps_R_small = eps;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return {eps_R_small, eps_R_big};
 }

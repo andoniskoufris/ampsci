@@ -132,6 +132,12 @@ public:
     return m_Vx_kappa.at(Angular::kappa_to_kindex(kappa));
   }
 
+  // Calculates only screened parts of the Coulomb interaction
+  // Q_screen = -iQPiQ + (-iQPiQ)^2 + ... = [1 + iQ*Pi]^{-1} * Q*Pi*Q
+  // includes left and right integration measures
+  ComplexRMatrix Q_screen(const int &k, const double &w,
+                          const bool &hole_particle) const;
+
 private:
   // forms Qk matrices, as well as dri, drj
   void form_qk();
@@ -206,5 +212,12 @@ public:
   Feynman(const Feynman &) = default;
   ~Feynman() = default;
 };
+
+// Calculates the matrix element <ab|G|cd> for radial (not spinor) matrix G
+// Assumes that G already includes dri and drj
+// also assumes that the output is meant to be real; won't always be true!
+double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
+                   const DiracSpinor &Fb, const DiracSpinor &Fc,
+                   const DiracSpinor &Fd);
 
 } // namespace MBPT

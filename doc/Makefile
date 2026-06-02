@@ -29,11 +29,6 @@ GSL_PATH ?=
 ## Set GSL and LAPACK/BLAS library flags. These are typical, but sometimes differ
 LDLIBS ?= -lgsl -lgslcblas -llapack -lblas
 
-## Friday:
-# LDLIBS ?= -lgsl -lgslcblas -lopenblas
-
-## Bunya:
-# LDLIBS ?= -lgsl -lgslcblas -llapack -lopenblas -lgfortran 
 
 ################################################################################
 ## OpenMP library to use. Comment out or leave blank for no OpenMP

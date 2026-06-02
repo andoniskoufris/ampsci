@@ -1,6 +1,7 @@
 #pragma once
 #include "Angular/SixJTable.hpp"
 #include "Coulomb/QkTable.hpp"
+#include "MBPT/Feynman.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "qip/String.hpp"
 #include <string>
@@ -205,6 +206,37 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
   Denominators denominators, bool no_new_integrals = false);
 
+/*!
+  @brief Calculates (or reads in) a table of two-body Sigma_2 matrix elements that include screening.
+
+  @details
+  Computes \f$ S^k_{vwxy} \f$ for all relevant combinations of states in
+  @p external, using the provided core and excited bases and Coulomb table.
+  Results are written to / read from @p filename (empty string disables I/O).
+
+  @param filename                 File to read/write the table. (blank for "false" to not write)
+  @param external                 Basis states for external legs (all ME between these are computed).
+  @param core                     Core (hole) states for internal summations.
+  @param excited                  Excited (particle) states for internal summations.
+  @param qk                       Precomputed Coulomb integral table (QkTable).
+  @param max_k                    Maximum multipolarity to include.
+  @param exclude_wrong_parity_box If true, excludes box diagrams with "wrong" parity.
+  @param denominators             RS, Fermi, Fermi0: see \ref MBPT::Denominators
+  @param no_new_integrals         If true, only reads existing intergals; no new computation.
+
+  @note no_new_integrals - if we _know_ all required integrals are already in the 
+  file to be read in, saves time.
+  Otherwise, ampsci will check if any new integrals are requred.
+  This checking can take a while, particularly for large basis.
+
+  @return LkTable containing all computed \f$ S^k_{vwxy} \f$ matrix elements.
+*/
+[[nodiscard]] Coulomb::LkTable calculate_Sk_screened(
+  const std::string &filename, const std::vector<DiracSpinor> &external,
+  const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
+  const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
+  Denominators denominators, MBPT::Feynman feyn, bool no_new_integrals = false);
+
 //==============================================================================
 //==============================================================================
 
@@ -232,7 +264,8 @@ double S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const Coulomb::QkTable &qk,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
-                   const Angular::SixJTable &SixJ, Denominators denominators);
+                   const Angular::SixJTable &SixJ, Denominators denominators,
+                   const bool &screen = false);
 
 /*!
   @brief Diagram c1 contribution to the reduced two-body Sigma.
@@ -299,6 +332,25 @@ double S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
                   const std::vector<DiracSpinor> &core,
                   const std::vector<DiracSpinor> &excited,
                   const Angular::SixJTable &SixJ, Denominators denominators);
+
+/*!
+  @brief Screened contribution to the reduced two-body Sigma.
+  @details
+  Computes Goldstone diagram d for \f$ S^k_{vwxy} \f$.
+
+  @param k            Multipolarity.
+  @param v            (+ w x y) External spinors.
+  @param qk           Coulomb integral table.
+  @param core         Core states.
+  @param excited      Excited states.
+  @param SixJ         6-j symbol table.
+  @param denominators Energy denominator convention.
+
+  @return Diagram d contribution to \f$ S^k_{vwxy} \f$.
+*/
+double S_Sigma2_screen(int k, const DiracSpinor &v, const DiracSpinor &w,
+                       const DiracSpinor &x, const DiracSpinor &y,
+                       Denominators denominators, const Feynman &feyn);
 
 } // namespace Sigma2
 

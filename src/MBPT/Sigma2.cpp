@@ -1,6 +1,7 @@
 #include "Sigma2.hpp"
 #include "Angular/include.hpp"
 #include "Coulomb/include.hpp"
+#include "MBPT/Feynman.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 
 namespace MBPT {
@@ -101,6 +102,29 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
 }
 
 //==============================================================================
+// this just calculates the screening Sk integrals; should be able to add the other diagrams later
+double Sk_vwxy_screened(int k, const DiracSpinor &v, const DiracSpinor &w,
+                        const DiracSpinor &x, const DiracSpinor &y,
+                        const Coulomb::QkTable &qk,
+                        const std::vector<DiracSpinor> &core,
+                        const std::vector<DiracSpinor> &excited,
+                        const Angular::SixJTable &SixJ,
+                        Denominators denominators, const Feynman &feyn) {
+  using namespace Sigma2;
+
+  if (!Sk_vwxy_SR(k, v, w, x, y))
+    return 0.0;
+
+  // should add back in the other diagrams as well
+  return S_Sigma2_screen(k, v, w, x, y, denominators, feyn) +
+         S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators,
+                     true) +
+         S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
+         S_Sigma2_c2(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
+         S_Sigma2_d(k, v, w, x, y, qk, core, excited, SixJ, denominators);
+}
+
+//==============================================================================
 //==============================================================================
 //==============================================================================
 double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
@@ -109,7 +133,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                            const std::vector<DiracSpinor> &core,
                            const std::vector<DiracSpinor> &excited,
                            const Angular::SixJTable &SixJ,
-                           Denominators denominators) {
+                           Denominators denominators, const bool &screen) {
 
   // overall selectrion rule tested outside
 
@@ -138,7 +162,8 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
 
       const auto qk_awny = qk.Q(k, a, w, n, y);
       const auto pk_awny = qk.P(k, a, w, n, y, &SixJ);
-      const auto wk_awny = qk_awny + pk_awny;
+      // _DON'T_ include diagram a1 if we are screening, since this would overcount
+      const auto wk_awny = (screen == true) ? pk_awny : qk_awny + pk_awny;
 
       // diagrams a1, a2, a3:
       sum += (qk_vnxa * wk_awny + pk_vnxa * qk_awny) / de;
@@ -148,7 +173,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       const auto pk_vaxn = v == x ? pk_vnxa : qk.P(k, v, a, x, n, &SixJ);
       const auto qk_nway = qk_awny;
       const auto pk_nway = w == y ? pk_awny : qk.P(k, n, w, a, y, &SixJ);
-      const auto wk_nway = qk_nway + pk_nway;
+      const auto wk_nway = (screen == true) ? pk_nway : qk_nway + pk_nway;
 
       // diagrams b1, b2, b3:
       sum += (qk_vaxn * wk_nway + pk_vaxn * qk_nway) / de;
@@ -349,6 +374,34 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
 }
 
 //==============================================================================
+double Sigma2::S_Sigma2_screen(int k, const DiracSpinor &v,
+                               const DiracSpinor &w, const DiracSpinor &x,
+                               const DiracSpinor &y, Denominators denominators,
+                               const Feynman &feyn) {
+
+  // overall selectrion rule tested outside
+
+  // const auto v0 = e_bar(v.kappa(), excited);
+  // const auto w0 = e_bar(w.kappa(), excited);
+  // const auto x0 = e_bar(x.kappa(), excited);
+  // const auto y0 = e_bar(y.kappa(), excited);
+  // const auto e0 = DiracSpinor::min_En(excited);
+
+  // Here, "Fermi0" cancellation doesn't happen
+  // So, Fermi and Fermi0 are the same
+
+  const double w_xv = x.en() - v.en();
+  const double w_wy = w.en() - y.en();
+
+  const auto qpiq =
+    denominators == Denominators::RS ?
+      0.5 * (feyn.Q_screen(k, w_xv, false) + feyn.Q_screen(k, w_wy, false)) :
+      feyn.Q_screen(k, 0.0, false);
+
+  return two_body_ME(qpiq, v, w, x, y);
+}
+
+//==============================================================================
 Coulomb::LkTable calculate_Sk(
   const std::string &filename, const std::vector<DiracSpinor> &external,
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
@@ -366,6 +419,52 @@ Coulomb::LkTable calculate_Sk(
                                const DiracSpinor &w, const DiracSpinor &x,
                                const DiracSpinor &y) {
     return MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited, sjt, denominators);
+  };
+  const auto Sk_selection_rule = [&](int k, const DiracSpinor &v,
+                                     const DiracSpinor &w, const DiracSpinor &x,
+                                     const DiracSpinor &y) {
+    return exclude_wrong_parity_box ? Coulomb::Qk_abcd_SR(k, v, w, x, y) :
+                                      MBPT::Sk_vwxy_SR(k, v, w, x, y);
+  };
+
+  // Try to read from disk (may already have calculated Qk)
+  Sk.read(filename);
+
+  const auto existing = Sk.count();
+  {
+    if (!no_new_integrals)
+      Sk.fill(external, Sk_function, Sk_selection_rule, max_k);
+
+    const auto total = Sk.count();
+    assert(total >= existing);
+    const auto new_integrals = total - existing;
+    std::cout << "Calculated " << new_integrals << " new MBPT integrals\n";
+    if (new_integrals > 0) {
+      Sk.write(filename);
+    }
+  }
+  std::cout << "\n" << std::flush;
+  return Sk;
+}
+
+Coulomb::LkTable calculate_Sk_screened(
+  const std::string &filename, const std::vector<DiracSpinor> &external,
+  const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
+  const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
+  Denominators denominators, MBPT::Feynman feyn, bool no_new_integrals) {
+
+  Coulomb::LkTable Sk;
+
+  const auto max_twoj =
+    std::max({DiracSpinor::max_tj(excited), DiracSpinor::max_tj(core),
+              DiracSpinor::max_tj(external)});
+  Angular::SixJTable sjt(max_twoj);
+
+  const auto Sk_function = [&](int k, const DiracSpinor &v,
+                               const DiracSpinor &w, const DiracSpinor &x,
+                               const DiracSpinor &y) {
+    return MBPT::Sk_vwxy_screened(k, v, w, x, y, qk, core, excited, sjt,
+                                  denominators, feyn);
   };
   const auto Sk_selection_rule = [&](int k, const DiracSpinor &v,
                                      const DiracSpinor &w, const DiracSpinor &x,

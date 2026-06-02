@@ -1,11 +1,16 @@
-\page modules Modules
+\page modules Modules and Operators
 
-\brief Descpription of modules system: available modules and options
+\brief Descpription of modules system: available modules, operators, and ascociated options
 
+The modules system is how you interact with ampsci after the wavefunction has been calculated.
+Any number of modules can be run in the same job to compute matrix elements, polarisabilities,
+QED corrections, structure radiation, and more.
+
+* See \ref tutorial_modules for a hands-on introduction to using modules.
 * The modules system allows the easy calculation of any atomic properties after the wavefunction has been calculated.
-* Any number of _modules_ can be run by adding `Module::moduleName{}' blocks.
-* The code is designed so that you can easily create your own modules:
-  * \subpage modules_custom - \copybrief modules_custom
+* Any number of _modules_ can be run by adding `Module::moduleName{}` blocks.
+* The code is designed so that you can easily create your own modules -- see \subpage modules_custom.
+* You can also write your own operators -- see \subpage modules_custom_operator.
 
 ## Getting started with modules
 

@@ -19,6 +19,73 @@
 
 --------------------------------------------------------------------------------
 
+## Automatic configuration: configure.sh
+
+The `configure.sh` script will attempt to automatically detect your compiler,
+GSL path, LAPACK/BLAS libraries, and OpenMP support, and write a working
+`Makefile` for your system:
+
+<div class="shell-block">
+```shell
+./configure.sh -y && make
+```
+</div>
+
+* the `-y` automatically responds `yes` to prompts from the script.
+* This works "out-of-the-box" on most systems.
+
+--------------------------------------------------------------------------------
+
+## HPC systems (e.g. Bunya, Friday)
+
+* On HPC systems, compilation and jobs are typically submitted via SLURM -- see [HPC / SLURM](\ref hpc) for example scripts.
+* You will typically need to `module load` the required dependencies
+  * What we require: C++ compiler, lapack, blas, GSL
+  * Often, most of these come 'bundled' in a "toolchain" (e.g., foss)
+* Load the required modules _before_ running `configure.sh`.
+* On most systems (e.g., Friday) unversioned names work:
+
+<div class="shell-block">
+```shell
+module load foss gsl
+./configure.sh -y
+make
+```
+</div>
+
+On others (e.g. Bunya), explicit versions are required and must be consistent.
+On EasyBuild-based systems, the GSL module typically matches the foss toolchain:
+
+| foss    | GCC    | Matching GSL (typical)|
+|---------|--------|-----------------------|
+| 2022a   | 11.3.0 | gsl/2.7-gcc-11.3.0    |
+| 2023a   | 12.3.0 | gsl/2.7-gcc-12.3.0    |
+| 2024a   | 13.3.0 | gsl/2.8-gcc-13.3.0    |
+
+<div class="shell-block">
+```shell
+module load foss/2024a gsl/2.8-gcc-13.3.0
+./configure.sh -y
+make
+```
+</div>
+
+Use `module avail foss` or `module spider gsl` or similar to find available versions.
+
+`configure.sh` auto-detects OpenBLAS (via `$EBROOTOPENBLAS`) and sets `LDLIBS`
+accordingly. If auto-detection fails, you will have to set it manually in `Makefile`:
+
+```makefile
+LDLIBS ?= -lgsl -lgslcblas -lopenblas
+```
+
+Note: `-lgfortran` may also be required on some older configurations.
+
+If `configure.sh` does not produce a working build, refer to the manual
+compilation options below.
+
+--------------------------------------------------------------------------------
+
 ## Compilation: Linux
 
 * Instructions for ubuntu; similar commands for other flavours
@@ -120,8 +187,9 @@ LDFLAGS ?=
 ### Using OpenMP with clang on mac
 
 Use openMP for parellelisation when using clang++ on mac:
+
 * If using g++, should work as per normal
-  * On Mac, `g++` links to Apple clang - so you need to call exact compiler explicitely, 
+  * On Mac, `g++` links to Apple clang - so you need to call exact compiler explicitely,
   * e.g., `CXX = g++-15`
 * To use openMP with clang, best option is to use the llvm version of clang (not the default Apple clang)
 * _brew install llvm_
@@ -136,3 +204,28 @@ Use openMP for parellelisation when using clang++ on mac:
   * `LDFLAGS += -L/usr/local/opt/libomp/lib`
   * `LDLIBS ?= -lgsl -llapack -lblas -lomp`
   * Paths may vary: use `brew --prefix libomp`
+
+--------------------------------------------------------------------------------
+
+### Advanced compilation options
+
+* These options are relevant only for developers
+
+#### Sanitisers
+
+Clang sanitisers can be enabled via the `MODE` variable. Best used with `clang++`.
+
+| Mode | Sanitiser | OMP | Use for |
+|------|-----------|-----|---------|
+| `asan` | AddressSanitizer + UBSan | off | buffer overflows, heap/stack corruption, UB |
+| `tsan` | ThreadSanitizer | on | data races in parallel (OMP) code |
+| `ubsan` | UndefinedBehaviourSanitizer | on | integer overflow, null deref, other UB; low overhead |
+
+```bash
+make MODE=asan  CXX=clang++   # address + UB sanitiser
+make MODE=tsan  CXX=clang++   # thread sanitiser
+make MODE=ubsan CXX=clang++   # UB sanitiser only
+```
+
+Note: `asan` and `tsan` cannot be used together.
+MSan (uninitialised memory) is not supported here as it requires all linked libraries (GSL, LAPACK) to also be MSan-instrumented.
