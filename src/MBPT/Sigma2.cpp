@@ -102,20 +102,21 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
 }
 
 //==============================================================================
-// this just calculates the screening Sk integrals; should be able to add the other diagrams later
+// this just calculates the screening Sk integrals
 double Sk_vwxy_screened(int k, const DiracSpinor &v, const DiracSpinor &w,
                         const DiracSpinor &x, const DiracSpinor &y,
                         const Coulomb::QkTable &qk,
                         const std::vector<DiracSpinor> &core,
                         const std::vector<DiracSpinor> &excited,
                         const Angular::SixJTable &SixJ,
-                        Denominators denominators, const Feynman &feyn) {
+                        Denominators denominators,
+                        const std::vector<MBPT::ComplexRMatrix> &Q_screen) {
   using namespace Sigma2;
 
   if (!Sk_vwxy_SR(k, v, w, x, y))
     return 0.0;
 
-  return S_Sigma2_screen(k, v, w, x, y, denominators, feyn) +
+  return S_Sigma2_screen(k, v, w, x, y, denominators, Q_screen) +
          S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators,
                      true) +
          S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
@@ -374,10 +375,11 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
 }
 
 //==============================================================================
-double Sigma2::S_Sigma2_screen(int k, const DiracSpinor &v,
-                               const DiracSpinor &w, const DiracSpinor &x,
-                               const DiracSpinor &y, Denominators denominators,
-                               const Feynman &feyn) {
+double
+Sigma2::S_Sigma2_screen(int k, const DiracSpinor &v, const DiracSpinor &w,
+                        const DiracSpinor &x, const DiracSpinor &y,
+                        Denominators denominators,
+                        const std::vector<MBPT::ComplexRMatrix> &Q_screen) {
 
   // overall selectrion rule tested outside
 
@@ -390,15 +392,15 @@ double Sigma2::S_Sigma2_screen(int k, const DiracSpinor &v,
   // Here, "Fermi0" cancellation doesn't happen
   // So, Fermi and Fermi0 are the same
 
-  const double w_xv = x.en() - v.en();
-  const double w_wy = w.en() - y.en();
+  // const double w_xv = x.en() - v.en();
+  // const double w_wy = w.en() - y.en();
 
-  const auto qpiq =
-    denominators == Denominators::RS ?
-      0.5 * (feyn.Q_screen(k, w_xv, false) + feyn.Q_screen(k, w_wy, false)) :
-      feyn.Q_screen(k, 0.0, false);
+  // const auto qpiq = denominators == Denominators::RS ?
+  //                     0.5 * (feyn.Q_screen_k(k, w_xv, false) +
+  //                            feyn.Q_screen_k(k, w_wy, false)) :
+  //                     feyn.Q_screen_k(k, 0.0, false);
 
-  return two_body_ME(qpiq, v, w, x, y);
+  return two_body_ME(Q_screen[k], v, w, x, y);
 }
 
 //==============================================================================
@@ -451,7 +453,8 @@ Coulomb::LkTable calculate_Sk_screened(
   const std::string &filename, const std::vector<DiracSpinor> &external,
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
-  Denominators denominators, MBPT::Feynman feyn, bool no_new_integrals) {
+  Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &Q_screen,
+  bool no_new_integrals) {
 
   Coulomb::LkTable Sk;
 
@@ -464,7 +467,7 @@ Coulomb::LkTable calculate_Sk_screened(
                                const DiracSpinor &w, const DiracSpinor &x,
                                const DiracSpinor &y) {
     return MBPT::Sk_vwxy_screened(k, v, w, x, y, qk, core, excited, sjt,
-                                  denominators, feyn);
+                                  denominators, Q_screen);
   };
   const auto Sk_selection_rule = [&](int k, const DiracSpinor &v,
                                      const DiracSpinor &w, const DiracSpinor &x,

@@ -20,7 +20,7 @@ namespace MBPT {
 //==============================================================================
 Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
                  std::size_t size, const FeynmanOptions &options,
-                 int n_min_core, bool include_G, bool verbose,
+                 int n_min_core, bool include_G, bool do_CI, bool verbose,
                  const std::string &ident)
   : m_HF(vHF),
     m_grid(vHF->grid_sptr()),
@@ -66,19 +66,23 @@ Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
   // Construct polarisation operator
   std::string prefix = ident.substr(0, ident.find('.'));
 
-  if (prefix == "" || prefix == "false") {
-    // Don't try to read
-    form_qpiq();
-  } else {
-    std::string qpqname = prefix + ".qpq" + (m_hole_particle ? "h" : "") +
-                          (m_screen_Coulomb ? "s" : "") +
-                          (m_HF->vBreit() == nullptr ? "" : "b") +
-                          std::to_string(m_min_core_n) + ".abf";
-    const auto readOK = readwrite_qpiq(IO::FRW::read, qpqname);
-    if (!readOK) {
+  // janky but if I am constructing a Feynman object to get the screened
+  // Coulomb interaction for Sigma^2 in CI, do not need to create QPiQ
+  if (!do_CI) {
+    if (prefix == "" || prefix == "false") {
+      // Don't try to read
       form_qpiq();
-      const auto readOK2 = readwrite_qpiq(IO::FRW::write, qpqname);
-      assert(readOK2);
+    } else {
+      std::string qpqname = prefix + ".qpq" + (m_hole_particle ? "h" : "") +
+                            (m_screen_Coulomb ? "s" : "") +
+                            (m_HF->vBreit() == nullptr ? "" : "b") +
+                            std::to_string(m_min_core_n) + ".abf";
+      const auto readOK = readwrite_qpiq(IO::FRW::read, qpqname);
+      if (!readOK) {
+        form_qpiq();
+        const auto readOK2 = readwrite_qpiq(IO::FRW::write, qpqname);
+        assert(readOK2);
+      }
     }
   }
 }
@@ -810,8 +814,8 @@ ComplexRMatrix Feynman::X_screen(const ComplexRMatrix &pik,
 }
 
 //==============================================================================
-ComplexRMatrix Feynman::Q_screen(const int &k, const double &w,
-                                 const bool &hole_particle) const {
+ComplexRMatrix Feynman::Q_screen_k(const int &k, const double &w,
+                                   const bool &hole_particle) const {
   // Q_screen = -iQPiQ + (-iQPiQ)^2 + ... = [1 + iQ*Pi]^{-1} * Q*Pi*Q
 
   constexpr auto Iunit = std::complex<double>{0.0, 1.0};
@@ -819,6 +823,16 @@ ComplexRMatrix Feynman::Q_screen(const int &k, const double &w,
   const auto pik = polarisation_k(k, w, hole_particle);
   const auto X = X_screen(pik, qdri);
   return -Iunit * X * qdri * pik.drj() * qdri;
+}
+
+//==============================================================================
+std::vector<ComplexRMatrix> Feynman::Q_screen(const int &k_max, const double &w,
+                                              const bool &hole_particle) const {
+  std::vector<ComplexRMatrix> out;
+  for (int k = 0; k <= k_max; ++k) {
+    out.push_back(Q_screen_k(k, w, hole_particle));
+  }
+  return out;
 }
 
 //==============================================================================

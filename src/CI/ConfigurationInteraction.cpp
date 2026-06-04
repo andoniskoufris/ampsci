@@ -9,6 +9,7 @@
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/CorrelationPotential.hpp"
 #include "MBPT/Feynman.hpp"
+#include "MBPT/RadialMatrix.hpp"
 #include "MBPT/Sigma2.hpp"
 #include "Physics/AtomData.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
@@ -417,12 +418,18 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
       const int num_points_subgrid = num_points / 4; // stride of 4
       const int stride = num_points / num_points_subgrid;
 
-      MBPT::Feynman feyn =
-        MBPT::Feynman(wf.vHF(), 0, stride, num_points_subgrid, {}, 1, true);
+      // should make it so that the Feynman class constructs the screening
+      // parts of the Coulomb interaction if we set it up to do CI and
+      // writes it to a file
+      MBPT::Feynman feyn = MBPT::Feynman(
+        wf.vHF(), 0, stride, num_points_subgrid, {}, 1, true, true, false);
+      std::vector<MBPT::ComplexRMatrix> Q_screen =
+        feyn.Q_screen(max_k_Coulomb, 0.0, true);
 
+      // with RS denominators, this will be incredibly slow
       Sk = MBPT::calculate_Sk_screened(
         Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,
-        exclude_wrong_parity_box, denominators, feyn, no_new_integralsQ);
+        exclude_wrong_parity_box, denominators, Q_screen, no_new_integralsQ);
     }
   }
 

@@ -710,9 +710,9 @@ TEST_CASE("Coulomb: operator form", "[Coulomb][integration][k7]") {
   //============================================================================
   // test calculation of matrix elements with operator method versus direct calculation
   {
-    const int num_points = wf.grid().num_points();
-    const int num_points_subgrid = num_points / 4;
-    const int stride = num_points / num_points_subgrid;
+    const auto num_points = wf.grid().num_points();
+    const auto num_points_subgrid = num_points / 4;
+    const auto stride = num_points / num_points_subgrid;
     const int i0 = 0; // default i0 value
 
     MBPT::Feynman feyn =

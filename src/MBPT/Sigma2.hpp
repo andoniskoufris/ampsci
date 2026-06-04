@@ -235,7 +235,8 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   const std::string &filename, const std::vector<DiracSpinor> &external,
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
-  Denominators denominators, MBPT::Feynman feyn, bool no_new_integrals = false);
+  Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &Q_screen,
+  bool no_new_integrals = false);
 
 //==============================================================================
 //==============================================================================
@@ -350,7 +351,8 @@ double S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
 */
 double S_Sigma2_screen(int k, const DiracSpinor &v, const DiracSpinor &w,
                        const DiracSpinor &x, const DiracSpinor &y,
-                       Denominators denominators, const Feynman &feyn);
+                       Denominators denominators,
+                       const std::vector<MBPT::ComplexRMatrix> &Q_screen);
 
 } // namespace Sigma2
 
