@@ -20,7 +20,7 @@ namespace MBPT {
 //==============================================================================
 Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
                  std::size_t size, const FeynmanOptions &options,
-                 int n_min_core, bool include_G, bool do_CI, bool verbose,
+                 int n_min_core, bool include_G, bool for_CI, bool verbose,
                  const std::string &ident)
   : m_HF(vHF),
     m_grid(vHF->grid_sptr()),
@@ -68,7 +68,7 @@ Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
 
   // janky but if I am constructing a Feynman object to get the screened
   // Coulomb interaction for Sigma^2 in CI, do not need to create QPiQ
-  if (!do_CI) {
+  if (!for_CI) {
     if (prefix == "" || prefix == "false") {
       // Don't try to read
       form_qpiq();
@@ -604,34 +604,41 @@ ComplexRMatrix Feynman::polarisation_k(int k, std::complex<double> omega,
       const auto ck_an = Angular::Ck_kk(k, Fa.kappa(), kn);
       if (ck_an == 0.0)
         continue;
-      const double c_ang = ck_an * ck_an / double(2 * k + 1);
+      const double c_ang = ck_an * ck_an / double(2.0 * k + 1.0);
 
       ComplexGMatrix Gx_pm = green_excited(kn, ea_minus_w, Fa_hp) +
                              green_excited(kn, ea_plus_w, Fa_hp);
 
       // loop over coordinate indices.
-      // pi is symmetric in r1, r2 so is there more efficient way to do this
-      // so that I don't loop over all ri, rj?
       // pi ~ Fa^†(r1)[Gex(r1,r2,ea-w) + Gex(r1,r2,ea+w)]Fa(r2)
       for (auto i = 0ul; i < m_subgrid_points; ++i) {
         const auto si = Gx_pm.index_to_fullgrid(i);
-        for (auto j = 0ul; j <= i; ++j) {
+        pi_k(i, i) += c_ang * (Fa.f(si) * Gx_pm.ff(i, i) * Fa.f(si) +
+                               Fa.g(si) * Gx_pm.gf(i, i) * Fa.f(si) +
+                               Fa.f(si) * Gx_pm.fg(i, i) * Fa.g(si) +
+                               Fa.g(si) * Gx_pm.gg(i, i) * Fa.g(si));
+        for (auto j = 0ul; j < i; ++j) {
           const auto sj = Gx_pm.index_to_fullgrid(j);
           pi_k(i, j) += c_ang * (Fa.f(si) * Gx_pm.ff(i, j) * Fa.f(sj) +
                                  Fa.g(si) * Gx_pm.gf(i, j) * Fa.f(sj) +
                                  Fa.f(si) * Gx_pm.fg(i, j) * Fa.g(sj) +
                                  Fa.g(si) * Gx_pm.gg(i, j) * Fa.g(sj));
+
+          pi_k(j, i) += c_ang * (Fa.f(sj) * Gx_pm.ff(j, i) * Fa.f(si) +
+                                 Fa.g(sj) * Gx_pm.gf(j, i) * Fa.f(si) +
+                                 Fa.f(sj) * Gx_pm.fg(j, i) * Fa.g(si) +
+                                 Fa.g(sj) * Gx_pm.gg(j, i) * Fa.g(si));
         }
       }
     }
   }
 
   // Fill symmetric lower half:
-  for (auto i = 0ul; i < m_subgrid_points; ++i) {
-    for (auto j = 0ul; j <= i; ++j) {
-      pi_k(j, i) = pi_k(i, j);
-    }
-  }
+  // for (auto i = 0ul; i < m_subgrid_points; ++i) {
+  //   for (auto j = 0ul; j <= i; ++j) {
+  //     pi_k(j, i) = pi_k(i, j);
+  //   }
+  // }
 
   pi_k *= Iunit;
   return pi_k;
@@ -806,6 +813,7 @@ void Feynman::form_qpiq() {
 }
 
 //==============================================================================
+//! has dri (from qdri) but _NOT_ drj
 ComplexRMatrix Feynman::X_screen(const ComplexRMatrix &pik,
                                  const ComplexRMatrix &qdri) const {
   // X = [1 + i q*pi(w)]^-1
@@ -814,24 +822,37 @@ ComplexRMatrix Feynman::X_screen(const ComplexRMatrix &pik,
 }
 
 //==============================================================================
-ComplexRMatrix Feynman::Q_screen_k(const int &k, const double &w,
-                                   const bool &hole_particle) const {
-  // Q_screen = -iQPiQ + (-iQPiQ)^2 + ... = [1 + iQ*Pi]^{-1} * Q*Pi*Q
+ComplexRMatrix Feynman::dQ_screen_k(const int &k, const double &w,
+                                    const bool &AO_screening,
+                                    const bool &hole_particle) const {
+  // Q_screen = -iQPiQ + (-iQPiQ)^2 + ... = -i[1 + iQ*Pi]^{-1} * Q*Pi*Q if AO_screening == true
+  // will just calculate -iQPiQ if AO_screening == false
+  // has _BOTH_ dri and drj
 
   constexpr auto Iunit = std::complex<double>{0.0, 1.0};
-  const auto qdri = m_qk[k];
+  const auto qdri = m_qk[k].dri();
   const auto pik = polarisation_k(k, w, hole_particle);
-  const auto X = X_screen(pik, qdri);
-  return -Iunit * X * qdri * pik.drj() * qdri;
+  if (AO_screening) {
+    const auto X = X_screen(pik, qdri);
+    return -Iunit * X * qdri * pik * qdri;
+  } else {
+    return -Iunit * qdri * pik * qdri;
+  }
 }
 
 //==============================================================================
-std::vector<ComplexRMatrix> Feynman::Q_screen(const int &k_max, const double &w,
-                                              const bool &hole_particle) const {
-  std::vector<ComplexRMatrix> out;
+std::vector<ComplexRMatrix>
+Feynman::dQ_screen(const int &k_max, const double &w, const bool &AO_screening,
+                   const bool &hole_particle) const {
+  // size max_k + 1 since we calculate qpiq for k=0 up to k=kmax
+  std::vector<ComplexRMatrix> out(
+    k_max + 1, ComplexRMatrix{m_i0, m_stride, m_subgrid_points, m_grid});
+// fill each screened Coulomb interaction in parallel
+#pragma omp parallel for
   for (int k = 0; k <= k_max; ++k) {
-    out.push_back(Q_screen_k(k, w, hole_particle));
+    out[k] = dQ_screen_k(k, w, AO_screening, hole_particle);
   }
+
   return out;
 }
 
@@ -846,7 +867,7 @@ double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
     std::complex<double> inner_sum = 0.0;
     for (auto j = 0ul; j < G.size(); ++j) {
       const auto sj = G.index_to_fullgrid(j);
-      inner_sum += (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj)) * G(i, j);
+      inner_sum += G(j, i) * (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj));
     }
     out += ((Fa.f(si) * Fc.f(si) + Fa.g(si) * Fc.g(si)) * inner_sum).real();
   }

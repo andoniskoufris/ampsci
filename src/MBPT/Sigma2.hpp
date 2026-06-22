@@ -235,7 +235,7 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   const std::string &filename, const std::vector<DiracSpinor> &external,
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
-  Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &Q_screen,
+  Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &dQ_screen,
   bool no_new_integrals = false);
 
 //==============================================================================

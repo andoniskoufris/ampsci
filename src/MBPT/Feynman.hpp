@@ -91,7 +91,7 @@ public:
   //! ** Currently have issue: polarising deep n leads to failure?
   Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
           std::size_t size, const FeynmanOptions &options, int n_min_core,
-          bool include_G, bool do_CI = false, bool verbose = true,
+          bool include_G, bool for_CI = false, bool verbose = true,
           const std::string &ident = "");
 
   bool screening() const { return m_screen_Coulomb; }
@@ -135,12 +135,14 @@ public:
 
   // Calculates only screened parts of the Coulomb interaction for a particular k
   // Q_screen = -iQPiQ + (-iQPiQ)^2 + ... = [1 + iQ*Pi]^{-1} * Q*Pi*Q
-  // includes left and right integration measures
-  ComplexRMatrix Q_screen_k(const int &k, const double &w,
-                            const bool &hole_particle) const;
+  // has _BOTH_ dri and drj
+  ComplexRMatrix dQ_screen_k(const int &k, const double &w,
+                             const bool &AO_screening,
+                             const bool &hole_particle) const;
 
   // Calculates only screened parts of the Coulomb interaction for a all k up to k_max
-  std::vector<ComplexRMatrix> Q_screen(const int &k_max, const double &w,
+  std::vector<ComplexRMatrix> dQ_screen(const int &k_max, const double &w,
+                                       const bool &AO_screening,
                                        const bool &hole_particle) const;
 
 private:

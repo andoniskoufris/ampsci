@@ -1,7 +1,7 @@
 # BUILD OPTIONS:
 
 ## c++ standard. must be at least c++17
-CXXSTD ?= -std=c++17
+CXXSTD ?= -std=c++20
 
 ## Set directories for source files (SRC), and output built object files (BUILD)
 SRC = ./src

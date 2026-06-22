@@ -415,7 +415,7 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
                    "screening: Σ^k_abcd\n";
 
       const int num_points = wf.grid().num_points();
-      const int num_points_subgrid = num_points / 4; // stride of 4
+      const int num_points_subgrid = num_points / 4; // stride in denominator
       const int stride = num_points / num_points_subgrid;
 
       // should make it so that the Feynman class constructs the screening
@@ -423,13 +423,16 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
       // writes it to a file
       MBPT::Feynman feyn = MBPT::Feynman(
         wf.vHF(), 0, stride, num_points_subgrid, {}, 1, true, true, false);
-      std::vector<MBPT::ComplexRMatrix> Q_screen =
-        feyn.Q_screen(max_k_Coulomb, 0.0, true);
+
+      // construct the screening part of Qtilde at small negative frequency, w = -0.1
+      // constructing it at exactly w = 0.0 is numerically unstable
+      const std::vector<MBPT::ComplexRMatrix> dQ_screen =
+        feyn.dQ_screen(max_k_Coulomb, -0.1, true, true);
 
       // with RS denominators, this will be incredibly slow
       Sk = MBPT::calculate_Sk_screened(
         Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,
-        exclude_wrong_parity_box, denominators, Q_screen, no_new_integralsQ);
+        exclude_wrong_parity_box, denominators, dQ_screen, no_new_integralsQ);
     }
   }
 

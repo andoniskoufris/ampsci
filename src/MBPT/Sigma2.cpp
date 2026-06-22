@@ -110,13 +110,14 @@ double Sk_vwxy_screened(int k, const DiracSpinor &v, const DiracSpinor &w,
                         const std::vector<DiracSpinor> &excited,
                         const Angular::SixJTable &SixJ,
                         Denominators denominators,
-                        const std::vector<MBPT::ComplexRMatrix> &Q_screen) {
+                        const std::vector<MBPT::ComplexRMatrix> &dQ_screen) {
   using namespace Sigma2;
 
-  if (!Sk_vwxy_SR(k, v, w, x, y))
+  if (!Sk_vwxy_SR(k, v, w, x, y)) {
     return 0.0;
+  }
 
-  return S_Sigma2_screen(k, v, w, x, y, denominators, Q_screen) +
+  return S_Sigma2_screen(k, v, w, x, y, denominators, dQ_screen) +
          S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators,
                      true) +
          S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
@@ -396,11 +397,14 @@ Sigma2::S_Sigma2_screen(int k, const DiracSpinor &v, const DiracSpinor &w,
   // const double w_wy = w.en() - y.en();
 
   // const auto qpiq = denominators == Denominators::RS ?
-  //                     0.5 * (feyn.Q_screen_k(k, w_xv, false) +
-  //                            feyn.Q_screen_k(k, w_wy, false)) :
-  //                     feyn.Q_screen_k(k, 0.0, false);
+  //                     0.5 * (feyn.dQ_screen_k(k, w_xv, false) +
+  //                            feyn.dQ_screen_k(k, w_wy, false)) :
+  //                     feyn.dQ_screen_k(k, 0.0, false);
+  const auto f = Angular::neg1pow_2(2 * k + v.twoj() - w.twoj());
+  const auto Ck_vx = Angular::Ck_kk(k, v.kappa(), x.kappa());
+  const auto Ck_wy = Angular::Ck_kk(k, w.kappa(), y.kappa());
 
-  return two_body_ME(Q_screen[k], v, w, x, y);
+  return f * Ck_vx * Ck_wy * two_body_ME(Q_screen[k], v, w, x, y);
 }
 
 //==============================================================================
