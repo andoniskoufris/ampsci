@@ -251,22 +251,26 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
         continue;
       if (w.kappa() != v.kappa())
         continue;
-      // const auto h0_vw = v == w ? v.en() : 0.0;
+      const auto h0_vw = v == w ? v.en() : 0.0;
 
       // if we have frequency-dependent Breit, no longer have eigenstates of
       // h1, so need to directly evaluate <w|h1|v>
-      const auto h0_vw = wf.Hab(v, w);
+      // const auto h0_vw = wf.Hab(v, w);
 
       // Can use Sigma matrix instead: all-orders?
       const auto Sigma_vw =
+        wf.Sigma() ?
+          0.0 :
         include_Sigma1 ?
           MBPT::Sigma_vw(v, w, qk, s1_basis_core, s1_basis_excited, 99, ev) :
           0.0;
 
       h1.add(v, w, h0_vw + Sigma_vw);
+      // h1.add(v, w, h0_vw);
       // Add symmetric partner:
       if (v != w)
         h1.add(w, v, h0_vw + Sigma_vw);
+      // h1.add(w, v, h0_vw);
     }
   }
   return h1;
@@ -296,8 +300,11 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
       // h1, so need to directly evaluate <w|h1|v>
       const auto h0_vw = wf.Hab(v, w);
 
+      //!!!!!! don't need this if we have Sigma as Hab(v, w) already includes Sigma if it exists
       // Can use Sigma matrix instead: all-orders?
-      const auto Sigma_vw = include_Sigma1 ? v * Sigma_w : 0.0;
+      const auto Sigma_vw = wf.Sigma()     ? 0.0 :
+                            include_Sigma1 ? v * Sigma_w :
+                                             0.0;
 
       h1.add(v, w, h0_vw + Sigma_vw);
       // Add symmetric partner:
