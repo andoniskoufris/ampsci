@@ -251,13 +251,14 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
         continue;
       if (w.kappa() != v.kappa())
         continue;
-      const auto h0_vw = v == w ? v.en() : 0.0;
+      // const auto h0_vw = v == w ? v.en() : 0.0;
 
       // if we have frequency-dependent Breit, no longer have eigenstates of
       // h1, so need to directly evaluate <w|h1|v>
-      // const auto h0_vw = wf.Hab(v, w);
+      const auto h0_vw = wf.Hab(v, w);
 
       // Can use Sigma matrix instead: all-orders?
+      // don't need this if we already have Sigma since it is accounted for in Hab(v,w)
       const auto Sigma_vw =
         wf.Sigma() ?
           0.0 :
@@ -300,7 +301,7 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
       // h1, so need to directly evaluate <w|h1|v>
       const auto h0_vw = wf.Hab(v, w);
 
-      //!!!!!! don't need this if we have Sigma as Hab(v, w) already includes Sigma if it exists
+      //!!! don't need this if we have Sigma as Hab(v, w) already includes Sigma if it exists
       // Can use Sigma matrix instead: all-orders?
       const auto Sigma_vw = wf.Sigma()     ? 0.0 :
                             include_Sigma1 ? v * Sigma_w :
