@@ -555,6 +555,62 @@ std::vector<std::pair<int, int>> n_kappa_list(const std::string &basis_string) {
 }
 
 //==============================================================================
+std::vector<int> kappa_list(const std::string &basis_string) {
+
+  std::vector<int> state_list;
+  std::vector<int> kappa_list;
+  std::string n_str_previous = "999";
+  std::string n_str = "";
+  for (char c : basis_string) {
+    if (std::isdigit(c)) {
+      // if we read a number then ignore it and move on
+      // we only care abourt kappas
+      continue;
+    } else {
+      // if we get a letter then convert the letter to l value
+      auto l_str = std::string(1, c);
+      auto l = AtomData::symbol_to_l(l_str);
+
+      // we place kappa=l (corresponding to lower j) into kappa_list
+      // if l=0 then we will only have kappa=l-1=-1 in list
+      if (l != 0) {
+        kappa_list.emplace_back(l);
+      }
+      state_list.emplace_back(-l - 1);
+    }
+  }
+  return kappa_list;
+}
+
+//==============================================================================
+std::vector<int> kappa_index_list(const std::string &basis_string) {
+
+  std::vector<int> state_list;
+  std::vector<int> kappa_list;
+  std::string n_str_previous = "999";
+  std::string n_str = "";
+  for (char c : basis_string) {
+    if (std::isdigit(c)) {
+      // if we read a number then ignore it and move on
+      // we only care abourt kappas
+      continue;
+    } else {
+      // if we get a letter then convert the letter to l value
+      auto l_str = std::string(1, c);
+      auto l = AtomData::symbol_to_l(l_str);
+
+      // we place kappa=l (corresponding to lower j) into kappa_list
+      // if l=0 then we will only have kappa=l-1=-1 in list
+      if (l != 0) {
+        kappa_list.emplace_back(Angular::kappa_to_kindex(l));
+      }
+      state_list.emplace_back(Angular::kappa_to_kindex(-l - 1));
+    }
+  }
+  return kappa_list;
+}
+
+//==============================================================================
 inline std::string helper_s(const Element &el) {
   auto sym = el.symbol;
   auto sym_buff = (sym.length() == 1) ? std::string("  ") : std::string(" ");

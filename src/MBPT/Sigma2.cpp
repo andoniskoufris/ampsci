@@ -103,21 +103,21 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
 
 //==============================================================================
 // this just calculates the screening Sk integrals
-double Sk_vwxy_screened(int k, const DiracSpinor &v, const DiracSpinor &w,
-                        const DiracSpinor &x, const DiracSpinor &y,
-                        const Coulomb::QkTable &qk,
-                        const std::vector<DiracSpinor> &core,
-                        const std::vector<DiracSpinor> &excited,
-                        const Angular::SixJTable &SixJ,
-                        Denominators denominators,
-                        const std::vector<MBPT::ComplexRMatrix> &dQ_screen) {
+double Sk_vwxy_screened(
+  int k, const DiracSpinor &v, const DiracSpinor &w, const DiracSpinor &x,
+  const DiracSpinor &y, const Coulomb::QkTable &qk,
+  const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
+  const Angular::SixJTable &SixJ, Denominators denominators,
+  const std::vector<MBPT::ComplexRMatrix> &dQ_screen,
+  const std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> &dQ_screen_Fermi) {
   using namespace Sigma2;
 
   if (!Sk_vwxy_SR(k, v, w, x, y)) {
     return 0.0;
   }
 
-  return S_Sigma2_screen(k, v, w, x, y, denominators, dQ_screen) +
+  return S_Sigma2_screen(k, v, w, x, y, excited, denominators, dQ_screen,
+                         dQ_screen_Fermi) +
          S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators,
                      true) +
          S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators) +
@@ -376,35 +376,30 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
 }
 
 //==============================================================================
-double
-Sigma2::S_Sigma2_screen(int k, const DiracSpinor &v, const DiracSpinor &w,
-                        const DiracSpinor &x, const DiracSpinor &y,
-                        Denominators denominators,
-                        const std::vector<MBPT::ComplexRMatrix> &Q_screen) {
+double Sigma2::S_Sigma2_screen(
+  int k, const DiracSpinor &v, const DiracSpinor &w, const DiracSpinor &x,
+  const DiracSpinor &y, const std::vector<DiracSpinor> &excited,
+  Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &Q_screen,
+  const std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> &dQ_screen_Fermi) {
 
   // overall selectrion rule tested outside
-
-  // const auto v0 = e_bar(v.kappa(), excited);
-  // const auto w0 = e_bar(w.kappa(), excited);
-  // const auto x0 = e_bar(x.kappa(), excited);
-  // const auto y0 = e_bar(y.kappa(), excited);
-  // const auto e0 = DiracSpinor::min_En(excited);
-
-  // Here, "Fermi0" cancellation doesn't happen
-  // So, Fermi and Fermi0 are the same
-
-  // const double w_xv = x.en() - v.en();
-  // const double w_wy = w.en() - y.en();
-
-  // const auto qpiq = denominators == Denominators::RS ?
-  //                     0.5 * (feyn.dQ_screen_k(k, w_xv, false) +
-  //                            feyn.dQ_screen_k(k, w_wy, false)) :
-  //                     feyn.dQ_screen_k(k, 0.0, false);
   const auto f = Angular::neg1pow_2(2 * k + v.twoj() - w.twoj());
   const auto Ck_vx = Angular::Ck_kk(k, v.kappa(), x.kappa());
   const auto Ck_wy = Angular::Ck_kk(k, w.kappa(), y.kappa());
 
-  return f * Ck_vx * Ck_wy * two_body_ME(Q_screen[k], v, w, x, y);
+  if (denominators == MBPT::Denominators::Fermi0) {
+    return f * Ck_vx * Ck_wy * two_body_ME(Q_screen[k], v, w, x, y);
+  } else {
+    const int kvi = Angular::kappa_to_kindex(v.kappa());
+    const int kwi = Angular::kappa_to_kindex(w.kappa());
+    const int kxi = Angular::kappa_to_kindex(x.kappa());
+    const int kyi = Angular::kappa_to_kindex(y.kappa());
+
+    return f * Ck_vx * Ck_wy *
+           two_body_ME(0.5 * (dQ_screen_Fermi[k](kvi, kxi) +
+                              dQ_screen_Fermi[k](kwi, kyi)),
+                       v, w, x, y);
+  }
 }
 
 //==============================================================================
@@ -458,6 +453,7 @@ Coulomb::LkTable calculate_Sk_screened(
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
   Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &Q_screen,
+  const std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> &dQ_screen_Fermi,
   bool no_new_integrals) {
 
   Coulomb::LkTable Sk;
@@ -471,7 +467,7 @@ Coulomb::LkTable calculate_Sk_screened(
                                const DiracSpinor &w, const DiracSpinor &x,
                                const DiracSpinor &y) {
     return MBPT::Sk_vwxy_screened(k, v, w, x, y, qk, core, excited, sjt,
-                                  denominators, Q_screen);
+                                  denominators, Q_screen, dQ_screen_Fermi);
   };
   const auto Sk_selection_rule = [&](int k, const DiracSpinor &v,
                                      const DiracSpinor &w, const DiracSpinor &x,

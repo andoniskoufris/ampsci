@@ -414,28 +414,85 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
       std::cout << "\nCalculate two-body MBPT integrals with all-orders "
                    "screening: Σ^k_abcd\n";
 
-      const int num_points = wf.grid().num_points();
-      const int num_points_subgrid = num_points / 4; // stride in denominator
-      const int stride = num_points / num_points_subgrid;
+      const std::size_t i0 = 0;
+      const std::size_t num_points = wf.grid().num_points();
+      const std::size_t num_points_subgrid =
+        num_points / 4; // stride in denominator
+      const std::size_t stride = num_points / num_points_subgrid;
 
-      // should make it so that the Feynman class constructs the screening
+      //! should make it so that the Feynman class constructs the screening
       // parts of the Coulomb interaction if we set it up to do CI and
       // writes it to a file
       MBPT::Feynman feyn = MBPT::Feynman(
-        wf.vHF(), 0, stride, num_points_subgrid, {}, 1, true, true, false);
+        wf.vHF(), i0, stride, num_points_subgrid, {}, 1, true, true, false);
 
       // construct the screening part of Qtilde at small negative frequency, w = -0.1
       // constructing it at exactly w = 0.0 is numerically unstable
       const std::vector<MBPT::ComplexRMatrix> dQ_screen =
         feyn.dQ_screen(max_k_Coulomb, -0.1, true, true);
 
+      // extract list of kappa from S^2 basis
+      const auto kappai_list = AtomData::kappa_index_list(cis2_basis_string);
+
+      std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> dQ_screen_Fermi(
+        max_k_Coulomb,
+        {kappai_list.size(), kappai_list.size(),
+         MBPT::ComplexRMatrix{i0, stride, num_points_subgrid, wf.grid_sptr()}});
+
+      // right now will do this if we have Fermi or RS denoms.
+      // technically RS denoms should do this for all pairs but this will be too long
+      if (denominators == MBPT::Denominators::Fermi ||
+          denominators == MBPT::Denominators::RS) {
+
+        // extract list of kappa from S^2 basis
+        // const auto kappai_list = AtomData::kappa_index_list(cis2_basis_string);
+
+        // form dQ_Fermi as a vector of matrices of polarisation operators
+        // vector component for each kappa while each matrix entry for each combination of kappa
+        // std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> dQ_screen_Fermi(
+        //   max_k_Coulomb, {kappai_list.size(), kappai_list.size()});
+
+        // if the denominators are =Fermi then we loop over each kappa in valence list
+        // and construct each pair of lowest kappa energies to construct polarisation operators
+#pragma omp parallel for collapse(3)
+        for (int kv_i = kappai_list[0]; kv_i < kappai_list.back(); kv_i++) {
+          auto kv = Angular::kindex_to_kappa(kv_i);
+          double ebar_v = MBPT::e_bar(kv, cis2_basis);
+          for (int kw_i = 0; kw_i < kv_i; kw_i++) {
+            auto kw = Angular::kindex_to_kappa(kw_i);
+            double ebar_w = MBPT::e_bar(kw, cis2_basis);
+            double de = std::abs(ebar_v - ebar_w);
+
+            for (int k = 0; k <= max_k_Coulomb; k++) {
+              const auto sk = std::size_t(k);
+              // do not bother calculating the polarisation operator
+              // if the matrix element <vx|dQ|wy> will be zero
+              if (Angular::Ck_kk(sk, kv, kw) == 0.0) {
+                continue;
+              }
+              // if de ~= 0.0, can just use the w = 0.0 matrix element we have evaluated outside
+              if (std::abs(de) <= 0.1) {
+                dQ_screen_Fermi[sk](kv_i, kw_i) = dQ_screen[k];
+                continue;
+              }
+
+              dQ_screen_Fermi[k](kv_i, kw_i) =
+                feyn.dQ_screen_k(sk, de, true, true);
+              // fill symmetric lower half of matrix
+              dQ_screen_Fermi[sk](kw_i, kv_i) =
+                dQ_screen_Fermi[sk](kv_i, kw_i); // needed? seems to be wasteful
+            }
+          }
+        }
+      }
+
       // with RS denominators, this will be incredibly slow
       Sk = MBPT::calculate_Sk_screened(
         Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,
-        exclude_wrong_parity_box, denominators, dQ_screen, no_new_integralsQ);
+        exclude_wrong_parity_box, denominators, dQ_screen, dQ_screen_Fermi,
+        no_new_integralsQ);
     }
   }
-
   //----------------------------------------------------------------------------
   const auto J_list = input.get("J", std::vector<int>{});
   const auto J_even_list = input.get("J+", J_list);

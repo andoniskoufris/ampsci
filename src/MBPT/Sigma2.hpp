@@ -236,6 +236,7 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
   Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &dQ_screen,
+  const std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> &dQ_screen_Fermi,
   bool no_new_integrals = false);
 
 //==============================================================================
@@ -349,10 +350,11 @@ double S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
 
   @return Diagram d contribution to \f$ S^k_{vwxy} \f$.
 */
-double S_Sigma2_screen(int k, const DiracSpinor &v, const DiracSpinor &w,
-                       const DiracSpinor &x, const DiracSpinor &y,
-                       Denominators denominators,
-                       const std::vector<MBPT::ComplexRMatrix> &Q_screen);
+double S_Sigma2_screen(
+  int k, const DiracSpinor &v, const DiracSpinor &w, const DiracSpinor &x,
+  const DiracSpinor &y, const std::vector<DiracSpinor> &excited,
+  Denominators denominators, const std::vector<MBPT::ComplexRMatrix> &Q_screen,
+  const std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> &dQ_screen_Fermi);
 
 } // namespace Sigma2
 

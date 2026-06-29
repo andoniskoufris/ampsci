@@ -126,4 +126,12 @@ std::vector<DiracConfig> listOfStates_singlen(const std::string &in_list);
 //! e.g., 6sp5d ->{{6,-1}, {6,1}, {6,-2}, {5,2}, {5,-2}}
 std::vector<std::pair<int, int>> n_kappa_list(const std::string &basis_string);
 
+//! Given a "basis string", returns list of only kappa in the list.
+//! e.g., 12spdf -> {-1, 1, -2, 2, -3, 3, -4}
+std::vector<int> kappa_list(const std::string &basis_string);
+
+//! Given a "basis string", returns list of kappa_index in the list.
+//! e.g., 12spdf -> {0, 1, 2, 3, 4, 5, 6}
+std::vector<int> kappa_index_list(const std::string &basis_string);
+
 } // namespace AtomData
