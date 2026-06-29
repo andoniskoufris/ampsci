@@ -387,8 +387,37 @@ double Sigma2::S_Sigma2_screen(
   const auto Ck_vx = Angular::Ck_kk(k, v.kappa(), x.kappa());
   const auto Ck_wy = Angular::Ck_kk(k, w.kappa(), y.kappa());
 
-  if (denominators == MBPT::Denominators::Fermi0) {
+  const auto ebar_v = e_bar(v.kappa(), excited);
+  const auto ebar_w = e_bar(w.kappa(), excited);
+  const auto ebar_x = e_bar(x.kappa(), excited);
+  const auto ebar_y = e_bar(y.kappa(), excited);
+
+  const auto de_vx = std::abs(ebar_v - ebar_x);
+  const auto de_wy = std::abs(ebar_w - ebar_y);
+
+  if (denominators == MBPT::Denominators::Fermi0 ||
+      (de_vx <= 0.1 && de_wy <= 0.1)) {
     return f * Ck_vx * Ck_wy * two_body_ME(Q_screen[k], v, w, x, y);
+  } else if (de_vx > 0.1 && de_wy <= 0.1) {
+    const int kvi = Angular::kappa_to_kindex(v.kappa());
+    // const int kwi = Angular::kappa_to_kindex(w.kappa());
+    const int kxi = Angular::kappa_to_kindex(x.kappa());
+    // const int kyi = Angular::kappa_to_kindex(y.kappa());
+
+    return f * Ck_vx * Ck_wy *
+           two_body_ME(
+             0.5 * (dQ_screen_Fermi[k](std::max(kvi, kxi), std::min(kvi, kxi)) +
+                    Q_screen[k]),
+             v, w, x, y);
+  } else if (de_vx <= 0.1 && de_wy > 0.1) {
+    const int kwi = Angular::kappa_to_kindex(w.kappa());
+    const int kyi = Angular::kappa_to_kindex(y.kappa());
+
+    return f * Ck_vx * Ck_wy *
+           two_body_ME(
+             0.5 * (dQ_screen_Fermi[k](std::max(kwi, kyi), std::min(kwi, kyi)) +
+                    Q_screen[k]),
+             v, w, x, y);
   } else {
     const int kvi = Angular::kappa_to_kindex(v.kappa());
     const int kwi = Angular::kappa_to_kindex(w.kappa());
@@ -396,9 +425,10 @@ double Sigma2::S_Sigma2_screen(
     const int kyi = Angular::kappa_to_kindex(y.kappa());
 
     return f * Ck_vx * Ck_wy *
-           two_body_ME(0.5 * (dQ_screen_Fermi[k](kvi, kxi) +
-                              dQ_screen_Fermi[k](kwi, kyi)),
-                       v, w, x, y);
+           two_body_ME(
+             0.5 * (dQ_screen_Fermi[k](std::max(kvi, kxi), std::min(kvi, kxi)) +
+                    dQ_screen_Fermi[k](std::max(kwi, kyi), std::min(kwi, kyi))),
+             v, w, x, y);
   }
 }
 

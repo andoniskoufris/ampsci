@@ -454,6 +454,8 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
 
         // if the denominators are =Fermi then we loop over each kappa in valence list
         // and construct each pair of lowest kappa energies to construct polarisation operators
+
+        // we only fill in lower half of the matrix to save on memory allocation
 #pragma omp parallel for collapse(3)
         for (int kv_i = kappai_list[0]; kv_i < kappai_list.back(); kv_i++) {
           auto kv = Angular::kindex_to_kappa(kv_i);
@@ -479,14 +481,13 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
               dQ_screen_Fermi[k](kv_i, kw_i) =
                 feyn.dQ_screen_k(sk, de, true, true);
               // fill symmetric lower half of matrix
-              dQ_screen_Fermi[sk](kw_i, kv_i) =
-                dQ_screen_Fermi[sk](kv_i, kw_i); // needed? seems to be wasteful
+              // dQ_screen_Fermi[sk](kw_i, kv_i) =
+              //   dQ_screen_Fermi[sk](kv_i, kw_i); // instead will just only use bottom half
             }
           }
         }
       }
 
-      // with RS denominators, this will be incredibly slow
       Sk = MBPT::calculate_Sk_screened(
         Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,
         exclude_wrong_parity_box, denominators, dQ_screen, dQ_screen_Fermi,
@@ -523,9 +524,9 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
           std::pair{2 * J_odd_list.at(i - J_even_list.size()), -1};
 
       auto &output_stream = parallel_ci ? os.at(i) : std::cout;
-      levels.at(i) = run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm,
-                            h1, qk, Bk, Sk, include_Sigma2, include_Screening,
-                            print_details, output_stream);
+      levels.at(i) =
+        run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
+               Sk, include_Sigma2, print_details, output_stream);
     }
 
     // If doing in parallel, output detailed output at end
@@ -604,7 +605,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               int num_solutions, std::optional<double> all_below_cm,
               const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
-              bool include_Sigma2, bool include_Screening, bool print_details,
+              bool include_Sigma2, bool print_details,
               std::ostream &outstream) {
 
   auto printJ = [](int twoj) {
