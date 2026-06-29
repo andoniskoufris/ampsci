@@ -123,7 +123,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   //! initialise momentum-space grid
   const auto pGrid = std::make_shared<const Grid>(
-    GridParameters{2000, 1e-7, 600.0, 4.0, "logarithmic", 0.0});
+    GridParameters{1000, 1e-2, 1e4, 4.0, "logarithmic", 0.0});
   const auto p = pGrid->r();
 
   for (const auto &v : wf.valence()) {
