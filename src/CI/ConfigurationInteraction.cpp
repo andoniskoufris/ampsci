@@ -456,7 +456,6 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
         // and construct each pair of lowest kappa energies to construct polarisation operators
 
         // we only fill in lower half of the matrix to save on memory allocation
-#pragma omp parallel for collapse(3)
         for (int kv_i = kappai_list[0]; kv_i < kappai_list.back(); kv_i++) {
           auto kv = Angular::kindex_to_kappa(kv_i);
           double ebar_v = MBPT::e_bar(kv, cis2_basis);
@@ -464,7 +463,7 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
             auto kw = Angular::kindex_to_kappa(kw_i);
             double ebar_w = MBPT::e_bar(kw, cis2_basis);
             double de = std::abs(ebar_v - ebar_w);
-
+#pragma omp parallel for
             for (int k = 0; k <= max_k_Coulomb; k++) {
               const auto sk = std::size_t(k);
               // do not bother calculating the polarisation operator

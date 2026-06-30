@@ -557,7 +557,6 @@ std::vector<std::pair<int, int>> n_kappa_list(const std::string &basis_string) {
 //==============================================================================
 std::vector<int> kappa_list(const std::string &basis_string) {
 
-  std::vector<int> state_list;
   std::vector<int> kappa_list;
   std::string n_str_previous = "999";
   std::string n_str = "";
@@ -576,7 +575,7 @@ std::vector<int> kappa_list(const std::string &basis_string) {
       if (l != 0) {
         kappa_list.emplace_back(l);
       }
-      state_list.emplace_back(-l - 1);
+      kappa_list.emplace_back(-l - 1);
     }
   }
   return kappa_list;
@@ -585,7 +584,6 @@ std::vector<int> kappa_list(const std::string &basis_string) {
 //==============================================================================
 std::vector<int> kappa_index_list(const std::string &basis_string) {
 
-  std::vector<int> state_list;
   std::vector<int> kappa_list;
   std::string n_str_previous = "999";
   std::string n_str = "";
@@ -604,7 +602,7 @@ std::vector<int> kappa_index_list(const std::string &basis_string) {
       if (l != 0) {
         kappa_list.emplace_back(Angular::kappa_to_kindex(l));
       }
-      state_list.emplace_back(Angular::kappa_to_kindex(-l - 1));
+      kappa_list.emplace_back(Angular::kappa_to_kindex(-l - 1));
     }
   }
   return kappa_list;
