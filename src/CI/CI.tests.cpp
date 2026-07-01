@@ -73,3 +73,48 @@ TEST_CASE("CI: Configuration Interaction, unit tests", "[CI][unit]") {
   REQUIRE(CI::Term_Symbol(1, 2, 1, -1) == "2^D°_1/2");
   REQUIRE(CI::Term_Symbol(6, 0, 0, 1) == "1^S_3");
 }
+
+// test for the efficiency of function that fills the Pi matrix
+TEST_CASE("CI: Constructing Pi matrix test", "[CI][unit][k78]") {
+  Wavefunction wf({400, 1.0e-4, 45.0, 0.33 * 20.0, "loglinear"},
+                  {"Ba", -1, "pointlike"}, 1.0);
+  wf.solve_core("HartreeFock", std::nullopt, "[Xe]", 1.0e-5);
+  wf.formBasis(
+    SplineBasis::Parameters("30spdfghi", 45, 7, 1.0e-2, 1.0e-4, 50.0));
+
+  const std::size_t i0 = 0;
+  const std::size_t num_points = wf.grid().num_points();
+  const std::size_t num_points_subgrid =
+    num_points / 4; // stride in denominator
+  const std::size_t stride = num_points / num_points_subgrid;
+
+  MBPT::Feynman feyn = MBPT::Feynman(wf.vHF(), i0, stride, num_points_subgrid,
+                                     {}, 1, true, true, false);
+
+  const std::string cis2_basis_string = "12spdf";
+  const std::vector<DiracSpinor> cis2_basis =
+    CI::basis_subset(wf.basis(), cis2_basis_string, wf.coreConfiguration());
+  int max_k_Coulomb = 7;
+
+  // extract list of kappa from S^2 basis
+  const auto kappai_list = AtomData::kappa_index_list(cis2_basis_string);
+
+  std::chrono::steady_clock::time_point begin =
+    std::chrono::steady_clock::now();
+
+  std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> PiMatrix(
+    max_k_Coulomb,
+    {kappai_list.size(), kappai_list.size(),
+     MBPT::ComplexRMatrix{i0, stride, num_points_subgrid, wf.grid_sptr()}});
+
+  MBPT::FillPiMatrix(max_k_Coulomb, cis2_basis, cis2_basis_string, kappai_list,
+                     feyn, PiMatrix);
+
+  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+  std::cout
+    << std::endl
+    << std::endl
+    << "Time taken to form and fill Pi matrix: "
+    << std::chrono::duration_cast<std::chrono::minutes>(end - begin).count();
+}

@@ -526,4 +526,46 @@ Coulomb::LkTable calculate_Sk_screened(
   return Sk;
 }
 
+// we only fill in lower half of the matrix to save on memory allocation
+void FillPiMatrix(const int &max_k_Coulomb,
+                  const std::vector<DiracSpinor> &cis2_basis,
+                  const std::string &cis2_basis_str,
+                  const std::vector<int> &kappai_list, const Feynman &feyn,
+                  std::vector<LinAlg::Matrix<ComplexRMatrix>> &PiMatrix) {
+
+  qip::ProgressBar bar(kappai_list.size(), true);
+
+#pragma omp parallel for collapse(2)
+  for (int kv_i = kappai_list[0]; kv_i < kappai_list.back(); kv_i++) {
+    for (int kw_i = 0; kw_i < kv_i; kw_i++) {
+      auto kw = Angular::kindex_to_kappa(kw_i);
+      auto kv = Angular::kindex_to_kappa(kv_i);
+      double ebar_v = MBPT::e_bar(kv, cis2_basis);
+      double ebar_w = MBPT::e_bar(kw, cis2_basis);
+      double de = std::abs(ebar_v - ebar_w);
+      for (int k = 0; k <= max_k_Coulomb; k++) {
+        std::size_t sk = k;
+
+        // do not bother calculating the polarisation operator
+        // if the matrix element <vx|dQ|wy> will be zero
+        if (Angular::Ck_kk(k, kv, kw) == 0.0) {
+          continue;
+        }
+
+        // if de ~= 0.0, can just use the w = 0.0 matrix element we have evaluated outside
+        if (std::abs(de) <= 0.1) {
+          // dQ_screen_Fermi[sk](kv_i, kw_i) = dQ_screen[k];
+          continue;
+        }
+
+        PiMatrix[sk](kv_i, kw_i) = feyn.dQ_screen_k(k, de, true, true);
+        // fill symmetric lower half of matrix
+        // dQ_screen_Fermi[sk](kw_i, kv_i) =
+        //   dQ_screen_Fermi[sk](kv_i, kw_i); // instead will just only use bottom half
+      }
+    }
+    bar.update();
+  }
+}
+
 } // namespace MBPT

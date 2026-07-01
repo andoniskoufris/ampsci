@@ -17,6 +17,7 @@
 #include "fmt/format.hpp"
 #include "fmt/ostream.hpp"
 #include "qip/Vector.hpp"
+#include "qip/Widgets.hpp"
 #include <array>
 #include <fstream>
 #include <iostream>
@@ -434,7 +435,7 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
       // extract list of kappa from S^2 basis
       const auto kappai_list = AtomData::kappa_index_list(cis2_basis_string);
 
-      std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> dQ_screen_Fermi(
+      std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> PiMatrix(
         max_k_Coulomb,
         {kappai_list.size(), kappai_list.size(),
          MBPT::ComplexRMatrix{i0, stride, num_points_subgrid, wf.grid_sptr()}});
@@ -444,53 +445,50 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
       if (denominators == MBPT::Denominators::Fermi ||
           denominators == MBPT::Denominators::RS) {
 
-        // extract list of kappa from S^2 basis
-        // const auto kappai_list = AtomData::kappa_index_list(cis2_basis_string);
+        IO::ChronoTimer timer("Filling Pi matrix:");
 
-        // form dQ_Fermi as a vector of matrices of polarisation operators
-        // vector component for each kappa while each matrix entry for each combination of kappa
-        // std::vector<LinAlg::Matrix<MBPT::ComplexRMatrix>> dQ_screen_Fermi(
-        //   max_k_Coulomb, {kappai_list.size(), kappai_list.size()});
+        MBPT::FillPiMatrix(max_k_Coulomb, cis2_basis, cis2_basis_string,
+                           kappai_list, feyn, PiMatrix);
 
-        // if the denominators are =Fermi then we loop over each kappa in valence list
-        // and construct each pair of lowest kappa energies to construct polarisation operators
+        //         // we only fill in lower half of the matrix to save on memory allocation
+        //         qip::ProgressBar bar(kappai_list.size(), true);
+        //         for (int kv_i = kappai_list[0]; kv_i < kappai_list.back(); kv_i++) {
+        //           auto kv = Angular::kindex_to_kappa(kv_i);
+        //           double ebar_v = MBPT::e_bar(kv, cis2_basis);
+        //           for (int kw_i = 0; kw_i < kv_i; kw_i++) {
+        //             auto kw = Angular::kindex_to_kappa(kw_i);
+        //             double ebar_w = MBPT::e_bar(kw, cis2_basis);
+        //             double de = std::abs(ebar_v - ebar_w);
+        // #pragma omp parallel for
+        //             for (int k = 0; k <= max_k_Coulomb; k++) {
+        //               const auto sk = std::size_t(k);
+        //               // do not bother calculating the polarisation operator
+        //               // if the matrix element <vx|dQ|wy> will be zero
+        //               if (Angular::Ck_kk(sk, kv, kw) == 0.0) {
+        //                 continue;
+        //               }
 
-        // we only fill in lower half of the matrix to save on memory allocation
-        for (int kv_i = kappai_list[0]; kv_i < kappai_list.back(); kv_i++) {
-          auto kv = Angular::kindex_to_kappa(kv_i);
-          double ebar_v = MBPT::e_bar(kv, cis2_basis);
-          for (int kw_i = 0; kw_i < kv_i; kw_i++) {
-            auto kw = Angular::kindex_to_kappa(kw_i);
-            double ebar_w = MBPT::e_bar(kw, cis2_basis);
-            double de = std::abs(ebar_v - ebar_w);
-#pragma omp parallel for
-            for (int k = 0; k <= max_k_Coulomb; k++) {
-              const auto sk = std::size_t(k);
-              // do not bother calculating the polarisation operator
-              // if the matrix element <vx|dQ|wy> will be zero
-              if (Angular::Ck_kk(sk, kv, kw) == 0.0) {
-                continue;
-              }
-              // if de ~= 0.0, can just use the w = 0.0 matrix element we have evaluated outside
-              if (std::abs(de) <= 0.1) {
-                dQ_screen_Fermi[sk](kv_i, kw_i) = dQ_screen[k];
-                continue;
-              }
+        //               // if de ~= 0.0, can just use the w = 0.0 matrix element we have evaluated outside
+        //               if (std::abs(de) <= 0.1) {
+        //                 // dQ_screen_Fermi[sk](kv_i, kw_i) = dQ_screen[k];
+        //                 continue;
+        //               }
 
-              dQ_screen_Fermi[k](kv_i, kw_i) =
-                feyn.dQ_screen_k(sk, de, true, true);
-              // fill symmetric lower half of matrix
-              // dQ_screen_Fermi[sk](kw_i, kv_i) =
-              //   dQ_screen_Fermi[sk](kv_i, kw_i); // instead will just only use bottom half
-            }
-          }
-        }
+        //               dQ_screen_Fermi[k](kv_i, kw_i) =
+        //                 feyn.dQ_screen_k(sk, de, true, true);
+        //               // fill symmetric lower half of matrix
+        //               // dQ_screen_Fermi[sk](kw_i, kv_i) =
+        //               //   dQ_screen_Fermi[sk](kv_i, kw_i); // instead will just only use bottom half
+        //             }
+        //           }
+        //           bar.update();
+        //         }
       }
 
-      Sk = MBPT::calculate_Sk_screened(
-        Sk_filename, cis2_basis, core_s2, excited_s2, qk, max_k_Coulomb,
-        exclude_wrong_parity_box, denominators, dQ_screen, dQ_screen_Fermi,
-        no_new_integralsQ);
+      Sk = MBPT::calculate_Sk_screened(Sk_filename, cis2_basis, core_s2,
+                                       excited_s2, qk, max_k_Coulomb,
+                                       exclude_wrong_parity_box, denominators,
+                                       dQ_screen, PiMatrix, no_new_integralsQ);
     }
   }
   //----------------------------------------------------------------------------

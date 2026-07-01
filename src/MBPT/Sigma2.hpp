@@ -358,6 +358,12 @@ double S_Sigma2_screen(
 
 } // namespace Sigma2
 
+void FillPiMatrix(const int &max_k_Coulomb,
+                  const std::vector<DiracSpinor> &cis2_basis,
+                  const std::string &cis2_basis_str,
+                  const std::vector<int> &kappai_list, const Feynman &feyn,
+                  std::vector<LinAlg::Matrix<ComplexRMatrix>> &PiMatrix);
+
 } // namespace MBPT
 
 //==============================================================================
