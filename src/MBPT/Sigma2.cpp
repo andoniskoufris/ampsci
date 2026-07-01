@@ -563,8 +563,8 @@ void FillPiMatrix(const int &max_k_Coulomb,
         // dQ_screen_Fermi[sk](kw_i, kv_i) =
         //   dQ_screen_Fermi[sk](kv_i, kw_i); // instead will just only use bottom half
       }
+      bar.update();
     }
-    bar.update();
   }
 }
 
