@@ -305,6 +305,38 @@ GMatrix Sigma_ladder(int kappa_v, double en_v,
                      double r0 = 1.0e-4, double rmax = 30.0,
                      std::size_t stride = 4, bool include_G = false);
 
+//==============================================================================
+
+//! Ladder correlation potential matrix, Sigma_L, for a single (kappa, n)
+//! state, evaluated at energy en.
+struct SigmaLData {
+  int kappa;
+  int n;
+  double en;
+  GMatrix SL;
+};
+
+/*!
+  @brief Writes Sigma_L (ladder) matrices to binary file.
+  @details
+  File contains the full-grid parameters (for checking on read), followed by
+  each Sigma_L matrix with its own sub-grid parameters and include_G flag.
+  Returns false (and writes nothing) if fname is empty or 'false'.
+*/
+bool write_SigmaL(const std::string &fname, const std::vector<SigmaLData> &SLs,
+                  const Grid &grid);
+
+/*!
+  @brief Reads Sigma_L (ladder) matrices from binary file.
+  @details
+  Returns empty vector if file doesn't exist or on grid mismatch: @p grid must
+  match the full radial grid the matrices were calculated on. Each matrix
+  carries its own sub-grid parameters and include_G flag (they need not match
+  those of the base Sigma).
+*/
+std::vector<SigmaLData> read_SigmaL(const std::string &fname,
+                                    const std::shared_ptr<const Grid> &grid);
+
 // template implementations:
 #include "Ladder.ipp"
 
