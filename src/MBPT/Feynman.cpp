@@ -889,12 +889,12 @@ double avg_Matrix_ME(const ComplexRMatrix &G, const ComplexRMatrix &R,
     for (auto j = 0ul; j < G.size(); ++j) {
       const auto sj = G.index_to_fullgrid(j);
       inner_sum +=
-        0.5 * (G(j, i) + R(j, i)) * (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj));
+        (G(j, i) + R(j, i)) * (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj));
     }
     out += ((Fa.f(si) * Fc.f(si) + Fa.g(si) * Fc.g(si)) * inner_sum).real();
   }
 
-  return out;
+  return 0.5 * out;
 }
 
 //==============================================================================

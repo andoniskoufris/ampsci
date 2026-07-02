@@ -401,10 +401,8 @@ double Sigma2::S_Sigma2_screen(
   } else if (de_vx > 0.1 && de_wy <= 0.1) {
     const int kvi = Angular::kappa_to_kindex(v.kappa());
     const int kxi = Angular::kappa_to_kindex(x.kappa());
-    const std::pair<int, int> kivx_pair = {std::max(kvi, kxi),
-                                           std::min(kvi, kxi)};
-    const int kivx_max = kivx_pair.first;
-    const int kivx_min = kivx_pair.second;
+    const auto [kivx_min, kivx_max] =
+      std::pair{std::min(kvi, kxi), std::max(kvi, kxi)};
 
     return f * Ck_vx * Ck_wy *
            avg_Matrix_ME(dQ_screen_Fermi[k](kivx_max, kivx_min), Q_screen[k], v,
@@ -412,11 +410,8 @@ double Sigma2::S_Sigma2_screen(
   } else if (de_vx <= 0.1 && de_wy > 0.1) {
     const int kwi = Angular::kappa_to_kindex(w.kappa());
     const int kyi = Angular::kappa_to_kindex(y.kappa());
-
-    const std::pair<int, int> kiwy_pair = {std::max(kwi, kyi),
-                                           std::min(kwi, kyi)};
-    const int kiwy_max = kiwy_pair.first;
-    const int kiwy_min = kiwy_pair.second;
+    const auto [kiwy_min, kiwy_max] =
+      std::pair{std::min(kwi, kyi), std::max(kwi, kyi)};
 
     return f * Ck_vx * Ck_wy *
            avg_Matrix_ME(dQ_screen_Fermi[k](kiwy_max, kiwy_min), Q_screen[k], v,
@@ -426,14 +421,10 @@ double Sigma2::S_Sigma2_screen(
     const int kwi = Angular::kappa_to_kindex(w.kappa());
     const int kxi = Angular::kappa_to_kindex(x.kappa());
     const int kyi = Angular::kappa_to_kindex(y.kappa());
-    const std::pair<int, int> kivx_pair = {std::max(kvi, kxi),
-                                           std::min(kvi, kxi)};
-    const std::pair<int, int> kiwy_pair = {std::max(kwi, kyi),
-                                           std::min(kwi, kyi)};
-    const int kivx_max = kivx_pair.first;
-    const int kivx_min = kivx_pair.second;
-    const int kiwy_max = kiwy_pair.first;
-    const int kiwy_min = kiwy_pair.second;
+    const auto [kivx_min, kivx_max] =
+      std::pair{std::min(kvi, kxi), std::max(kvi, kxi)};
+    const auto [kiwy_min, kiwy_max] =
+      std::pair{std::min(kwi, kyi), std::max(kwi, kyi)};
 
     return f * Ck_vx * Ck_wy *
            avg_Matrix_ME(dQ_screen_Fermi[k](kivx_max, kivx_min),
