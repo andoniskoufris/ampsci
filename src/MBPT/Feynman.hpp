@@ -142,8 +142,8 @@ public:
 
   // Calculates only screened parts of the Coulomb interaction for a all k up to k_max
   std::vector<ComplexRMatrix> dQ_screen(const int &k_max, const double &w,
-                                       const bool &AO_screening,
-                                       const bool &hole_particle) const;
+                                        const bool &AO_screening,
+                                        const bool &hole_particle) const;
 
 private:
   // forms Qk matrices, as well as dri, drj
@@ -223,8 +223,15 @@ public:
 // Calculates the matrix element <ab|G|cd> for radial (not spinor) matrix G
 // Assumes that G already includes dri and drj
 // also assumes that the output is meant to be real; won't always be true!
-double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
-                   const DiracSpinor &Fb, const DiracSpinor &Fc,
-                   const DiracSpinor &Fd);
+double Matrix_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
+                 const DiracSpinor &Fb, const DiracSpinor &Fc,
+                 const DiracSpinor &Fd);
+
+// Calculates the _average_ matrix element 1/2 * <ab|(G + R)|cd> for radial (not spinor) matrices G and R
+// Assumes that G and R each already include dri and drj
+// also assumes that the output is meant to be real; won't always be true!
+double avg_Matrix_ME(const ComplexRMatrix &G, const ComplexRMatrix &R,
+                     const DiracSpinor &Fa, const DiracSpinor &Fb,
+                     const DiracSpinor &Fc, const DiracSpinor &Fd);
 
 } // namespace MBPT

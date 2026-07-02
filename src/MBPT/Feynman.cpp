@@ -857,9 +857,9 @@ Feynman::dQ_screen(const int &k_max, const double &w, const bool &AO_screening,
 }
 
 //==============================================================================
-double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
-                   const DiracSpinor &Fb, const DiracSpinor &Fc,
-                   const DiracSpinor &Fd) {
+double Matrix_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
+                 const DiracSpinor &Fb, const DiracSpinor &Fc,
+                 const DiracSpinor &Fd) {
   double out = 0.0;
 
   for (auto i = 0ul; i < G.size(); ++i) {
@@ -868,6 +868,28 @@ double two_body_ME(const ComplexRMatrix &G, const DiracSpinor &Fa,
     for (auto j = 0ul; j < G.size(); ++j) {
       const auto sj = G.index_to_fullgrid(j);
       inner_sum += G(j, i) * (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj));
+    }
+    out += ((Fa.f(si) * Fc.f(si) + Fa.g(si) * Fc.g(si)) * inner_sum).real();
+  }
+
+  return out;
+}
+
+//==============================================================================
+double avg_Matrix_ME(const ComplexRMatrix &G, const ComplexRMatrix &R,
+                     const DiracSpinor &Fa, const DiracSpinor &Fb,
+                     const DiracSpinor &Fc, const DiracSpinor &Fd) {
+  assert(G.size() == R.size());
+
+  double out = 0.0;
+
+  for (auto i = 0ul; i < G.size(); ++i) {
+    const auto si = G.index_to_fullgrid(i);
+    std::complex<double> inner_sum = 0.0;
+    for (auto j = 0ul; j < G.size(); ++j) {
+      const auto sj = G.index_to_fullgrid(j);
+      inner_sum +=
+        0.5 * (G(j, i) + R(j, i)) * (Fb.f(sj) * Fd.f(sj) + Fb.g(sj) * Fd.g(sj));
     }
     out += ((Fa.f(si) * Fc.f(si) + Fa.g(si) * Fc.g(si)) * inner_sum).real();
   }

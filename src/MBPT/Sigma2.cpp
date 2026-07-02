@@ -397,40 +397,47 @@ double Sigma2::S_Sigma2_screen(
 
   if (denominators == MBPT::Denominators::Fermi0 ||
       (de_vx <= 0.1 && de_wy <= 0.1)) {
-    return f * Ck_vx * Ck_wy * two_body_ME(Q_screen[k], v, w, x, y);
+    return f * Ck_vx * Ck_wy * Matrix_ME(Q_screen[k], v, w, x, y);
   } else if (de_vx > 0.1 && de_wy <= 0.1) {
     const int kvi = Angular::kappa_to_kindex(v.kappa());
-    // const int kwi = Angular::kappa_to_kindex(w.kappa());
     const int kxi = Angular::kappa_to_kindex(x.kappa());
-    // const int kyi = Angular::kappa_to_kindex(y.kappa());
+    const std::pair<int, int> kivx_pair = {std::max(kvi, kxi),
+                                           std::min(kvi, kxi)};
+    const int kivx_max = kivx_pair.first;
+    const int kivx_min = kivx_pair.second;
 
-    return f * Ck_vx * Ck_wy * 0.5 *
-           (two_body_ME(
-              dQ_screen_Fermi[k](std::max(kvi, kxi), std::min(kvi, kxi)), v, w,
-              x, y) +
-            two_body_ME(Q_screen[k], v, w, x, y));
+    return f * Ck_vx * Ck_wy *
+           avg_Matrix_ME(dQ_screen_Fermi[k](kivx_max, kivx_min), Q_screen[k], v,
+                         w, x, y);
   } else if (de_vx <= 0.1 && de_wy > 0.1) {
     const int kwi = Angular::kappa_to_kindex(w.kappa());
     const int kyi = Angular::kappa_to_kindex(y.kappa());
 
-    return f * Ck_vx * Ck_wy * 0.5 *
-           (two_body_ME(
-              dQ_screen_Fermi[k](std::max(kwi, kyi), std::min(kwi, kyi)), v, w,
-              x, y) +
-            two_body_ME(Q_screen[k], v, w, x, y));
+    const std::pair<int, int> kiwy_pair = {std::max(kwi, kyi),
+                                           std::min(kwi, kyi)};
+    const int kiwy_max = kiwy_pair.first;
+    const int kiwy_min = kiwy_pair.second;
+
+    return f * Ck_vx * Ck_wy *
+           avg_Matrix_ME(dQ_screen_Fermi[k](kiwy_max, kiwy_min), Q_screen[k], v,
+                         w, x, y);
   } else {
     const int kvi = Angular::kappa_to_kindex(v.kappa());
     const int kwi = Angular::kappa_to_kindex(w.kappa());
     const int kxi = Angular::kappa_to_kindex(x.kappa());
     const int kyi = Angular::kappa_to_kindex(y.kappa());
+    const std::pair<int, int> kivx_pair = {std::max(kvi, kxi),
+                                           std::min(kvi, kxi)};
+    const std::pair<int, int> kiwy_pair = {std::max(kwi, kyi),
+                                           std::min(kwi, kyi)};
+    const int kivx_max = kivx_pair.first;
+    const int kivx_min = kivx_pair.second;
+    const int kiwy_max = kiwy_pair.first;
+    const int kiwy_min = kiwy_pair.second;
 
-    return f * Ck_vx * Ck_wy * 0.5 *
-           (two_body_ME(
-              dQ_screen_Fermi[k](std::max(kvi, kxi), std::min(kvi, kxi)), v, w,
-              x, y) +
-            two_body_ME(
-              dQ_screen_Fermi[k](std::max(kwi, kyi), std::min(kwi, kyi)), v, w,
-              x, y));
+    return f * Ck_vx * Ck_wy *
+           avg_Matrix_ME(dQ_screen_Fermi[k](kivx_max, kivx_min),
+                         dQ_screen_Fermi[k](kiwy_max, kiwy_min), v, w, x, y);
   }
 }
 

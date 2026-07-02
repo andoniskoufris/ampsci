@@ -1000,7 +1000,7 @@ UnitTest::check_Rkabcd_operator(const std::vector<DiracSpinor> &orbs,
 
             const auto R_exact = Coulomb::Rk_abcd(Fa, Fc, *ybd);
             const auto R_operator =
-              MBPT::two_body_ME(feyn.get_qk(k).dri(), Fa, Fb, Fc, Fd);
+              MBPT::Matrix_ME(feyn.get_qk(k).dri(), Fa, Fb, Fc, Fd);
 
             const auto eps = std::fabs((R_exact - R_operator) / R_exact);
 #pragma omp critical(compare_epsR_operator)
@@ -1073,7 +1073,7 @@ std::pair<double, double> UnitTest::check_screened_Rkabcd_operator(
               k, Fa, Fb, Fc, Fd, core, excited, qk);
 
             const auto R_screen_operator =
-              MBPT::two_body_ME(qpiq[k], Fa, Fb, Fc, Fd);
+              MBPT::Matrix_ME(qpiq[k], Fa, Fb, Fc, Fd);
 
             // for if I want to test Q^k_{vwxy}
             // const auto R_screen_operator =
