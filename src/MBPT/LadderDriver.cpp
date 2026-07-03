@@ -116,6 +116,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   }
 
   std::cout << "\n";
+  IO::print_line();
+  std::cout << "Ladder Diagrams\n\n";
   std::cout << "basis        = " << DiracSpinor::state_config(excited) << "\n";
   std::cout << "min_n (core) = " << min_n_core << "\n";
   std::cout << std::boolalpha;

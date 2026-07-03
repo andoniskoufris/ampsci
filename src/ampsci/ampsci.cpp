@@ -24,6 +24,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
     std::cout << '\n';
     IO::print_line();
     input.print();
+    std::cout << '\n';
+    IO::print_line();
   }
 
   // Check Top-level input blocks

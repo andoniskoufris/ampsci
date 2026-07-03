@@ -54,8 +54,18 @@ CorrelationPotential::CorrelationPotential(
   if (!m_ladder_file.empty()) {
     auto SLs = read_SigmaL(m_ladder_file, m_HF->grid_sptr());
     for (auto &sl : SLs) {
-      fmt::print("Sigma_L: kappa = {}, en = {:.5f} (n = {})\n", sl.kappa, sl.en,
-                 sl.n);
+      fmt::print("Sigma_L: kappa = {:>2}, en = {:+.5f} (n = {})", sl.kappa,
+                 sl.en, sl.n);
+      // de = <v|Sigma_L|v> (basis version of state) - visual check for users
+      const auto pFv =
+        std::find_if(m_basis.cbegin(), m_basis.cend(), [&sl](const auto &F) {
+          return F.n() == sl.n && F.kappa() == sl.kappa;
+        });
+      if (pFv != m_basis.cend()) {
+        const auto de = *pFv * (sl.SL * *pFv);
+        fmt::print(", de = {:+.5e}", de);
+      }
+      std::cout << "\n";
       m_Sigma_L.push_back({sl.kappa, sl.en, std::move(sl.SL), sl.n, 1.0});
     }
     if (m_Sigma_L.empty()) {
@@ -140,8 +150,8 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
     // have sigma already!
     // print deets!
     auto de = Fv ? *Fv * (it->Sigma * *Fv) : 0.0;
-    fmt::print("Have Sigma: kappa={}, en={:.5f}, de={:.5e}\n", it->kappa,
-               it->en, de);
+    fmt::print("Have Sigma: kappa = {:>2}, en = {:+.5f}, de = {:+.5e}\n",
+               it->kappa, it->en, de);
     return;
   }
   if (Fv) {
@@ -565,7 +575,7 @@ bool CorrelationPotential::read_write(const std::string &fname,
 //==============================================================================
 void CorrelationPotential::print_info() const {
   for (const auto &Sig : m_Sigmas) {
-    fmt::print("kappa = {}, ev = {:.5f}", Sig.kappa, Sig.en);
+    fmt::print("kappa = {:>2}, ev = {:+.5f}", Sig.kappa, Sig.en);
     if (Sig.n > 0) {
       fmt::print(" (n = {})", Sig.n);
     }
