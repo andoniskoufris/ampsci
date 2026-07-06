@@ -670,6 +670,103 @@ GMatrix Sigma_ladder(int kappa_v, double en_v,
 }
 
 //==============================================================================
+GMatrix Sigma_ladder_Dzuba(const DiracSpinor &v,
+                           const std::vector<DiracSpinor> &core,
+                           const std::vector<DiracSpinor> &excited,
+                           const Coulomb::QkTable &qk,
+                           const Coulomb::LkTable &lk, double r0, double rmax,
+                           std::size_t stride, bool include_G) {
+
+  // Dzuba-style ladder correction to the correlation potential: no
+  // projection. Each term of the regular second-order Sigma (as in
+  // Goldstone::Sigma_both, W = Q + P on the bra side) is rescaled by the
+  // scalar ratio of ladder to Coulomb integrals:
+  //
+  // Diagrams (a)+(b)  [particle-particle]:
+  //   Sigma_L += sum_{amn,k} |Q^k_{.amn}> w <W^k_{.amn}| ,
+  //   w = (L^k_{mnva}/Q^k_{mnva}) / ([k][j_v] de) ,  de = e_v + e_a - e_m - e_n
+  // Diagrams (c)+(d)  [particle-hole]:
+  //   Sigma_L += sum_{nab,k} |Q^k_{.nab}> w <W^k_{.nab}| ,
+  //   w = (L^k_{vnab}/Q^k_{vnab}) / ([k][j_v] de) ,  de = e_v + e_n - e_a - e_b
+  //
+  // The diagonal element then reproduces the ladder energy exactly:
+  // <v|Sigma_L|v> = sum W^k L^k / ([k][j_v] de) = de_valence_w(v).
+  // All (Q,L) integrals come straight from the stored tables - the L entries
+  // with i = v are already at the valence energy - so nothing is computed
+  // on-the-fly (fast). Terms with Q^k = 0 cannot be rescaled: dropped.
+
+  const auto kappa_v = v.kappa();
+  const auto en_v = v.en();
+  const auto tjv = v.twoj();
+
+  const auto grid = v.grid_sptr();
+  const auto i0 = grid->getIndex(r0);
+  const auto size = (grid->getIndex(rmax) - i0) / stride + 1;
+  GMatrix Sd{i0, stride, size, include_G, grid};
+
+  if (core.empty() || excited.empty())
+    return Sd;
+
+  std::vector<GMatrix> Sd_ts(std::size_t(omp_get_max_threads()), Sd);
+
+#pragma omp parallel for schedule(dynamic)
+  for (auto in = 0ul; in < excited.size(); ++in) {
+    const auto &n = excited[in];
+    // Per-thread accumulator: must be bound INSIDE the parallel region so
+    // each thread writes to its own matrix (else all threads race on one).
+    auto &Sd_t = Sd_ts[std::size_t(omp_get_thread_num())];
+    for (const auto &a : core) {
+
+      // Diagrams (a)+(b): |Q^k_{.amn}><W^k_{.amn}| * L^k_{mnva}/Q^k_{mnva}
+      const auto [kmin_na, kmax_na] = Coulomb::k_minmax_Ck(n, a);
+      for (int k = kmin_na; k <= kmax_na; k += 2) {
+        const auto f_kkjj = (2 * k + 1) * (tjv + 1);
+        for (const auto &m : excited) {
+          if (!Angular::Ck_kk_SR(k, kappa_v, m.kappa()))
+            continue;
+          const auto Qkmnva = qk.Q(k, m, n, v, a);
+          if (Qkmnva == 0.0)
+            continue;
+          const auto Lkmnva = lk.Q(k, m, n, v, a);
+          if (Lkmnva == 0.0)
+            continue;
+          const auto Qkv = Coulomb::Qkv_bcd(k, kappa_v, a, m, n);
+          const auto Wkv = Coulomb::Wkv_bcd(k, kappa_v, a, m, n);
+          const auto dele = en_v + a.en() - m.en() - n.en();
+          Sd_t.add(Qkv, Wkv, (Lkmnva / Qkmnva) / (f_kkjj * dele));
+        }
+      }
+
+      // Diagrams (c)+(d): |Q^k_{.nab}><W^k_{.nab}| * L^k_{vnab}/Q^k_{vnab}
+      for (const auto &b : core) {
+        const auto [kmin_nb, kmax_nb] = Coulomb::k_minmax_Ck(n, b);
+        for (int k = kmin_nb; k <= kmax_nb; k += 2) {
+          if (!Angular::Ck_kk_SR(k, kappa_v, a.kappa()))
+            continue;
+          const auto f_kkjj = (2 * k + 1) * (tjv + 1);
+          const auto Qkvnab = qk.Q(k, v, n, a, b);
+          if (Qkvnab == 0.0)
+            continue;
+          const auto Lkvnab = lk.Q(k, v, n, a, b);
+          if (Lkvnab == 0.0)
+            continue;
+          const auto Qkv = Coulomb::Qkv_bcd(k, kappa_v, n, a, b);
+          const auto Wkv = Coulomb::Wkv_bcd(k, kappa_v, n, a, b);
+          const auto dele = en_v + n.en() - a.en() - b.en();
+          Sd_t.add(Qkv, Wkv, (Lkvnab / Qkvnab) / (f_kkjj * dele));
+        }
+      }
+    }
+  }
+
+  for (const auto &Sd_t : Sd_ts) {
+    Sd += Sd_t;
+  }
+
+  return Sd.drj_in_place();
+}
+
+//==============================================================================
 void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                     const std::vector<DiracSpinor> &excited,
                     const std::vector<DiracSpinor> &core,

@@ -319,6 +319,54 @@ GMatrix Sigma_ladder(int kappa_v, double en_v,
                      double r0 = 1.0e-4, double rmax = 30.0,
                      std::size_t stride = 4, bool include_G = false);
 
+/*!
+  @brief Dzuba-style ladder correction to the correlation potential (no
+  projection).
+  @details
+  Forms the ladder correlation potential without projecting onto a basis.
+  Each term of the regular second-order correlation potential (cf.
+  Goldstone::Sigma_both, with W = Q + P on the bra side) is rescaled by the
+  ratio of ladder to Coulomb integrals:
+  \f[
+    \Sigma_L = \sum_{amn,k} |Q^k_{\cdot amn}\rangle\,
+      \frac{L^k_{mnva}/Q^k_{mnva}}{[k][j_v]\,(\epsilon_v+\epsilon_a-\epsilon_m-\epsilon_n)}\,
+      \langle W^k_{\cdot amn}|
+      + \sum_{nab,k} |Q^k_{\cdot nab}\rangle\,
+      \frac{L^k_{vnab}/Q^k_{vnab}}{[k][j_v]\,(\epsilon_v+\epsilon_n-\epsilon_a-\epsilon_b)}\,
+      \langle W^k_{\cdot nab}| ,
+  \f]
+  (particle-particle (a+b) and particle-hole (c+d) diagrams).
+  By construction the diagonal matrix element reproduces the ladder energy
+  correction exactly: <v|Sigma_L|v> = de_valence_w(v). The off-diagonal
+  (radial) structure is approximate: each term keeps the shape of the
+  corresponding second-order term, rescaled by a scalar. Follows the approach
+  of V. A. Dzuba, Phys. Rev. A 78, 042502 (2008).
+
+  All integrals are taken directly from the stored tables: the L^k entries
+  with i = v are already at the correct (valence) energy, so nothing is
+  computed on-the-fly. Much faster than the projection method.
+
+  @param v        Valence state (basis version; must be in the qk/lk tables)
+  @param core     Core (hole) orbitals
+  @param excited  Excited orbitals
+  @param qk       Converged Coulomb \f$ Q^k \f$ table
+  @param lk       Converged ladder \f$ L^k \f$ table
+  @param r0,rmax,stride  Sub-grid parameters
+  @param include_G Include the lower (g) component of Sigma_L
+  @return Sigma_L as a coordinate-space GMatrix
+
+  @note Terms with \f$ Q^k_{mnva} = 0 \f$ (but \f$ L^k \ne 0 \f$) cannot be
+        rescaled and are dropped; inherent to the method (rare, since Q and L
+        share angular selection rules).
+*/
+GMatrix Sigma_ladder_Dzuba(const DiracSpinor &v,
+                           const std::vector<DiracSpinor> &core,
+                           const std::vector<DiracSpinor> &excited,
+                           const Coulomb::QkTable &qk,
+                           const Coulomb::LkTable &lk, double r0 = 1.0e-4,
+                           double rmax = 30.0, std::size_t stride = 4,
+                           bool include_G = false);
+
 //==============================================================================
 
 //! Ladder correlation potential matrix, Sigma_L, for a single (kappa, n)
