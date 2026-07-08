@@ -248,8 +248,7 @@ std::string configs_to_string(const std::vector<NonRelConfig> &configs) {
 
 //==============================================================================
 double diracen(double z, double n, int k, double alpha) {
-  using namespace DiracHydrogen;
-  return enk(PrincipalQN{n}, DiracQN{k}, Zeff{z}, AlphaFS{alpha});
+  return DiracHydrogen::enk(n, k, z, alpha);
 }
 
 //==============================================================================

@@ -901,9 +901,7 @@ TEST_CASE("DiracODE: tail extension", "[DiracODE][unit]") {
     REQUIRE(fmax > 0.0);
 
     // Energy still correct: extension must not corrupt the solution:
-    const auto e_exact = DiracHydrogen::enk(
-      DiracHydrogen::PrincipalQN(n), DiracHydrogen::DiracQN(k),
-      DiracHydrogen::Zeff(Z), DiracHydrogen::AlphaFS(alpha));
+    const auto e_exact = DiracHydrogen::enk(n, k, Z, alpha);
     REQUIRE(F.en() == Approx(e_exact).epsilon(1.0e-6));
     // ...and still normalised:
     REQUIRE(F.norm() == Approx(1.0).epsilon(1.0e-12));

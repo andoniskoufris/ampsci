@@ -7,7 +7,14 @@ else
   OMPDIR := omp
 endif
 
-BUILD_DIR := $(BUILD)/$(MODE)/$(CXXNAME)/$(OPT)/$(OMPDIR)
+## FLINT changes compiled code (-DAMPSCI_USE_FLINT), so needs its own subdir
+ifneq ($(findstring -lflint,$(LDLIBS)),)
+  FLINTDIR := /flint
+else
+  FLINTDIR :=
+endif
+
+BUILD_DIR := $(BUILD)/$(MODE)/$(CXXNAME)/$(OPT)/$(OMPDIR)$(FLINTDIR)
 
 ################################################################################
 ## Find source files and objects

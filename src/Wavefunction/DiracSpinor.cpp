@@ -447,19 +447,14 @@ DiracSpinor::orthonormaliseWrt(const DiracSpinor &psi_v,
 DiracSpinor DiracSpinor::exactHlike(int n, int kappa,
                                     std::shared_ptr<const Grid> rgrid,
                                     double zeff, double alpha, double mass) {
-  if (alpha <= 0.0)
+  if (alpha <= 0.0) {
     alpha = PhysConst::alpha;
+  }
   DiracSpinor Fa(n, kappa, rgrid);
-  using namespace DiracHydrogen;
-  Fa.m_en =
-    enk(PrincipalQN(n), DiracQN(kappa), Zeff(zeff), AlphaFS(alpha), mass);
+  Fa.m_en = DiracHydrogen::enk(n, kappa, zeff, alpha, mass);
   for (std::size_t i = 0; i < rgrid->num_points(); ++i) {
-    Fa.m_f[i] =
-      DiracHydrogen::f(RaB(rgrid->r(i)), PrincipalQN(n), DiracQN(kappa),
-                       Zeff(zeff), AlphaFS(alpha), mass);
-    Fa.m_g[i] =
-      DiracHydrogen::g(RaB(rgrid->r(i)), PrincipalQN(n), DiracQN(kappa),
-                       Zeff(zeff), AlphaFS(alpha), mass);
+    Fa.m_f[i] = DiracHydrogen::f(rgrid->r(i), n, kappa, zeff, alpha, mass);
+    Fa.m_g[i] = DiracHydrogen::g(rgrid->r(i), n, kappa, zeff, alpha, mass);
   }
   return Fa;
 }

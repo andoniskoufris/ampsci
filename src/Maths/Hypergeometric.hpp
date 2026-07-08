@@ -37,7 +37,7 @@ constexpr bool has_flint =
   @warning Uses IFDEF to allow compilation if FLINT is not available.
   However, functions must not be called if FLINT is not installed.
   Will abort, or return nan if called without FLINT.
-  Always use `if constexpr (Hypergeometric::has_flint){}` in code, 
+  Always use `if constexpr (Hypergeometric::has_flint) {}` in code, 
   to check if available; see @ref Hypergeometric::has_flint 
 */
 template <typename T>
