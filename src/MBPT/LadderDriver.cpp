@@ -46,9 +46,11 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
       "   - single : just the single HF |v> eigenstate\n"
       "   - ladder : states in the ladder basis (see basis option)\n"
       "   - full   : entire basis; requires extending Qk (slow)\n"
-      "   - Dzuba  : no projection; rescale each Sigma(2) term by L/Q "
+      "   - ratio  : no projection; rescale each Sigma(2) term by L/Q "
       "(fast)\n"
-      "  [ladder]"},
+      "   - direct : no projection; open the external line exactly (ladder "
+      "vertex)\n"
+      "  [ratio]"},
      {"each_valence",
       "If true, iterate L and calculate Sigma_L for each valence state "
       "separately. If false, only for the lowest valence state of each kappa "
@@ -63,7 +65,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"from_scratch", "If true, don't read existing Qk/Lk files (still "
                       "writes). [false]"},
      {"max_it", "Max # iterations. If zero, will simply read ladder diagrams "
-                "in. [15]"},
+                "in (any _new_ ladder diagrams will be calculated,). [15]"},
      {"damp",
       "Damping factor for iterations, [0,1). 0 means no damping. [0.0]"},
      {"eps_target", "Target for convergance [1.0e-5]"},
@@ -91,18 +93,11 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto max_k = input.get("max_k", 8);
   const auto include_L4 = input.get("include_L4", false);
 
-  // Projection basis for Sigma_L: single |v>, ladder basis, full basis,
-  // or Dzuba (no projection: rescale Sigma(2) terms by L/Q)
+  // Method for Sigma_L: projection (single |v>, ladder basis, full basis),
+  // Dzuba (no projection: rescale Sigma(2) terms by L/Q), or direct (no
+  // projection: open the external line exactly)
   using namespace std::string_literals;
-  const auto projection = input.get("projection", "ladder"s);
-  const auto proj_single = qip::ci_compare(projection, "single");
-  const auto proj_full = qip::ci_compare(projection, "full");
-  const auto proj_dzuba = qip::ci_compare(projection, "dzuba");
-  if (!proj_single && !proj_full && !proj_dzuba &&
-      !qip::ci_compare(projection, "ladder")) {
-    std::cout << "\nWARNING: unknown projection option: " << projection
-              << " - using 'ladder'\n";
-  }
+  const auto method = parseSigmaLMethod(input.get("projection", "ratio"s));
 
   const auto each_valence = input.get("each_valence", false);
 
@@ -156,12 +151,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "min_n (core) = " << min_n_core << "\n";
   std::cout << std::boolalpha;
   std::cout << "include_L4   = " << include_L4 << "\n";
-  std::cout << "projection   = "
-            << (proj_single ? "single" :
-                proj_full   ? "full" :
-                proj_dzuba  ? "Dzuba" :
-                              "ladder")
-            << "\n";
+  std::cout << "projection   = " << parseSigmaLMethod(method) << "\n";
   std::cout << "each_valence = " << each_valence << "\n";
   std::cout << "include_G    = " << include_G << "\n";
   std::cout << "max_k        = " << max_k << "\n";
@@ -339,7 +329,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // Only basis states with a valence kappa are used in the projection, so
   // extend over both + those (not the entire basis). Not required for
   // single-state or ladder-basis projection (those states already in 'both').
-  if (proj_full) {
+  if (method == SigmaLMethod::full) {
     std::cout
       << "\nExtending Qk table for projection states (for Sigma_ladder):\n"
       << std::flush;
@@ -361,30 +351,30 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // Build all Sigma_L first (parallelisable), then print
   std::vector<MBPT::GMatrix> SigL_v;
-  fmt::print("\nCalculating Sigma_L matrix (using {} {}):\n",
-             proj_single ? "single state" :
-             proj_full   ? "full basis" :
-             proj_dzuba  ? "Dzuba L/Q rescaling" :
-                           "ladder basis",
-             proj_dzuba ? "(no projection)" : "projection");
+  fmt::print("\nCalculating Sigma_L matrix (method: {}):\n",
+             parseSigmaLMethod(method));
   fmt::print("Sigma_L sub-grid: r0={:.1e}, rmax={:.1f}, stride={}\n", sig_r0,
              sig_rmax, sig_stride);
   {
     IO::ChronoTimer t("", true);
     for (const auto &v : valence) {
       std::cout << v << "\n";
-      if (proj_dzuba) {
-        SigL_v.push_back(MBPT::Sigma_ladder_Dzuba(
-          v, holes, excited, qk, lk, sig_r0, sig_rmax, sig_stride, include_G));
+      if (method == SigmaLMethod::direct) {
+        SigL_v.push_back(MBPT::Sigma_ladder_direct(
+          v, holes, excited, qk, yk, &lk, sjt, include_L4, sig_r0, sig_rmax,
+          sig_stride, include_G));
         continue;
       }
+      // Projection basis for Sigma_ladder; empty => ratio method
       const std::vector<DiracSpinor> proj_v{v};
-      const auto &proj = proj_single ? proj_v :
-                         proj_full   ? wf.basis() :
-                                       excited;
-      SigL_v.push_back(MBPT::Sigma_ladder(
-        v.kappa(), v.en(), holes, excited, proj, qk, &lk, sjt, include_L4,
-        sig_r0, sig_rmax, sig_stride, include_G));
+      const std::vector<DiracSpinor> empty{};
+      const auto &proj = method == SigmaLMethod::single ? proj_v :
+                         method == SigmaLMethod::full   ? wf.basis() :
+                         method == SigmaLMethod::ratio  ? empty :
+                                                          excited;
+      SigL_v.push_back(MBPT::Sigma_ladder(v, holes, excited, proj, qk, &lk, sjt,
+                                          include_L4, sig_r0, sig_rmax,
+                                          sig_stride, include_G));
     }
   }
 
@@ -413,7 +403,6 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   }
 
   // Write the Sigma_L matrices to disk
-  // (read in via Correlations{ladder_file=...;})
   std::vector<MBPT::SigmaLData> SLs;
   for (std::size_t i = 0; i < valence.size(); ++i) {
     const auto &v = valence[i];
