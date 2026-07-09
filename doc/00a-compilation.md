@@ -13,6 +13,7 @@
   * (it _should_ also work with older versions of GSL, but this is not regularly tested and therefore not guaranteed)
   * Updated to work with newer GSL version 2.8; still works with older versions too
 * [optional] GNU Make ([gnu.org/software/make/](https://www.gnu.org/software/make/)) - used to compile code
+* [optional] FLINT ([flintlib.org](https://flintlib.org/)) [version 3+] - used for exact (analytic) relativistic continuum wavefunctions (see below)
 * [optional] OpenMP ([openmp.org/](https://www.openmp.org/)) - used for parallelisation
 * [optional] git ([git-scm.com/](https://git-scm.com/)) for version tracking and to keep up-to-date with latest version
 * The shell script `install-dependencies.sh` will attempt to automatically install the required dependencies
@@ -189,6 +190,25 @@ OMPLIB ?= -fopenmp
 CXXFLAGS ?=
 LDFLAGS ?=
 ```
+
+### Optional: FLINT (exact continuum wavefunctions)
+
+[FLINT](https://flintlib.org/) (version 3+) provides confluent hypergeometric functions of complex argument. ampsci uses it for the exact (analytic) relativistic Coulomb continuum wavefunctions (`DiracContinuum`).
+
+* Fully optional: everything else compiles and runs without it.
+* Install: `sudo apt-get install libflint-dev` (ubuntu), or `brew install flint` (mac)
+* `configure.sh` detects FLINT automatically, and adds `-lflint` to `LDLIBS` in the Makefile
+* To enable manually, just add `-lflint` to `LDLIBS`:
+* Only used in unit tests and some modules, so everything (else) will work fine without FLINT.
+
+
+```make
+LDLIBS ?= -lgsl -lgslcblas -llapack -lblas -lflint
+```
+
+* The preprocessor flag `-DAMPSCI_USE_FLINT` is set automatically by the build system whenever `-lflint` appears in `LDLIBS` (see `src/buildOptions.mk`)
+
+> The `-lflint` argument is automatically set by `configure.sh` (if installed)
 
 ### Using OpenMP with clang on mac
 

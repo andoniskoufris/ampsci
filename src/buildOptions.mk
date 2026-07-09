@@ -138,6 +138,14 @@ ifneq ($(GSL_PATH),)
   LDFLAGS += -L$(GSL_PATH)/lib/
 endif
 
+## FLINT library (optional): provides complex confluent hypergeometric
+## functions, used for exact continuum Dirac Coulomb wavefunctions
+## (src/Physics/DiracContinuum). Enabled by adding -lflint to LDLIBS in the
+## Makefile (configure.sh will attempt to detect it):
+ifneq ($(findstring -lflint,$(LDLIBS)),)
+  EXTRA_CXXFLAGS += -DAMPSCI_USE_FLINT
+endif
+
 CXXFLAGS += $(CXXSTD) $(OPT) $(OMPLIB) $(WARN) $(INCLUDES) $(EXTRA_CXXFLAGS)
 LDFLAGS += $(OMPLIB)
 

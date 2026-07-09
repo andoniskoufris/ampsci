@@ -150,6 +150,23 @@ else
 fi
 
 ################################################################################
+# FLINT detection (optional)
+# Provides complex hypergeometric functions (exact continuum Coulomb states).
+# Compile+link test: checks header and library together, using the same
+# compiler and paths the build will use. If found, -lflint is added to LDLIBS
+# below; the build enables FLINT-dependent code whenever -lflint is present
+# in LDLIBS.
+################################################################################
+flint_libs=""
+if echo "#include <flint/acb_hypgeom.h>
+int main(){return 0;}" | "$cxx" -x c++ - -lflint -o /dev/null >/dev/null 2>&1; then
+  flint_libs="-lflint"
+  echo "FLINT           : found"
+else
+  echo "FLINT           : not found (optional)"
+fi
+
+################################################################################
 # LAPACK/BLAS linker flags
 # On Mac: use Apple's Accelerate framework (built-in, no install needed).
 # On Linux: try pkg-config first, then detect OpenBLAS (used by foss and other
@@ -158,7 +175,7 @@ fi
 # GSL flags come from gsl-config (already run above).
 ################################################################################
 if [[ "${machine}" == "Mac" ]]; then
-  ldlibs="${gsllibs} -framework Accelerate"
+  ldlibs="${gsllibs} -framework Accelerate ${flint_libs}"
   echo "LDLIBS          : ${ldlibs}"
   sed -i.bak "s@^LDLIBS ?=.*@LDLIBS ?= ${ldlibs}@" Makefile
 else
@@ -182,7 +199,7 @@ else
     fi
   fi
 
-  ldlibs="${gsllibs} ${blas_libs}"
+  ldlibs="${gsllibs} ${blas_libs} ${flint_libs}"
   echo "LDLIBS          : ${ldlibs}"
   sed -i.bak "s@^LDLIBS ?=.*@LDLIBS ?= ${ldlibs}@" Makefile
 fi
