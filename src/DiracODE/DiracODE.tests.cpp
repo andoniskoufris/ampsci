@@ -3,7 +3,9 @@
 #include "DiracODE/include.hpp"
 #include "DiracOperator/include.hpp"
 #include "Maths/Grid.hpp"
+#include "Maths/NumCalc_quadIntegrate.hpp"
 #include "Physics/AtomData.hpp"
+#include "Physics/DiracContinuum.hpp"
 #include "Physics/DiracHydrogen.hpp"
 #include "Physics/PhysConst_constants.hpp"
 #include "Potentials/NuclearPotentials.hpp"
@@ -629,6 +631,92 @@ TEST_CASE("DiracODE: continuum", "[DiracODE][cntm][unit][!mayfail]") {
     }
   }
   std::cout << worst << "\n";
+}
+
+//==============================================================================
+TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][unit]") {
+  if (!DiracContinuum::available) {
+    std::cout << "FLINT not available: No analytic continuum states\n";
+    SUCCEED("Compiled without FLINT: skipping numerical tests");
+    return;
+  }
+
+  // Set true to print detailed (expected vs found) table:
+  constexpr bool print_table = true;
+
+  // Bound-continuum radial integrals <en kappa| r^k |n kappa>:
+  // DiracODE::solveContinuum solution vs exact (analytic) Dirac Coulomb
+  // continuum function (DiracContinuum). The same exact bound state
+  // (DiracHydrogen) and quadrature are used on both sides, so this isolates
+  // the ODE continuum solution (including its energy normalisation).
+
+  fmt::print("\nDiracODE continuum vs exact Dirac Coulomb: "
+             "<en kappa|r^k|n kappa>\n");
+
+  const double r0 = 1.0e-6;
+  const double rmax = 50.0;
+  const std::size_t npts = 500000;
+  const double b = 10.0;
+  const auto grid =
+    std::make_shared<const Grid>(r0, rmax, npts, GridType::loglinear, b);
+
+  if (print_table) {
+    fmt::print("{:>8} {:>4} {:>2} {:>3} {:>5} {:>3} {:>16} {:>16} {:>9}\n",
+               "alpha", "Z", "n", "kap", "en", "k", "expected", "found", "eps");
+  }
+
+  for (const double alpha : {PhysConst::alpha}) {
+    for (const double z : {1.0, 10.0}) {
+      const auto v0 = Nuclear::sphericalNuclearPotential(z, 0.0, grid->r());
+      for (const int n : {1, 3, 10}) {
+        for (const int kappa : {-1, 1, -2}) {
+          const int l = kappa > 0 ? kappa : -kappa - 1;
+          if (l > n - 1) {
+            continue;
+          }
+          for (const double en : {0.1, 1.0, 10.0, 100.0}) {
+
+            // Numerical (ODE) continuum solution:
+            DiracSpinor Fe{0, kappa, grid};
+            DiracODE::solveContinuum(Fe, en, v0, alpha);
+
+            // integrands for k = -1 (_m) and k = +1 (_p):
+            std::vector<double> ode_m(grid->num_points()), ode_p(ode_m),
+              exact_m(ode_m), exact_p(ode_m);
+#pragma omp parallel for
+            for (std::size_t i = 0; i < grid->num_points(); ++i) {
+              const auto r = grid->r(i);
+              const auto fb = DiracHydrogen::f(r, n, kappa, z, alpha);
+              const auto gb = DiracHydrogen::g(r, n, kappa, z, alpha);
+              const auto [fc, gc] = DiracContinuum::fg(r, en, kappa, z, alpha);
+              const auto exact = (fb * fc + gb * gc) * grid->drdu(i);
+              const auto ode = (fb * Fe.f(i) + gb * Fe.g(i)) * grid->drdu(i);
+              exact_m[i] = exact / r;
+              exact_p[i] = exact * r;
+              ode_m[i] = ode / r;
+              ode_p[i] = ode * r;
+            }
+
+            for (const int k : {-1, 1}) {
+              const auto expected = NumCalc::integrate(
+                grid->du(), 0, 0, k == 1 ? exact_p : exact_m);
+              const auto found =
+                NumCalc::integrate(grid->du(), 0, 0, k == 1 ? ode_p : ode_m);
+
+              if (print_table) {
+                fmt::print("{:>8.1e} {:>4.0f} {:>2} {:>3} {:>5.1f} {:>3} "
+                           "{:>16.8e} {:>16.8e} {:>9.1e}\n",
+                           alpha, z, n, kappa, en, k, expected, found,
+                           (found - expected) / expected);
+              }
+
+              // REQUIRE(found == Approx(expected).epsilon(1.0e-5).margin(1.0e-7));
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 //==============================================================================
