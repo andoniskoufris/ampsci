@@ -13,6 +13,10 @@ namespace DiracODE {
   Normalisation is achieved by continuing the ODE integration to very large r and
   comparing the asymptotic amplitude to that of the analytic solution.
   Only the solution on the regular grid is kept; the extended part is discarded.
+  The solution is solved and stored only up to the radius where the grid
+  resolves the oscillations (at least ~10 points per wavelength); Fa.max_pt()
+  is set accordingly and the tail is zeroed. For high energies this may be
+  well inside the grid; for low energies it is the entire grid.
   @param Fa     Output spinor (result stored here).
   @param en     Continuum energy (must be > 0).
   @param v      Local potential v(r).
@@ -33,11 +37,15 @@ void solveContinuum(DiracSpinor &Fa, double en, const std::vector<double> &v,
 double analytic_f_amplitude(double en, double alpha);
 
 /*!
-  @brief Finds the numerical amplitude and phase of f(r) for a continuum Dirac solution at large r.
+  @brief Finds the numerical amplitude of f(r) for a continuum Dirac solution at large r.
   @details
-  Continues ODE integration beyond the regular grid until both the wavelength
-  and amplitude become constant. Assumes an H-like potential (-Zeff/r) and a
-  linearly-spaced extension grid with step dr.
+  Continues ODE integration beyond the regular grid, assuming an H-like
+  potential (-Zeff/r) and a linearly-spaced extension grid with step dr.
+  The amplitude estimate sqrt(f^2 + c_g^2 g^2) is averaged over full
+  oscillation cycles (delimited by zero-crossings of f, located to sub-step
+  accuracy), and the cycle means are extrapolated to r -> infinity by
+  fitting A_inf + c2/r^2 + c3/r^3 + c4/r^4. Converged when the extrapolated
+  estimates from the full and half integration ranges agree.
   @param en       Continuum energy.
   @param kappa    Orbital kappa quantum number.
   @param alpha    Fine-structure constant.
@@ -46,7 +54,8 @@ double analytic_f_amplitude(double en, double alpha);
   @param g_final  Value of g at the end of the regular grid.
   @param r_final  Radial position at the end of the regular grid.
   @param dr       Step size for the extended linear grid.
-  @return {amplitude, phase} of the asymptotic f(r) oscillation.
+  @return {amplitude, eps} - extrapolated asymptotic amplitude of f(r), and
+  relative difference between the last two estimates (convergence measure).
 */
 std::pair<double, double> numerical_f_amplitude(double en, int kappa,
                                                 double alpha, double Zeff,

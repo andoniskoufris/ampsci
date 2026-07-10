@@ -655,8 +655,8 @@ TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][unit]") {
 
   const double r0 = 1.0e-6;
   const double rmax = 50.0;
-  const std::size_t npts = 500000;
-  const double b = 10.0;
+  const std::size_t npts = 10000;
+  const double b = 1.0;
   const auto grid =
     std::make_shared<const Grid>(r0, rmax, npts, GridType::loglinear, b);
 
@@ -669,12 +669,12 @@ TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][unit]") {
     for (const double z : {1.0, 10.0}) {
       const auto v0 = Nuclear::sphericalNuclearPotential(z, 0.0, grid->r());
       for (const int n : {1, 3, 10}) {
-        for (const int kappa : {-1, 1, -2}) {
+        for (const int kappa : {-1, 1, -2, 2, -3, 3}) {
           const int l = kappa > 0 ? kappa : -kappa - 1;
           if (l > n - 1) {
             continue;
           }
-          for (const double en : {0.1, 1.0, 10.0, 100.0}) {
+          for (const double en : {0.1, 1.0, 10.0, 100.0, 1000.0, 1e4}) {
 
             // Numerical (ODE) continuum solution:
             DiracSpinor Fe{0, kappa, grid};
