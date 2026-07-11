@@ -46,6 +46,10 @@ double x(double r, double n, int kappa, double zeff, double alpha,
 
 //==============================================================================
 double enk(double n, int kappa, double zeff, double alpha, double mass) {
+  if (alpha <= 0.0) {
+    // Non-relativistic limit: E_n = -mass*Z^2 / (2 n^2) (independent of kappa)
+    return -mass * zeff * zeff / (2.0 * n * n);
+  }
   // Stable form for enk (avoids cancellation between O(c^2) terms):
   //   nbar = gamma + n - |kappa|
   //   s    = sqrt(nbar^2 + (alpha*Z)^2)
@@ -70,6 +74,12 @@ double gamma(int kappa, double zeff, double alpha) {
 double f(double r, double n, int kappa, double zeff, double alpha,
          double mass) {
   using namespace Hidden;
+  if (alpha <= 0.0) {
+    // Non-relativistic limit: large component f -> P_nl (small g -> 0)
+    // n may be non-integer (effective n); P_nl handles this via 1F1.
+    const auto l = kappa > 0 ? kappa : -kappa - 1;
+    return P_nl(r, n, l, zeff, mass);
+  }
   const auto xr = x(r, n, kappa, zeff, alpha, mass);
   const auto gam = gamma(kappa, zeff, alpha);
   const auto kmn = double(std::abs(kappa)) - n;
@@ -89,6 +99,10 @@ double f(double r, double n, int kappa, double zeff, double alpha,
 double g(double r, double n, int kappa, double zeff, double alpha,
          double mass) {
   using namespace Hidden;
+  if (alpha <= 0.0) {
+    // Non-relativistic limit: small component g -> 0
+    return 0.0;
+  }
   const auto xr = x(r, n, kappa, zeff, alpha, mass);
   const auto gam = gamma(kappa, zeff, alpha);
   const auto kmn = double(std::abs(kappa)) - n;
@@ -105,15 +119,25 @@ double g(double r, double n, int kappa, double zeff, double alpha,
 }
 
 //==============================================================================
-double P_nl(double r, int n, int l, double zeff, double mass) {
+double P_nl(double r, double n, int l, double zeff, double mass) {
   // Mass scaling: P_m(r) = Sqrt[m] * P_1(m*r)
   const auto mr = mass * r;
   const auto rho = 2.0 * zeff * mr / n;
   const auto norm =
     std::pow(2.0 * zeff / n, 1.5) *
     std::sqrt(std::tgamma(n - l) / (2.0 * n * std::tgamma(n + l + 1.0)));
+  // Confluent hypergeometric form: valid for non-integer (effective) n. For
+  // integer n it reduces to the associated Laguerre polynomial via
+  //   L_{n-l-1}^{2l+1}(rho)
+  //     = [Gamma(n+l+1)/(Gamma(n-l)*Gamma(2l+2))] * 1F1(l+1-n, 2l+2, rho).
+  // Original integer-n form (requires integer n_r = n-l-1):
+  //   return std::sqrt(mass) * mr * norm * std::exp(-0.5 * rho) *
+  //          std::pow(rho, l) *
+  //          std::assoc_laguerre(unsigned(n - l - 1), unsigned(2 * l + 1), rho);
+  const auto lag = std::tgamma(n + l + 1.0) /
+                   (std::tgamma(n - l) * std::tgamma(2.0 * l + 2.0));
   return std::sqrt(mass) * mr * norm * std::exp(-0.5 * rho) * std::pow(rho, l) *
-         std::assoc_laguerre(unsigned(n - l - 1), unsigned(2 * l + 1), rho);
+         lag * Hypergeometric::H1f1(double(l) + 1.0 - n, 2.0 * l + 2.0, rho);
 }
 
 //==============================================================================

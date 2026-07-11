@@ -1,4 +1,5 @@
 #pragma once
+#include "Physics/PhysConst_constants.hpp" // for default alpha
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -7,37 +8,38 @@
 class Grid;
 
 /*!
-@brief Stores radial Dirac spinor: F_nk = (f, g)
-@details
-\f[
-\psi_{n\kappa m} = \frac{1}{r}
-\begin{pmatrix}
-  f_{n\kappa}(r)\,\Omega_{\kappa m}\\
-  g_{n\kappa}(r)\,\Omega_{-\kappa m}
-\end{pmatrix},
-\quad
-F_{n\kappa} =
-\begin{pmatrix}
-  f_{n\kappa}(r)\\
-  g_{n\kappa}(r)
-\end{pmatrix}
-\f]
+  @brief Stores radial Dirac spinor: F_nk = (f, g)
 
-\par  Construction.
-Takes in constant n and k=kappa values + grid
-  - A shared pointer to the Grid is stored (to avoid many copies of Grid)
+  @details
+  \f[
+  \psi_{n\kappa m} = \frac{1}{r}
+  \begin{pmatrix}
+    f_{n\kappa}(r)\,\Omega_{\kappa m}\\
+    g_{n\kappa}(r)\,\Omega_{-\kappa m}
+  \end{pmatrix},
+  \quad
+  F_{n\kappa} =
+  \begin{pmatrix}
+    f_{n\kappa}(r)\\
+    g_{n\kappa}(r)
+  \end{pmatrix}
+  \f]
 
-\par Operator Overloads
-  - Intuative operator overloads are provided (Fa, Fb are DiracSpinors):
-  - v * Fa, where v is a double or vector works the obvious way
-  - Fa * Fb = <Fa|Fb>
-  - Fa == Fb returns true if {na,ka}=={nb,kb}
-  - Fa > Fb : first compares n, and then kappa (via kappa_index)
-  - Fa +/- Fb : Adds/subtracts the two spinors (and updates p0/pinf)
-  - You can make copies: auto Fnew = Fa
-  - And you can re-asign: Fb = Fa (provided Fa and Fb have same n and kappa!)
-  - n and kappa are constant, cannot be changed. Avoids angular errors.
-  - all 'set_' functions return mutable references to variables
+  \par  Construction.
+  Takes in constant n and k=kappa values + grid
+    - A shared pointer to the Grid is stored (to avoid many copies of Grid)
+
+  \par Operator Overloads
+    - Intuative operator overloads are provided (Fa, Fb are DiracSpinors):
+    - v * Fa, where v is a double or vector works the obvious way
+    - Fa * Fb = <Fa|Fb>
+    - Fa == Fb returns true if {na,ka}=={nb,kb}
+    - Fa > Fb : first compares n, and then kappa (via kappa_index)
+    - Fa +/- Fb : Adds/subtracts the two spinors (and updates p0/pinf)
+    - You can make copies: auto Fnew = Fa
+    - And you can re-asign: Fb = Fa (provided Fa and Fb have same n and kappa!)
+    - n and kappa are constant, cannot be changed. Avoids angular errors.
+    - all 'set_' functions return mutable references to variables
 */
 class DiracSpinor {
 
@@ -45,6 +47,7 @@ public:
   //! Constructor: Requires n (PQN), kappa (Dirac QN), and grid (shared pointer,
   //! as it's a shared resource)
   DiracSpinor(int in_n, int in_kappa, std::shared_ptr<const Grid> in_rgrid);
+  //! Integer type for the compressed (n,kappa) index
   using Index = uint16_t;
 
 private:
@@ -90,6 +93,7 @@ public:
   int l() const { return m_l; }
   //! j(j+1)
   double jjp1() const { return 0.25 * double(m_twoj * (m_twoj + 2)); }
+  //! 2j (twice the total angular momentum)
   int twoj() const { return m_twoj; }
   //! 2j+1
   int twojp1() const { return m_twoj + 1; }
@@ -109,7 +113,10 @@ public:
   //! Checks if spinor is for "exotic" lepton, or regular electron
   bool exotic() const { return m_exotic; }
 
-  //! NOTE: Only works for regular alpha, and m=1 - shuold fix
+  /*!
+    @brief Returns true if this is a negative-energy state
+    @warning Only works for regular alpha and mass = 1 (should fix)
+  */
   bool negativeEnergyStateQ() const;
 
   //! Changes 'kappa' angular quantum number. Use with caution!
@@ -139,8 +146,10 @@ public:
   double g(std::size_t i) const { return m_g.at(i); }
   double &g(std::size_t i) { return m_g.at(i); }
 
-  //! First non-zero point (index for f[i])
-  // XXX Kill this?
+  /*!
+    @brief First non-zero point (index for f[i])
+    @deprecated Candidate for removal
+  */
   auto min_pt() const { return m_p0; }
   auto &min_pt() { return m_p0; }
 
@@ -148,7 +157,10 @@ public:
   auto max_pt() const { return m_pinf; }
   auto &max_pt() { return m_pinf; }
 
-  //! r0 = r[min_pt] (in atomic units) XXX Kill this?
+  /*!
+    @brief r0 = r[min_pt] (in atomic units)
+    @deprecated Candidate for removal
+  */
   double r0() const;
   //! rinf = r[max_pt]
   double rinf() const;
@@ -194,42 +206,57 @@ public:
   //! Returns radial integral (Fa,Fb) = Int(fa*fb + ga*gb)
   friend double operator*(const DiracSpinor &Fa, const DiracSpinor &Fb);
 
-  //! Addition of two DiracSpinors - must have same kappa
+  //! Adds rhs to this, in place; must have same kappa
   DiracSpinor &operator+=(const DiracSpinor &rhs);
+  //! Subtracts rhs from this, in place; must have same kappa
   DiracSpinor &operator-=(const DiracSpinor &rhs);
+  //! Returns lhs + rhs; must have same kappa
   friend DiracSpinor operator+(DiracSpinor lhs, const DiracSpinor &rhs);
+  //! Returns lhs - rhs; must have same kappa
   friend DiracSpinor operator-(DiracSpinor lhs, const DiracSpinor &rhs);
 
-  //! Scalar multiplication
+  //! Scales this by scalar x, in place
   DiracSpinor &operator*=(const double x);
+  //! Returns Fa scaled by scalar x
   friend DiracSpinor operator*(DiracSpinor Fa, const double x);
+  //! Returns Fa scaled by scalar x
   friend DiracSpinor operator*(const double x, DiracSpinor Fa);
 
-  //! Multiplication by array (function)
+  //! Multiplies this by function v(r), pointwise, in place
   DiracSpinor &operator*=(const std::vector<double> &v);
+  //! Returns Fa multiplied by function v(r), pointwise
   friend DiracSpinor operator*(const std::vector<double> &v, DiracSpinor Fa);
 
-  //! Comparitor overloads (compares n, then kappa):
+  //! Equality: true if {n,kappa} match
   friend bool operator==(const DiracSpinor &lhs, const DiracSpinor &rhs);
+  //! Inequality: true if {n,kappa} differ
   friend bool operator!=(const DiracSpinor &lhs, const DiracSpinor &rhs);
+  //! Ordering: compares n, then kappa (via kappa_index)
   friend bool operator<(const DiracSpinor &lhs, const DiracSpinor &rhs);
+  //! Ordering: compares n, then kappa (via kappa_index)
   friend bool operator>(const DiracSpinor &lhs, const DiracSpinor &rhs);
+  //! Ordering: compares n, then kappa (via kappa_index)
   friend bool operator<=(const DiracSpinor &lhs, const DiracSpinor &rhs);
+  //! Ordering: compares n, then kappa (via kappa_index)
   friend bool operator>=(const DiracSpinor &lhs, const DiracSpinor &rhs);
 
-  //! Custom comparitors (for sorting): l, j, kappa_index, energy
+  //! Comparator (for sorting): by l
   static bool comp_l(const DiracSpinor &lhs, const DiracSpinor &rhs) {
     return lhs.m_l < rhs.m_l;
   }
+  //! Comparator (for sorting): by 2j
   static bool comp_j(const DiracSpinor &lhs, const DiracSpinor &rhs) {
     return lhs.m_twoj < rhs.m_twoj;
   }
+  //! Comparator (for sorting): by kappa_index
   static bool comp_ki(const DiracSpinor &lhs, const DiracSpinor &rhs) {
     return lhs.m_kappa_index < rhs.m_kappa_index;
   }
+  //! Comparator (for sorting): by n
   static bool comp_n(const DiracSpinor &lhs, const DiracSpinor &rhs) {
     return lhs.m_n < rhs.m_n;
   }
+  //! Comparator (for sorting): by energy
   static bool comp_en(const DiracSpinor &lhs, const DiracSpinor &rhs) {
     return lhs.en() < rhs.en();
   }
@@ -246,8 +273,10 @@ public:
   check_ortho(const std::vector<DiracSpinor> &a,
               const std::vector<DiracSpinor> &b);
 
-  //! (approximately) OrthoNormalises a set of any orbitals.
-  //! @details Note: only updates orbs, not energies
+  /*!
+    @brief (approximately) OrthoNormalises a set of any orbitals
+    @details Note: only updates orbs, not energies
+  */
   static void orthonormaliseOrbitals(std::vector<DiracSpinor> &orbs,
                                      int num_its = 1);
 
@@ -270,32 +299,53 @@ public:
   //! Returns formatted states string (e.g., '7sp5d') given list of orbs
   static std::string state_config(const std::vector<DiracSpinor> &orbs);
 
-  //! Constructs H-like (pointlike) DiracSpinor - mainly for testing
+  /*!
+    @brief Constructs an exact H-like (pointlike Coulomb) DiracSpinor
+    @details
+    Relativistic Dirac-Coulomb bound orbital for nuclear charge @p zeff (see
+    DiracHydrogen).
+    @note alpha <= 0 gives the non-relativistic (Schrodinger) solution instead:
+    f = P_nl, g = 0.
+  */
   static DiracSpinor exactHlike(int n, int k, std::shared_ptr<const Grid> rgrid,
-                                double zeff, double alpha = 0.0,
+                                double zeff, double alpha = PhysConst::alpha,
                                 double mass = 1.0);
 
-  //! Constructs a basis of H-like (pointlike) DiracSpinors - mainly for testing
-  /*! @details
-    @param max_l = maxiumum l (both kappas calculated)
-    @param num_ns = number of principle quantum numbers per l (not max n)
-    @param mass   = lepton mass in units of m_e (default 1 = electron)
+  /*!
+    @brief Constructs an exact (Dirac-Coulomb) continuum DiracSpinor
+    @details
+    Energy-normalised relativistic continuum orbital (en > 0; n set to 0).
+    Requires FLINT for the relativistic case (see DiracContinuum::available).
+    @note alpha <= 0 gives the non-relativistic solution instead (f = P_el,
+    g = 0), which does not require FLINT.
   */
-  static std::vector<DiracSpinor> HlikeBasis(int max_l, int num_ns,
-                                             std::shared_ptr<const Grid> rgrid,
-                                             double zeff, double alpha = 0.0,
-                                             double mass = 1.0);
+  static DiracSpinor exactHlike_cntm(double en, int k,
+                                     std::shared_ptr<const Grid> rgrid,
+                                     double zeff,
+                                     double alpha = PhysConst::alpha,
+                                     double mass = 1.0);
 
-  //! Constructs a basis of H-like (pointlike) DiracSpinors - mainly for testing
-  /*! @details
-    @param basis_string = e.g., "6sp5d": max n for each kappa; all n down to
-           n_min = l+1 are included
-    @param mass = lepton mass in units of m_e (default 1 = electron)
+  /*!
+    @brief Constructs a basis of H-like (pointlike) DiracSpinors
+    @param max_l  maximum l (both kappas calculated)
+    @param num_ns number of principal quantum numbers per l (not max n)
+    @param mass   lepton mass in units of m_e (default 1 = electron)
+    @note alpha <= 0 gives the non-relativistic solutions (f = P_nl, g = 0)
   */
-  static std::vector<DiracSpinor> HlikeBasis(const std::string &basis_string,
-                                             std::shared_ptr<const Grid> rgrid,
-                                             double zeff, double alpha = 0.0,
-                                             double mass = 1.0);
+  static std::vector<DiracSpinor>
+  HlikeBasis(int max_l, int num_ns, std::shared_ptr<const Grid> rgrid,
+             double zeff, double alpha = PhysConst::alpha, double mass = 1.0);
+
+  /*!
+    @brief Constructs a basis of H-like (pointlike) DiracSpinors
+    @param basis_string e.g., "6sp5d": max n for each kappa; all n down to
+                        n_min = l+1 are included
+    @param mass         lepton mass in units of m_e (default 1 = electron)
+    @note alpha <= 0 gives the non-relativistic solutions (f = P_nl, g = 0)
+  */
+  static std::vector<DiracSpinor>
+  HlikeBasis(const std::string &basis_string, std::shared_ptr<const Grid> rgrid,
+             double zeff, double alpha = PhysConst::alpha, double mass = 1.0);
 
   //! Searches for {n,k} in list of orbitals, returns pointer (may be null)
   static const DiracSpinor *find(int n, int k,
@@ -317,30 +367,36 @@ public:
   //! Returns maximum Energy found in {orbs}
   static double min_En(const std::vector<DiracSpinor> &orbs);
 
-  //! Splits orbitals into two groups (i.e., core, excited) by energy
-  //! @details
-  //! - The first group contains orbitals with energy < energy
-  //! - The second group contains orbitals with energy > energy
-  //! - The first group is also limited to have n >= n_min_core (i.e., exclude
-  //! deep core states)
+  /*!
+    @brief Splits orbitals into two groups (i.e., core, excited) by energy
+    @details
+    - The first group contains orbitals with energy < energy
+    - The second group contains orbitals with energy > energy
+    - The first group is also limited to have n >= n_min_core (i.e., exclude
+      deep core states)
+  */
   static std::pair<std::vector<DiracSpinor>, std::vector<DiracSpinor>>
   split_by_energy(const std::vector<DiracSpinor> &orbitals, double Fermi_energy,
                   int n_min_core = 1, int n_max_excited = 9999,
                   bool positrons_are_excited = true);
 
-  //! Splits orbitals into two groups (i.e., core, excited).
-  //! @details
-  //! - The first group contains orbitals with {n,kappa} in the given "core"
-  //! - The second group contains all of the rest
-  //! - The first group is also limited to have n >= n_min_core (i.e., exclude
-  //! deep core states)
+  /*!
+    @brief Splits orbitals into two groups (i.e., core, excited)
+    @details
+    - The first group contains orbitals with {n,kappa} in the given "core"
+    - The second group contains all of the rest
+    - The first group is also limited to have n >= n_min_core (i.e., exclude
+      deep core states)
+  */
   static std::pair<std::vector<DiracSpinor>, std::vector<DiracSpinor>>
   split_by_core(const std::vector<DiracSpinor> &orbitals,
                 const std::vector<DiracSpinor> &core, int n_min_core = 1);
 
-  //! Takes a subset of an input basis (by copy), according to subset_string
-  //! @details
-  //! - Includes only states matching the subset_string
+  /*!
+    @brief Takes a subset of an input basis (by copy), according to subset_string
+    @details
+    - Includes only states matching the subset_string
+  */
   static std::vector<DiracSpinor> subset(const std::vector<DiracSpinor> &basis,
                                          const std::string &subset_string,
                                          bool exclude_negative_energy = true);

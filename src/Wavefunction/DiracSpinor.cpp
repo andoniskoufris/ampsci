@@ -3,11 +3,13 @@
 #include "Maths/Grid.hpp"
 #include "Maths/NumCalc_quadIntegrate.hpp"
 #include "Physics/AtomData.hpp"
+#include "Physics/DiracContinuum.hpp"
 #include "Physics/DiracHydrogen.hpp"
 #include "Physics/PhysConst_constants.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <iostream>
 #include <numeric>
 #include <string>
 #include <utility>
@@ -447,14 +449,34 @@ DiracSpinor::orthonormaliseWrt(const DiracSpinor &psi_v,
 DiracSpinor DiracSpinor::exactHlike(int n, int kappa,
                                     std::shared_ptr<const Grid> rgrid,
                                     double zeff, double alpha, double mass) {
-  if (alpha <= 0.0) {
-    alpha = PhysConst::alpha;
-  }
   DiracSpinor Fa(n, kappa, rgrid);
   Fa.m_en = DiracHydrogen::enk(n, kappa, zeff, alpha, mass);
   for (std::size_t i = 0; i < rgrid->num_points(); ++i) {
     Fa.m_f[i] = DiracHydrogen::f(rgrid->r(i), n, kappa, zeff, alpha, mass);
     Fa.m_g[i] = DiracHydrogen::g(rgrid->r(i), n, kappa, zeff, alpha, mass);
+  }
+  return Fa;
+}
+
+//==============================================================================
+DiracSpinor DiracSpinor::exactHlike_cntm(double en, int kappa,
+                                         std::shared_ptr<const Grid> rgrid,
+                                         double zeff, double alpha,
+                                         double mass) {
+
+  if (!DiracContinuum::available) {
+    std::cerr << "\nWARNING: DiracSpinor::exactContinuum requires FLINT, but "
+                 "ampsci was compiled without FLINT support. Returning NaN\n";
+  }
+  assert(DiracContinuum::available &&
+         "Required FLINT to compute continuum states. See docs.");
+  DiracSpinor Fa(0, kappa, rgrid);
+  Fa.m_en = en;
+  for (std::size_t i = 0; i < rgrid->num_points(); ++i) {
+    const auto [fi, gi] =
+      DiracContinuum::fg(rgrid->r(i), en, kappa, zeff, alpha, mass);
+    Fa.m_f[i] = fi;
+    Fa.m_g[i] = gi;
   }
   return Fa;
 }

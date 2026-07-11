@@ -22,9 +22,15 @@
 
   See Methods for full definitions.
 
+  \par Non-relativistic limit
+  Passing \f$ \alpha \le 0 \f$ selects the non-relativistic limit directly:
+  the large component reduces to the energy-normalised Coulomb function
+  (f = P_el, see @ref P_el), the small component vanishes (g = 0). This path
+  does not require FLINT.
+
   @note Requires the FLINT library (for confluent hypergeometric functions of
   complex argument); available at compile time via the constexpr flag
-  DiracContinuum::available. 
+  DiracContinuum::available. (Not required for the non-relativistic limit.)
   
   @warning Without FLINT, calling f and g may abort, or return NaN.
   Use @ref DiracContinuum::available to check if available.
@@ -51,10 +57,13 @@ double pe(double en, double alpha, double m = 1.0);
 /*!
   @brief Both radial components {f, g} at radius r.
   @details More efficient than separate calls to f() and g(), since the
-  (expensive) hypergeometric factors are shared.
+  (expensive) hypergeometric factors are shared. For \f$ \alpha \le 0 \f$
+  returns the non-relativistic limit {P_el, 0} (see @ref P_el), which does not
+  require FLINT.
   @return std::pair {f, g}
-  @warning Prints a warning and returns {NaN, NaN} if compiled without FLINT
-  (see DiracContinuum::available)
+  @note alpha <= 0 selects the non-relativistic limit: f = P_el, g = 0
+  @warning For alpha > 0: prints a warning and returns {NaN, NaN} if compiled
+  without FLINT (see DiracContinuum::available)
 */
 std::pair<double, double> fg(double r, double en, int kappa, double zeff,
                              double alpha, double m = 1.0);
@@ -62,6 +71,7 @@ std::pair<double, double> fg(double r, double en, int kappa, double zeff,
 /*!
   @brief Upper (large) radial component.
   @details @p m is the electron mass (default 1 a.u.).
+  @note alpha <= 0 selects the non-relativistic limit: f = P_el
 */
 double f(double r, double en, int kappa, double zeff, double alpha,
          double m = 1.0);
@@ -69,6 +79,7 @@ double f(double r, double en, int kappa, double zeff, double alpha,
 /*!
   @brief Lower (small) radial component.
   @details @p m is the electron mass (default 1 a.u.).
+  @note alpha <= 0 selects the non-relativistic limit: g = 0
 */
 double g(double r, double en, int kappa, double zeff, double alpha,
          double m = 1.0);

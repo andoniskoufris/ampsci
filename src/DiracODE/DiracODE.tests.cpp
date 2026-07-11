@@ -680,28 +680,16 @@ TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][unit]") {
             DiracSpinor Fe{0, kappa, grid};
             DiracODE::solveContinuum(Fe, en, v0, alpha);
 
-            // integrands for k = -1 (_m) and k = +1 (_p):
-            std::vector<double> ode_m(grid->num_points()), ode_p(ode_m),
-              exact_m(ode_m), exact_p(ode_m);
-#pragma omp parallel for
-            for (std::size_t i = 0; i < grid->num_points(); ++i) {
-              const auto r = grid->r(i);
-              const auto fb = DiracHydrogen::f(r, n, kappa, z, alpha);
-              const auto gb = DiracHydrogen::g(r, n, kappa, z, alpha);
-              const auto [fc, gc] = DiracContinuum::fg(r, en, kappa, z, alpha);
-              const auto exact = (fb * fc + gb * gc) * grid->drdu(i);
-              const auto ode = (fb * Fe.f(i) + gb * Fe.g(i)) * grid->drdu(i);
-              exact_m[i] = exact / r;
-              exact_p[i] = exact * r;
-              ode_m[i] = ode / r;
-              ode_p[i] = ode * r;
-            }
+            // Exact (analytic) Dirac-Coulomb bound + continuum, as DiracSpinors:
+            const auto Fb = DiracSpinor::exactHlike(n, kappa, grid, z, alpha);
+            const auto Fc =
+              DiracSpinor::exactHlike_cntm(en, kappa, grid, z, alpha);
 
             for (const int k : {-1, 1}) {
-              const auto expected = NumCalc::integrate(
-                grid->du(), 0, 0, k == 1 ? exact_p : exact_m);
-              const auto found =
-                NumCalc::integrate(grid->du(), 0, 0, k == 1 ? ode_p : ode_m);
+              const auto rk = grid->rpow(k);
+              // <Fb| r^k |Fe(ODE)> vs <Fb| r^k |exact continuum>:
+              const auto found = Fb * (rk * Fe);
+              const auto expected = Fb * (rk * Fc);
 
               if (print_table) {
                 fmt::print("{:>8.1e} {:>4.0f} {:>2} {:>3} {:>5.1f} {:>3} "
@@ -838,8 +826,8 @@ TEST_CASE("Wavefunction: H-like Exotic muon and tauon",
       std::cout << "Worst eps: " << temp_worst << "\n";
 
       // Exact exotic H-like orbitals (with exotic-particle mass)
-      const auto hlike =
-        DiracSpinor::HlikeBasis("4sp3d4f", wf.grid_sptr(), Z, 0.0, m_mu);
+      const auto hlike = DiracSpinor::HlikeBasis("4sp3d4f", wf.grid_sptr(), Z,
+                                                 PhysConst::alpha, m_mu);
 
       const auto &rv = wf.grid().r();
 

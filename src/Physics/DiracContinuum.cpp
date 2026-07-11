@@ -89,6 +89,12 @@ double pe(double en, double alpha, double m) {
 std::pair<double, double> fg(double r, double en, int kappa, double zeff,
                              double alpha, double m) {
   using namespace Hidden;
+  if (alpha <= 0.0) {
+    // Non-relativistic limit: large component f -> P_el (energy-normalised),
+    // small g -> 0. FLINT-free (P_el uses GSL Coulomb functions).
+    const auto l = kappa > 0 ? kappa : -kappa - 1;
+    return {P_el(r, en, l, zeff, m), 0.0};
+  }
   if (!available) {
     // Warn once only (fg is typically called in tight loops):
     [[maybe_unused]] static const bool warned = []() {
