@@ -158,12 +158,50 @@ fi
 # in LDLIBS.
 ################################################################################
 flint_libs=""
+flint_inc=""
+flint_libdirs=""
+# On Mac, Homebrew installs FLINT (and its dependencies gmp/mpfr, whose
+# headers FLINT includes) outside the default search paths; use brew --prefix
+# to find them (brew flint is always FLINT 3+, no need for arb):
+if [[ "${machine}" == "Mac" ]] && command -v brew &>/dev/null; then
+  # nb: -isystem (not -I) so warnings from FLINT/gmp headers are suppressed
+  for pkg in flint gmp mpfr; do
+    pkg_prefix=$(brew --prefix ${pkg} 2>/dev/null)
+    if [[ -n "$pkg_prefix" && -d "$pkg_prefix/include" ]]; then
+      flint_inc="${flint_inc} -isystem ${pkg_prefix}/include"
+      flint_libdirs="${flint_libdirs} -L${pkg_prefix}/lib"
+    fi
+  done
+fi
+flint_flags="${flint_inc} ${flint_libdirs}"
+# FLINT >= 3.0: acb_hypgeom merged into FLINT; headers under flint/, link -lflint
 if echo "#include <flint/acb_hypgeom.h>
-int main(){return 0;}" | "$cxx" -x c++ - -lflint -o /dev/null >/dev/null 2>&1; then
+int main(){return 0;}" | "$cxx" -x c++ - ${flint_flags} -lflint -o /dev/null >/dev/null 2>&1; then
   flint_libs="-lflint"
-  echo "FLINT           : found"
+  echo "FLINT           : found (flint3)"
+  # Add Homebrew include/lib paths to the Makefile (if they were needed):
+  if [[ -n "$flint_inc" ]]; then
+    echo "FLINT flags     :${flint_inc}${flint_libdirs}"
+    sed -i.bak "s@^CXXFLAGS +=.*@CXXFLAGS +=${flint_inc}@" Makefile
+    sed -i.bak "s@^LDFLAGS +=.*@LDFLAGS +=${flint_libdirs}@" Makefile
+  fi
 else
-  echo "FLINT           : not found (optional)"
+  # FLINT 2.x + Arb: acb_hypgeom lives in the separate Arb ball-arithmetic
+  # library (top-level headers). Debian/Ubuntu package: libflint-arb-dev,
+  # linked with -lflint-arb (upstream / other distros use -larb).
+  # The build enables the flint2+arb header layout whenever -lflint-arb (or
+  # -larb) is in LDLIBS.
+  for arblib in "-lflint-arb" "-larb"; do
+    if echo "#include <acb_hypgeom.h>
+int main(){return 0;}" | "$cxx" -x c++ - $arblib -lflint -o /dev/null >/dev/null 2>&1; then
+      flint_libs="$arblib -lflint"
+      echo "FLINT           : found (flint2 + arb, via $arblib)"
+      break
+    fi
+  done
+  if [ -z "$flint_libs" ]; then
+    echo "FLINT           : not found (optional)"
+  fi
 fi
 
 ################################################################################

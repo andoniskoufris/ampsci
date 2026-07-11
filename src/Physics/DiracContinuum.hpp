@@ -1,4 +1,5 @@
 #pragma once
+#include "Maths/Hypergeometric.hpp" // for has_flint
 #include <utility>
 
 /*!
@@ -35,11 +36,7 @@
 namespace DiracContinuum {
 
 //! True if compiled with FLINT support; f, g, and fg return NaN otherwise
-#ifdef AMPSCI_USE_FLINT
-constexpr bool available = true;
-#else
-constexpr bool available = false;
-#endif
+constexpr bool available = Hypergeometric::has_flint;
 
 //! Relativistic factor gamma = Sqrt[kappa^2 - (aZ)^2]
 double gamma(int kappa, double zeff, double alpha);

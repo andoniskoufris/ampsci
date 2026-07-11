@@ -7,13 +7,24 @@
 #include <gsl/gsl_sf_result.h>
 #include <type_traits>
 
-#ifdef AMPSCI_USE_FLINT
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+// FLINT >= 3.0 merged Arb in: headers live under flint/ and link with -lflint
+// (AMPSCI_USE_FLINT3). FLINT 2.x keeps acb_hypgeom in the separate Arb library:
+// top-level headers, link with -lflint-arb (Debian/Ubuntu) or -larb (upstream)
+// (AMPSCI_USE_FLINT2); see configure.sh. The acb_*/arb_*/arf_* API used below is
+// identical either way.
+#ifdef AMPSCI_USE_FLINT2
+#include <acb.h>
+#include <acb_hypgeom.h>
+#else
 #include <flint/acb.h>
 #include <flint/acb_hypgeom.h>
 #endif
+#endif
 
 // Manuall switch off (for testing only) (doesn't change has_flint)
-// #undef AMPSCI_USE_FLINT
+// #undef AMPSCI_USE_FLINT3
+// #undef AMPSCI_USE_FLINT2
 
 namespace Hypergeometric {
 
@@ -32,7 +43,7 @@ T H1f1(T a, double b, T z, double s) {
     const auto val = status == 0 ? res.val : 0.0;
     return s == 0.0 ? val : std::exp(s) * val;
   } else {
-#ifdef AMPSCI_USE_FLINT
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
     // Complex case: FLINT ball arithmetic; working precision is increased
     // until the result is accurate to (at least) full double precision
     // https://flintlib.org/doc/acb_hypgeom.html

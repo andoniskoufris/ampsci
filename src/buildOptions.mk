@@ -140,10 +140,20 @@ endif
 
 ## FLINT library (optional): provides complex confluent hypergeometric
 ## functions, used for exact continuum Dirac Coulomb wavefunctions
-## (src/Physics/DiracContinuum). Enabled by adding -lflint to LDLIBS in the
-## Makefile (configure.sh will attempt to detect it):
-ifneq ($(findstring -lflint,$(LDLIBS)),)
-  EXTRA_CXXFLAGS += -DAMPSCI_USE_FLINT
+## (src/Physics/DiracContinuum). 
+## Enabled by adding -lflint (or -lflint-arb) to LDLIBS in the Makefile
+## (configure.sh will attempt to detect it). Two header layouts:
+##  - FLINT 3+   : acb_hypgeom is part of FLINT; headers under flint/ (-lflint)
+##                 => -DAMPSCI_USE_FLINT3
+##  - FLINT 2.x  : acb_hypgeom is in the separate Arb library, top-level headers.
+##                 usually: -lflint-arb
+##                 => -DAMPSCI_USE_FLINT2
+## FLINT2 takes precedence when the Arb library is present (its LDLIBS also
+## contains -lflint):
+ifneq ($(findstring -lflint-arb,$(LDLIBS))$(findstring -larb,$(LDLIBS)),)
+  EXTRA_CXXFLAGS += -DAMPSCI_USE_FLINT2
+else ifneq ($(findstring -lflint,$(LDLIBS)),)
+  EXTRA_CXXFLAGS += -DAMPSCI_USE_FLINT3
 endif
 
 CXXFLAGS += $(CXXSTD) $(OPT) $(OMPLIB) $(WARN) $(INCLUDES) $(EXTRA_CXXFLAGS)

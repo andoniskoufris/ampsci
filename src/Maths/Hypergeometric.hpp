@@ -6,7 +6,7 @@ namespace Hypergeometric {
 
 //! True if compiled with FLINT support; complex H1f1 returns zero otherwise
 constexpr bool has_flint =
-#ifdef AMPSCI_USE_FLINT
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
   true;
 #else
   false;
@@ -31,7 +31,8 @@ constexpr bool has_flint =
   normalisation factors without under/overflowing double.
 
   @note Requires FLINT library to work with complex values. 
-  Compile with `-lflint` and set `-DAMPSCI_USE_FLINT` 
+  Compile with `-lflint` and set `-DAMPSCI_USE_FLINT3` (FLINT 3+), or with
+  `-lflint-arb -lflint` and `-DAMPSCI_USE_FLINT2` (FLINT 2.x + Arb)
   (done automatically by Makefile/configure.sh)
   
   @warning Uses IFDEF to allow compilation if FLINT is not available.

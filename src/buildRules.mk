@@ -7,7 +7,8 @@ else
   OMPDIR := omp
 endif
 
-## FLINT changes compiled code (-DAMPSCI_USE_FLINT), so needs its own subdir
+## FLINT changes compiled code (-DAMPSCI_USE_FLINT2/3), so needs its own subdir
+## (both layouts put -lflint in LDLIBS: flint3 alone, flint2 as -lflint-arb -lflint)
 ifneq ($(findstring -lflint,$(LDLIBS)),)
   FLINTDIR := /flint
 else

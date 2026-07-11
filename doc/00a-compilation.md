@@ -13,7 +13,7 @@
   * (it _should_ also work with older versions of GSL, but this is not regularly tested and therefore not guaranteed)
   * Updated to work with newer GSL version 2.8; still works with older versions too
 * [optional] GNU Make ([gnu.org/software/make/](https://www.gnu.org/software/make/)) - used to compile code
-* [optional] FLINT ([flintlib.org](https://flintlib.org/)) [version 3+] - used for exact (analytic) relativistic continuum wavefunctions (see below)
+* [optional] FLINT ([flintlib.org](https://flintlib.org/)) [version 3+, or version 2.x plus Arb] - used for exact (analytic) relativistic continuum wavefunctions (see below)
 * [optional] OpenMP ([openmp.org/](https://www.openmp.org/)) - used for parallelisation
 * [optional] git ([git-scm.com/](https://git-scm.com/)) for version tracking and to keep up-to-date with latest version
 * The shell script `install-dependencies.sh` will attempt to automatically install the required dependencies
@@ -193,7 +193,7 @@ LDFLAGS ?=
 
 ### Optional: FLINT (exact continuum wavefunctions)
 
-[FLINT](https://flintlib.org/) (version 3+) provides confluent hypergeometric functions of complex argument. ampsci uses it for the exact (analytic) relativistic Coulomb continuum wavefunctions (`DiracContinuum`).
+[FLINT](https://flintlib.org/) (version 3+, or 2+ with ARB, see elbow) provides confluent hypergeometric functions of complex argument. We use it for the exact (analytic) relativistic Coulomb continuum wavefunctions (`DiracContinuum`).
 
 * Fully optional: everything else compiles and runs without it.
 * Install: `sudo apt-get install libflint-dev` (ubuntu), or `brew install flint` (mac)
@@ -206,9 +206,25 @@ LDFLAGS ?=
 LDLIBS ?= -lgsl -lgslcblas -llapack -lblas -lflint
 ```
 
-* The preprocessor flag `-DAMPSCI_USE_FLINT` is set automatically by the build system whenever `-lflint` appears in `LDLIBS` (see `src/buildOptions.mk`)
+* The preprocessor flag `-DAMPSCI_USE_FLINT3` is set automatically by the build system whenever `-lflint` (FLINT 3+) appears in `LDLIBS` (see `src/buildOptions.mk`)
 
 > The `-lflint` argument is automatically set by `configure.sh` (if installed)
+
+#### FLINT 2.x with Arb
+
+In FLINT 3+, the required confluent hypergeometric functions (`acb_hypgeom`) are part of FLINT itself. In FLINT 2.x they live in the separate [Arb](https://arblib.org/) library (arbitrary-precision ball arithmetic), with top-level headers and linked with `-lflint-arb`.
+
+* If your distribution only ships FLINT 2.x (e.g. Ubuntu 22.04 has FLINT 2.8.4), install Arb alongside it: `sudo apt-get install libflint-arb-dev` (pulls in FLINT 2 as a dependency)
+  * Note: on Debian/Ubuntu the package is `libflint-arb-dev`, **not** `libarb-dev`. The latter is an unrelated genome/phylogenetics tool that also happens to be called "ARB".
+* `configure.sh` detects this layout automatically, and adds `-lflint-arb -lflint` to `LDLIBS`
+* To enable manually, add both `-lflint-arb` and `-lflint` to `LDLIBS`:
+
+```make
+LDLIBS ?= -lgsl -lgslcblas -llapack -lblas -lflint-arb -lflint
+```
+
+* The preprocessor flag `-DAMPSCI_USE_FLINT2` is set automatically whenever `-lflint-arb` (or `-larb`) appears in `LDLIBS`; it selects the top-level Arb header layout (the `acb_*`/`arb_*` API is otherwise identical to FLINT 3). FLINT2 takes precedence over FLINT3 when both `-lflint-arb` and `-lflint` are present.
+* FLINT 3+ is preferred where available; the Arb path exists only for older systems
 
 ### Using OpenMP with clang on mac
 
