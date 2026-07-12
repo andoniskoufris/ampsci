@@ -50,15 +50,16 @@ struct InterpPotentialDerivative
 //==============================================================================
 void solveContinuum(DiracSpinor &Fa, double en, const std::vector<double> &v,
                     double alpha, const DiracSpinor *const VxFa,
-                    const DiracSpinor *const Fa0) {
+                    const DiracSpinor *const Fa0, bool average_tail) {
 
   Fa.en() = en;
   const auto &gr = Fa.grid();
   const auto num_points = gr.num_points();
 
-  // Rough expression for wavelenth at large r
-  // nb: sin(kr + \eta * log(kr)), so not exactly constant
-  const double approx_wavelength = 2.0 * M_PI / std::sqrt(2.0 * Fa.en());
+  // Rough expression for wavelenth at large r:
+  // nb: sin(kr + nu * log(kr)), so not exactly constant
+  const double k_wave = std::sqrt(en * (2.0 + alpha * alpha * en));
+  const double approx_wavelength = 2.0 * M_PI / k_wave;
 
   // The solution is only usable where the radial grid resolves the
   // oscillations. The grid spacing dr grows with r, so (for high energy)
@@ -188,6 +189,158 @@ void solveContinuum(DiracSpinor &Fa, double en, const std::vector<double> &v,
   // Calculate normalisation coeficient, D, and re-scaling factor:
   const auto D = analytic_f_amplitude(en, alpha);
   Fa *= (amp != 0.0 ? (D / amp) : 0.0);
+
+  // Optionally, fill the unresolved (zeroed) tail with local averages:
+  if (average_tail) {
+    averageTail(Fa, v, alpha);
+  }
+}
+
+//==============================================================================
+std::pair<std::size_t, double> RequiredContinuumGrid(double en, const Grid &gr,
+                                                     double q, double alpha) {
+
+  // Storing the wavefunction pointwise requires at least N_ppw points per
+  // wavelength at the largest grid spacing (the last grid point).
+  // The fastest oscillation of the integrand is at wavenumber k + q:
+  // continuum wave (k), times operator jL(qr) (oscillates at q for all
+  // qr > L, i.e., everywhere at large r). Resolving k + q also resolves
+  // the slow |k - q| beat. The constraint is always at large r, where the
+  // grid is coarsest: at small r the spacing shrinks linearly with r,
+  // faster than the local wavelength does (k(r) grows only as sqrt(Z/r),
+  // and jL is smooth below its turning point).
+  const int N_ppw = 20;
+  // relativistic wavenumber:
+  const double k = std::sqrt(en * (2.0 + alpha * alpha * en));
+  const double lambda = 2.0 * M_PI / (k + q);
+  const double dr_target = lambda / N_ppw;
+
+  const auto n = gr.num_points();
+  const double r0 = gr.r(0);
+  const double rmax = gr.r(n - 1);
+
+  // Number of points required, geometry (r0, rmax, type, b) unchanged.
+  // Convert the target r-spacing at rmax to the uniform u-step:
+  // dr = drdu * du, and drdu(rmax) is fixed by the geometry:
+  const double du_req = dr_target / gr.drdu(n - 1);
+  const auto npts_req =
+    Grid::calc_num_points_from_du(r0, rmax, du_req, gr.type(), gr.loglin_b());
+
+  // For a loglinear grid, u = r + b*ln(r):
+  //   dr(rmax) = du * rmax/(rmax + b),
+  //   du = [(rmax - r0) + b*ln(rmax/r0)] / (n - 1)
+  // Solving dr(rmax) = dr_target for b (with n fixed) is exact; dr(rmax)
+  // grows with b, so this is the largest b that suffices. Negative means
+  // no b > 0 is small enough (even a linear grid is too coarse): need
+  // more points.
+  const double L = std::log(rmax / r0);
+  const double tn = dr_target * double(n - 1);
+  const double b_req = rmax * (tn - (rmax - r0)) / (L * rmax - tn);
+
+  return {npts_req, b_req};
+}
+
+//==============================================================================
+std::size_t averageTail(DiracSpinor &Fa, const std::vector<double> &v,
+                        double alpha) {
+
+  const auto &gr = Fa.grid();
+  const auto num_points = gr.num_points();
+  const auto en = Fa.en();
+
+  // Points-per-wavelength below which the pointwise solution cannot be
+  // stored on the grid, and local averaging takes over. Must sit just
+  // above the ~10 ppw zeroing threshold of solveContinuum: where the grid
+  // still stores the solution pointwise (>= 12 ppw), averaging would only
+  // suppress a perfectly usable oscillation (biasing integrals), so it
+  // must not engage there:
+  const int N_ppw_avg = 12;
+  // Kernel width: sigma(r) = eta * (dr(r) - wavelength / N_ppw_avg), which
+  // grows smoothly from zero at the seam. Larger eta suppresses the
+  // unstorable oscillation more strongly (wider average):
+  const double eta = 10.0;
+
+  // relativistic wavelength (as in solveContinuum):
+  const double approx_wavelength =
+    2.0 * M_PI / std::sqrt(en * (2.0 + alpha * alpha * en));
+
+  // Seam: first grid point where spacing exceeds wavelength / N_ppw_avg:
+  std::size_t i_avg = num_points;
+  for (std::size_t i = 0; i < num_points; ++i) {
+    if (gr.drdu(i) * gr.du() > approx_wavelength / N_ppw_avg) {
+      i_avg = i;
+      break;
+    }
+  }
+
+  // Nothing to do (grid resolves the entire solution), or no valid
+  // pointwise solution to continue from:
+  if (i_avg == num_points || i_avg < Param::K_Adams + 2 ||
+      i_avg > Fa.max_pt()) {
+    return num_points;
+  }
+  const std::size_t i_start = i_avg - 1;
+  if (Fa.f(i_start) == 0.0 && Fa.g(i_start) == 0.0) {
+    return num_points;
+  }
+
+  // Fine fixed-step grid; same step as the band solve in solveContinuum:
+  const double h = approx_wavelength / 400.0;
+
+  const auto sigma_at = [&](std::size_t i) {
+    const auto s = eta * (gr.drdu(i) * gr.du() - approx_wavelength / N_ppw_avg);
+    // at least one fine step wide (harmless near the seam, avoids an
+    // empty kernel window):
+    return std::max(s, h);
+  };
+
+  // Solve the Dirac ODE on the fine grid, from the last pointwise grid
+  // point through to the end of the radial grid. Kernels of the last few
+  // points reach slightly beyond r_max; the interpolated potential clamps
+  // to v.back() there. Exchange is neglected (tail only exists at high
+  // energy, where it is negligible).
+  InterpPotentialDerivative Hband(gr, v, Fa.kappa(), en, alpha);
+  AdamsMoulton::ODESolver2D<Param::K_Adams, double, double> ode{h, &Hband};
+  ode.solve_initial_K(gr.r(i_start), Fa.f(i_start), Fa.g(i_start));
+
+  const double r_end = gr.r(num_points - 1) + 5.0 * sigma_at(num_points - 1);
+  std::vector<double> ts, fs, gs;
+  const auto n_est = std::size_t((r_end - gr.r(i_start)) / h) + 16;
+  ts.reserve(n_est);
+  fs.reserve(n_est);
+  gs.reserve(n_est);
+  while (ode.last_t() < r_end) {
+    ode.drive();
+    ts.push_back(ode.last_t());
+    fs.push_back(ode.last_f());
+    gs.push_back(ode.last_g());
+  }
+
+  // Store the Gaussian local average at each remaining grid point,
+  // kernel truncated at +/- 5 sigma:
+  const double t0 = ts.front();
+  for (std::size_t i = i_avg; i < num_points; ++i) {
+    const double ri = gr.r(i);
+    const double sigma = sigma_at(i);
+    const auto j0 = std::size_t(std::max(0.0, (ri - 5.0 * sigma - t0) / h));
+    const auto j1 =
+      std::min(ts.size(), std::size_t((ri + 5.0 * sigma - t0) / h) + 1);
+    double sw = 0.0, swf = 0.0, swg = 0.0;
+    for (std::size_t j = j0; j < j1; ++j) {
+      const double x = (ts[j] - ri) / sigma;
+      const double w = std::exp(-0.5 * x * x);
+      sw += w;
+      swf += w * fs[j];
+      swg += w * gs[j];
+    }
+    if (sw > 0.0) {
+      Fa.f()[i] = swf / sw;
+      Fa.g()[i] = swg / sw;
+    }
+  }
+
+  Fa.max_pt() = num_points;
+  return i_avg;
 }
 
 //==============================================================================

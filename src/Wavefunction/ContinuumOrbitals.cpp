@@ -44,7 +44,8 @@ double ContinuumOrbitals::check_orthog(bool print) const {
 int ContinuumOrbitals::solveContinuumHF(double ec, int min_l, int max_l,
                                         const DiracSpinor *Fi,
                                         bool force_rescale, bool subtract_self,
-                                        bool force_orthog_Fi) {
+                                        bool force_orthog_Fi,
+                                        bool average_tail) {
 
   // include Hartree here? Probably shouldn't, since we do "core Hartree"
   const auto self_consistant = (p_hf->method() == HF::Method::HartreeFock ||
@@ -98,6 +99,12 @@ int ContinuumOrbitals::solveContinuumHF(double ec, int min_l, int max_l,
     // Then, include exchange correction:
     if (p_hf != nullptr && !p_hf->is_localQ()) {
       IncludeExchange(Fc, Fi, force_orthog_Fi, vc);
+    }
+    // Optionally, fill the unresolved (zeroed) tail with local average;
+    // do after exchange iterations (exchange negligible in the tail),
+    // before orthogonalisation (which integrates against core orbitals):
+    if (average_tail) {
+      DiracODE::averageTail(Fc, vc, m_alpha);
     }
   }
 
@@ -170,7 +177,8 @@ void ContinuumOrbitals::IncludeExchange(DiracSpinor &Fc, const DiracSpinor *Fi,
 //******************************************************************************
 int ContinuumOrbitals::solveContinuumZeff(double ec, int min_l, int max_l,
                                           double Z_eff, const DiracSpinor *Fi,
-                                          bool force_orthog) {
+                                          bool force_orthog,
+                                          bool average_tail) {
   // Solves Dirac equation for H-like potential (Zeff model)
   // Same Zeff as used by DarkARC (eqn B35 of arxiv:1912.08204):
   // Zeff = sqrt{I_{njl} eV / 13.6 eV} * n
@@ -195,6 +203,9 @@ int ContinuumOrbitals::solveContinuumZeff(double ec, int min_l, int max_l,
     Fc.en() = ec;
     // solve initial, without exchange term
     DiracODE::solveContinuum(Fc, ec, vc, m_alpha);
+    if (average_tail) {
+      DiracODE::averageTail(Fc, vc, m_alpha);
+    }
 
   } // kappa
 

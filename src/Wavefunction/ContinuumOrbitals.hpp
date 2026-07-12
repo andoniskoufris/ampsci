@@ -21,15 +21,18 @@ public:
   ContinuumOrbitals(const ContinuumOrbitals &) = default;
   ~ContinuumOrbitals() = default;
 
-  //! Solves continuum states with energy ec between min/max l
+  //! Solves continuum states with energy ec between min/max l.
+  //! average_tail: fill the (zeroed) unresolved high-r tail with a local
+  //! average (see DiracODE::averageTail).
   int solveContinuumHF(double ec, int min_l, int max_l,
                        const DiracSpinor *psi = nullptr,
                        bool force_rescale = false, bool subtract_self = true,
-                       bool force_orthog = true);
+                       bool force_orthog = true, bool average_tail = false);
 
   //! Solves cntm states using simple H-like potential eith effective charge (Z_eff). Usually, Zeff = sqrt{2 * I_{njl}} * n.
   int solveContinuumZeff(double ec, int min_l, int max_l, double Z_eff,
-                         const DiracSpinor *Fi, bool force_orthog);
+                         const DiracSpinor *Fi, bool force_orthog,
+                         bool average_tail = false);
 
   //! Checks orthogonality between cntm and core orbitals, returns worst eps
   double check_orthog(bool print = true) const;

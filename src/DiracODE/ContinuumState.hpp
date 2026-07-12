@@ -1,5 +1,6 @@
 #pragma once
 #include "AdamsMoulton.hpp"
+#include "Physics/PhysConst_constants.hpp"
 #include <utility>
 #include <vector>
 class DiracSpinor;
@@ -23,10 +24,65 @@ namespace DiracODE {
   @param alpha  Fine-structure constant.
   @param VxFa   Optional exchange potential. If nullptr, ignored.
   @param Fa0    Optional inhomogeneous source spinor. If nullptr, ignored.
+  @param average_tail  Optionally fill the unresolved (zeroed) tail with a
+  local average (see averageTail()).
 */
 void solveContinuum(DiracSpinor &Fa, double en, const std::vector<double> &v,
                     double alpha, const DiracSpinor *const VxFa = nullptr,
-                    const DiracSpinor *const Fa0 = nullptr);
+                    const DiracSpinor *const Fa0 = nullptr,
+                    bool average_tail = false);
+
+/*!
+  @brief Grid parameters required to safely store (pointwise) a continuum state of energy en on the entire grid.
+  @details
+  A continuum state is stored pointwise only where the grid spacing gives
+  at least ~20 points per wavelength; beyond that solveContinuum() zeroes
+  the solution (see Fa.max_pt()). This checks the grid against the largest
+  spacing (the last point) - the constraint is always at large r, where
+  the grid is coarsest. For matrix elements of an oscillating operator
+  jL(qr), pass the largest momentum transfer q: the integrand oscillates
+  at up to k + q, so the requirement tightens accordingly (q = 0 for
+  smooth operators: r^k, etc.). Each returned value assumes the other
+  grid parameters are unchanged. The b formula assumes a loglinear grid;
+  a negative b means no b > 0 is sufficient for this num_points (even a
+  linear grid is too coarse: more points are needed).
+  Uses the relativistic wavelength, 2*pi/k with k^2 = en*(2 + alpha^2*en);
+  at high energy this is much shorter than the non-relativistic estimate
+  (e.g., 1.9x shorter at en = 1e5 au).
+  @param en     Continuum energy (should be the largest energy required).
+  @param gr     The radial grid.
+  @param q      Largest operator momentum, for jL(qr)-type matrix elements
+  (default 0).
+  @param alpha  Fine-structure constant.
+  @return {num_points required (same r0, rmax, b),
+           largest sufficient b (same r0, rmax, num_points)}
+*/
+std::pair<std::size_t, double>
+RequiredContinuumGrid(double en, const Grid &gr, double q = 0.0,
+                      double alpha = PhysConst::alpha);
+
+/*!
+  @brief Optionally fills the zeroed high-r tail of a continuum state with a locally-averaged solution, so radial integrals against smooth functions remain accurate.
+  @details
+  solveContinuum() stores the solution only up to the radius where the grid
+  resolves the oscillations (Fa.max_pt()), and zeroes the rest; radial
+  integrals then silently omit any contribution from beyond that radius.
+  This routine replaces the tail with the local Gaussian average of a
+  finely-integrated solution. The average is smooth enough to store on the
+  coarse grid, and preserves radial integrals against functions that are
+  smooth on the oscillation scale (bound orbitals, r^k, ...), since
+  Int[B f_avg] = Int[B_avg f] ~ Int[B f]. It does not preserve integrals
+  against co-factors that oscillate on a comparable scale (e.g. jL(qr)
+  with q ~ k), and the stored tail is a local average, not the pointwise
+  wavefunction. Exchange is neglected in the tail. Sets Fa.max_pt() to
+  num_points.
+  @param Fa     Continuum state from solveContinuum() (modified in place).
+  @param v      Local potential v(r) (as used to solve Fa).
+  @param alpha  Fine-structure constant.
+  @return Index of the first averaged point; num_points if nothing was done.
+*/
+std::size_t averageTail(DiracSpinor &Fa, const std::vector<double> &v,
+                        double alpha);
 
 /*!
   @brief Analytic amplitude of f(r) at very large r for an H-like Dirac continuum state.

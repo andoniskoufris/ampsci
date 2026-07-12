@@ -643,6 +643,8 @@ TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][unit]") {
 
   // Set true to print detailed (expected vs found) table:
   constexpr bool print_table = true;
+  // Optionally fill the unresolved (zeroed) tail with local average:
+  constexpr bool average_tail = true;
 
   // Bound-continuum radial integrals <en kappa| r^k |n kappa>:
   // DiracODE::solveContinuum solution vs exact (analytic) Dirac Coulomb
@@ -651,51 +653,98 @@ TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][unit]") {
   // the ODE continuum solution (including its energy normalisation).
 
   fmt::print("\nDiracODE continuum vs exact Dirac Coulomb: "
-             "<en kappa|r^k|n kappa>\n");
+             "<en kappa|r^p|n kappa>\n");
 
-  const double r0 = 1.0e-6;
+  // For each energy, build a grid dense enough to store the continuum
+  // state (RequiredContinuumGrid), with at least min_points. If more than
+  // max_points required, clamp, and instead reduce b (more linear grid):
+  const double r0 = 1.0e-5;
   const double rmax = 50.0;
-  const std::size_t npts = 10000;
-  const double b = 1.0;
-  const auto grid =
-    std::make_shared<const Grid>(r0, rmax, npts, GridType::loglinear, b);
+  const double b0 = 0.1;
+  const std::size_t min_points = 2000;
+  const std::size_t max_points = 20000;
 
   if (print_table) {
-    fmt::print("{:>8} {:>4} {:>2} {:>3} {:>5} {:>3} {:>16} {:>16} {:>9}\n",
-               "alpha", "Z", "n", "kap", "en", "k", "expected", "found", "eps");
+    fmt::print("{:>5} {:>3} {:>2} {:>3} {:>5} {:>5} {:>6} {:>2} {:>16} "
+               "{:>16} {:>8}\n",
+               "α/α0", "Z", "n", "kap", "en", "b", "npts", "p", "expected",
+               "found", "eps");
   }
 
-  for (const double alpha : {PhysConst::alpha}) {
-    for (const double z : {1.0, 10.0}) {
-      const auto v0 = Nuclear::sphericalNuclearPotential(z, 0.0, grid->r());
-      for (const int n : {1, 3, 10}) {
-        for (const int kappa : {-1, 1, -2, 2, -3, 3}) {
-          const int l = kappa > 0 ? kappa : -kappa - 1;
-          if (l > n - 1) {
-            continue;
-          }
-          for (const double en : {0.1, 1.0, 10.0, 100.0, 1000.0, 1e4}) {
+  const double alpha0 = PhysConst::alpha;
+  for (const double en : {0.1, 1e2, 1.0e4, 1.0e5}) {
 
-            // Numerical (ODE) continuum solution:
+    // Grid for this energy:
+    const Grid grid_0(r0, rmax, min_points, GridType::loglinear, b0);
+    const auto [req_N, req_b] = DiracODE::RequiredContinuumGrid(en, grid_0);
+    auto num_points = std::max(req_N, min_points);
+    double b = b0;
+    // clamp at maximum grid density, adjust b instead (with maximum N).
+    // If no b is sufficient either (b_tmp <= 0), grid under-resolves the
+    // large-r oscillations: tail is zeroed (or averaged, if average_tail):
+    // if (num_points > max_points) {
+    //   num_points = max_points;
+    //   const Grid grid_1(r0, rmax, max_points, GridType::loglinear, b0);
+    //   const auto b_tmp = DiracODE::RequiredContinuumGrid(en, grid_1).second;
+    //   if (b_tmp > 0.05) {
+    //     b = b_tmp;
+    //   }
+    // }
+    const auto grid = std::make_shared<const Grid>(r0, rmax, num_points,
+                                                   GridType::loglinear, b);
+
+    // Reference grid for the 'expected' side: must fully resolve the
+    // oscillations, else the quadrature of the (exact) integrand is
+    // aliasing junk. Same as working grid when no clamping occurred:
+    const auto ref_N = std::max(req_N, min_points);
+    const auto grid_ref =
+      (ref_N == num_points && b == b0) ?
+        grid :
+        std::make_shared<const Grid>(r0, rmax, ref_N, GridType::loglinear, b0);
+
+    for (const double alpha : {PhysConst::alpha, 0.001 * PhysConst::alpha}) {
+      for (const double z : {1.0, 10.0, 100.0}) {
+
+        const auto v0 = Nuclear::sphericalNuclearPotential(z, 0.0, grid->r());
+
+        int count = 0;
+        for (const int n : {1, 3}) {
+          for (const int kappa : {-1, 1, 2, -3, 3, 6}) { // not all
+            const int l = kappa > 0 ? kappa : -kappa - 1;
+            if (l > n - 1) {
+              continue;
+            }
+
+            // Get reasonable coverage, skip half combos
+            if (++count % 2 == 0)
+              continue;
+
+            // Numerical (ODE) continuum solution, on the working grid:
             DiracSpinor Fe{0, kappa, grid};
-            DiracODE::solveContinuum(Fe, en, v0, alpha);
-
-            // Exact (analytic) Dirac-Coulomb bound + continuum, as DiracSpinors:
+            DiracODE::solveContinuum(Fe, en, v0, alpha, nullptr, nullptr,
+                                     average_tail);
             const auto Fb = DiracSpinor::exactHlike(n, kappa, grid, z, alpha);
-            const auto Fc =
-              DiracSpinor::exactHlike_cntm(en, kappa, grid, z, alpha);
 
-            for (const int k : {-1, 1}) {
-              const auto rk = grid->rpow(k);
-              // <Fb| r^k |Fe(ODE)> vs <Fb| r^k |exact continuum>:
+            // Exact (analytic) Dirac-Coulomb bound + continuum, on the
+            // reference grid:
+            const auto Fb_ref =
+              DiracSpinor::exactHlike(n, kappa, grid_ref, z, alpha);
+            const auto Fc_ref =
+              DiracSpinor::exactHlike_cntm(en, kappa, grid_ref, z, alpha);
+
+            for (const int p : {-1, 1}) {
+              // <Fb| r^p |Fe(ODE)> (working grid) vs
+              // <Fb| r^p |exact continuum> (reference grid):
+              const auto rk = grid->rpow(p);
+              const auto rk_ref = grid_ref->rpow(p);
               const auto found = Fb * (rk * Fe);
-              const auto expected = Fb * (rk * Fc);
+              const auto expected = Fb_ref * (rk_ref * Fc_ref);
 
               if (print_table) {
-                fmt::print("{:>8.1e} {:>4.0f} {:>2} {:>3} {:>5.1f} {:>3} "
-                           "{:>16.8e} {:>16.8e} {:>9.1e}\n",
-                           alpha, z, n, kappa, en, k, expected, found,
-                           (found - expected) / expected);
+                fmt::print("{:>5.0e} {:>3.0f} {:>2} {:>3} {:>5.0e} {:>5.2f} "
+                           "{:>6} {:>2} {:>16.8e} {:>16.8e} {:>8.0e}\n",
+                           alpha / alpha0, z, n, kappa, en, b, num_points, p,
+                           expected, found, (found - expected) / expected);
               }
 
               // REQUIRE(found == Approx(expected).epsilon(1.0e-5).margin(1.0e-7));
