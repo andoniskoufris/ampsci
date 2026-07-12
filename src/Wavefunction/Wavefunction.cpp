@@ -133,15 +133,12 @@ void Wavefunction::set_HF(HF::Method method, const std::string &in_core,
   // Move this into HF?
   if (print) {
     // Print some HF info to screen:
-    if (method == HF::Method::Hartree)
+    if (method == HF::Method::Hartree) {
       std::cout << "Using Hartree Method (no Exchange)\n";
-    else if (method == HF::Method::ApproxHF)
+    } else if (method == HF::Method::ApproxHF) {
       std::cout << "Using approximate HF Method (approx Exchange)\n";
-    else if (method == HF::Method::KohnSham) {
-      std::cout
-        << "Using Kohn-Sham Method.\n"
-        << "Note: You should include first valence state into the core:\n"
-           "Kohn-Sham is NOT a V^N-1 method!\n";
+    } else if (method == HF::Method::KohnSham) {
+      std::cout << "Using Kohn-Sham Method.\n";
     } else if (method == HF::Method::Local) {
       std::cout << "Using local potential\n";
     }

@@ -472,6 +472,7 @@ DiracSpinor DiracSpinor::exactHlike_cntm(double en, int kappa,
          "Required FLINT to compute continuum states. See docs.");
   DiracSpinor Fa(0, kappa, rgrid);
   Fa.m_en = en;
+#pragma omp parallel for schedule(dynamic, 8)
   for (std::size_t i = 0; i < rgrid->num_points(); ++i) {
     const auto [fi, gi] =
       DiracContinuum::fg(rgrid->r(i), en, kappa, zeff, alpha, mass);

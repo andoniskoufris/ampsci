@@ -521,10 +521,11 @@ void structureRad(const IO::InputBlock &input, const Wavefunction &wf) {
     }
   }
 
-  const auto &orbs2 = qip::ci_wc_compare(legs_str, "basis")    ? wf.basis() :
-                      qip::ci_wc_compare(legs_str, "spectrum") ? wf.spectrum() :
-                      qip::ci_wc_compare(legs_str, "bru*") ? wf.valence() :
-                                                             wf.hf_valence();
+  const auto &orbs2 = //
+    qip::ci_wc_compare(legs_str, "basis")    ? wf.basis() :
+    qip::ci_wc_compare(legs_str, "spectrum") ? wf.spectrum() :
+    qip::ci_wc_compare(legs_str, "bru*")     ? wf.valence() :
+                                               wf.hf_valence();
 
   // add valcence states:
   for (const auto &v : wf.valence()) {

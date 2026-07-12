@@ -2,6 +2,7 @@
 #pragma once
 #include "Physics/AtomData.hpp"
 #include "Physics/AtomData_PeriodicTable.hpp"
+#include "Physics/DiracContinuum.hpp"
 #include "Physics/DiracHydrogen.hpp"
 #include "Physics/NuclearData.hpp"
 #include "Physics/PhysConst_constants.hpp"
