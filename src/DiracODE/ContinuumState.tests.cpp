@@ -64,20 +64,9 @@ TEST_CASE("DiracODE: continuum relativistic", "[DiracODE][cntm][integration]") {
 
     // Grid for this energy:
     const Grid grid_0(r0, rmax, min_points, GridType::loglinear, b0);
-    const auto [req_N, req_b] = DiracODE::RequiredContinuumGrid(en, grid_0);
+    const auto req_N = DiracODE::RequiredContinuumGrid(en, grid_0).num_points;
     auto num_points = std::max(req_N, min_points);
     double b = b0;
-    // clamp at maximum grid density, adjust b instead (with maximum N).
-    // If no b is sufficient either (b_tmp <= 0), grid under-resolves the
-    // large-r oscillations: tail is zeroed (or averaged, if average_tail):
-    // if (num_points > max_points) {
-    //   num_points = max_points;
-    //   const Grid grid_1(r0, rmax, max_points, GridType::loglinear, b0);
-    //   const auto b_tmp = DiracODE::RequiredContinuumGrid(en, grid_1).second;
-    //   if (b_tmp > 0.05) {
-    //     b = b_tmp;
-    //   }
-    // }
     const auto grid = std::make_shared<const Grid>(r0, rmax, num_points,
                                                    GridType::loglinear, b);
 
@@ -185,7 +174,7 @@ TEST_CASE("DiracODE: continuum relativistic - unit", "[DiracODE][cntm][unit]") {
 
     // Grid for this energy (min_points always sufficient at these en):
     const Grid grid_0(r0, rmax, min_points, GridType::loglinear, b0);
-    const auto req_N = DiracODE::RequiredContinuumGrid(en, grid_0).first;
+    const auto req_N = DiracODE::RequiredContinuumGrid(en, grid_0).num_points;
     const auto num_points = std::max(req_N, min_points);
     const auto grid = std::make_shared<const Grid>(r0, rmax, num_points,
                                                    GridType::loglinear, b0);
@@ -251,7 +240,7 @@ TEST_CASE("DiracODE: continuum averageTail", "[DiracODE][cntm][unit]") {
 
   // Fully-resolved reference grid, and ~3x too coarse working grid:
   const Grid grid_0(r0, rmax, 2000, GridType::loglinear, b0);
-  const auto req_N = DiracODE::RequiredContinuumGrid(en, grid_0).first;
+  const auto req_N = DiracODE::RequiredContinuumGrid(en, grid_0).num_points;
   const auto grid_ref =
     std::make_shared<const Grid>(r0, rmax, req_N, GridType::loglinear, b0);
   const auto grid_c =

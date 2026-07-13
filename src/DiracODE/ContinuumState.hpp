@@ -32,34 +32,41 @@ void solveContinuum(DiracSpinor &Fa, double en, const std::vector<double> &v,
                     const DiracSpinor *const Fa0 = nullptr,
                     bool average_tail = false);
 
+//! Grid requirements returned by RequiredContinuumGrid
+struct GridRequirements {
+  //! num_points required, keeping r0, rmax, and b unchanged
+  std::size_t num_points;
+  //! largest sufficient b, keeping num_points unchanged (clamped to >= 0.05)
+  double b;
+  //! num_points required at the returned b (== current num_points, unless
+  //! b was clamped)
+  std::size_t num_points_b;
+};
+
 /*!
   @brief Grid parameters required to safely store (pointwise) a continuum state of energy en on the entire grid.
   @details
   A continuum state is stored pointwise only where the grid spacing gives
-  at least ~20 points per wavelength; beyond that solveContinuum() zeroes
+  at least N_ppw points per wavelength; beyond that solveContinuum() zeroes
   the solution (see Fa.max_pt()). This checks the grid against the largest
   spacing (the last point) - the constraint is always at large r, where
-  the grid is coarsest. For matrix elements of an oscillating operator
-  jL(qr), pass the largest momentum transfer q: the integrand oscillates
-  at up to k + q, so the requirement tightens accordingly (q = 0 for
-  smooth operators: r^k, etc.). Each returned value assumes the other
-  grid parameters are unchanged. The b formula assumes a loglinear grid;
-  a negative b means no b > 0 is sufficient for this num_points (even a
-  linear grid is too coarse: more points are needed).
+  the grid is coarsest. Each returned value assumes the other grid
+  parameters are unchanged. The b formula assumes a loglinear grid; b is
+  clamped from below at 0.05 (below that, even a nearly-linear grid is too
+  coarse) - when clamped, num_points_b (the num_points required at the
+  clamped b) will exceed the current num_points.
   Uses the relativistic wavelength, 2*pi/k with k^2 = en*(2 + alpha^2*en);
   at high energy this is much shorter than the non-relativistic estimate
   (e.g., 1.9x shorter at en = 1e5 au).
   @param en     Continuum energy (should be the largest energy required).
   @param gr     The radial grid.
-  @param q      Largest operator momentum, for jL(qr)-type matrix elements
-  (default 0).
+  @param N_ppw  Required points per wavelength (default 20, as used by
+  solveContinuum).
   @param alpha  Fine-structure constant.
-  @return {num_points required (same r0, rmax, b),
-           largest sufficient b (same r0, rmax, num_points)}
 */
-std::pair<std::size_t, double>
-RequiredContinuumGrid(double en, const Grid &gr, double q = 0.0,
-                      double alpha = PhysConst::alpha);
+GridRequirements RequiredContinuumGrid(double en, const Grid &gr,
+                                       double N_ppw = 20.0,
+                                       double alpha = PhysConst::alpha);
 
 /*!
   @brief Optionally fills the zeroed high-r tail of a continuum state with a locally-averaged solution, so radial integrals against smooth functions remain accurate.

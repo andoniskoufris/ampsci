@@ -197,22 +197,17 @@ void solveContinuum(DiracSpinor &Fa, double en, const std::vector<double> &v,
 }
 
 //==============================================================================
-std::pair<std::size_t, double> RequiredContinuumGrid(double en, const Grid &gr,
-                                                     double q, double alpha) {
+GridRequirements RequiredContinuumGrid(double en, const Grid &gr, double N_ppw,
+                                       double alpha) {
 
   // Storing the wavefunction pointwise requires at least N_ppw points per
   // wavelength at the largest grid spacing (the last grid point).
-  // The fastest oscillation of the integrand is at wavenumber k + q:
-  // continuum wave (k), times operator jL(qr) (oscillates at q for all
-  // qr > L, i.e., everywhere at large r). Resolving k + q also resolves
-  // the slow |k - q| beat. The constraint is always at large r, where the
-  // grid is coarsest: at small r the spacing shrinks linearly with r,
-  // faster than the local wavelength does (k(r) grows only as sqrt(Z/r),
-  // and jL is smooth below its turning point).
-  const int N_ppw = 20;
+  // The constraint is always at large r, where the grid is coarsest: at
+  // small r the spacing shrinks linearly with r, faster than the local
+  // wavelength does (k(r) grows only as sqrt(Z/r)).
   // relativistic wavenumber:
   const double k = std::sqrt(en * (2.0 + alpha * alpha * en));
-  const double lambda = 2.0 * M_PI / (k + q);
+  const double lambda = 2.0 * M_PI / k;
   const double dr_target = lambda / N_ppw;
 
   const auto n = gr.num_points();
@@ -230,14 +225,23 @@ std::pair<std::size_t, double> RequiredContinuumGrid(double en, const Grid &gr,
   //   dr(rmax) = du * rmax/(rmax + b),
   //   du = [(rmax - r0) + b*ln(rmax/r0)] / (n - 1)
   // Solving dr(rmax) = dr_target for b (with n fixed) is exact; dr(rmax)
-  // grows with b, so this is the largest b that suffices. Negative means
-  // no b > 0 is small enough (even a linear grid is too coarse): need
-  // more points.
+  // grows with b, so this is the largest b that suffices. If below b_min
+  // (including negative: no b > 0 is small enough), clamp to b_min:
+  const double b_min = 0.01;
   const double L = std::log(rmax / r0);
   const double tn = dr_target * double(n - 1);
-  const double b_req = rmax * (tn - (rmax - r0)) / (L * rmax - tn);
+  const double b_exact = rmax * (tn - (rmax - r0)) / (L * rmax - tn);
+  const double b_req = std::max(b_exact, b_min);
 
-  return {npts_req, b_req};
+  // Number of points required at the (possibly clamped) suggested b.
+  // If not clamped, current num_points is (exactly) sufficient at b_req:
+  const auto npts_b =
+    b_exact >= b_min ?
+      n :
+      Grid::calc_num_points_from_du(r0, rmax, dr_target * (rmax + b_req) / rmax,
+                                    GridType::loglinear, b_req);
+
+  return {npts_req, b_req, npts_b};
 }
 
 //==============================================================================

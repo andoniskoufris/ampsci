@@ -784,7 +784,6 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
   // This assumes core is in energy order; always true but not guarenteed.
   // Has no impact on result, just what is printed.
   std::cout << "\nBound orbitals:\n";
-  //           "1s+  -1 0 1/2  -1277.26  -34755.94     2"
   std::cout << "state  κ l   j       E(au)      E(eV)  N_el\n";
   bool reached_accessible = false;
   for (const auto &Fnk : wf.core()) {

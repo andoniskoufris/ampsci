@@ -60,8 +60,8 @@ inline double Zeff_real(double en, int n) {
   return n * std::sqrt(std::abs(2.0 * en));
 }
 
-//! Checks if radial grid is dense enough at large r for continuum state
-//! (and for jL(qr) matrix elements: integrand oscillates at up to k + q)
+//! Checks if radial grid is dense enough at large r for continuum state,
+//! and (roughly) for the maximum safe q.
 bool check_radial_grid(double Emax, double qmax, const Grid &rgrid,
                        double alpha = PhysConst::alpha);
 
