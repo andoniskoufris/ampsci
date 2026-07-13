@@ -28,6 +28,14 @@
 
 namespace Hypergeometric {
 
+// Testing toggle (cpp-only; does not change has_flint). When true, use arb
+// ball arithmetic and escalate the working precision until the result is good
+// to double precision. When false, do a single fixed-precision call at
+// double-ish precision ("call normally"). Escalation exists to handle the
+// large cancellations for continuum (large imaginary) args.
+constexpr bool use_arb = true;
+constexpr long fixed_prec = 64; // used only when use_arb == false
+
 template <typename T>
 T H1f1(T a, double b, T z, double s) {
   static_assert(std::is_same_v<T, double> ||
@@ -55,14 +63,20 @@ T H1f1(T a, double b, T z, double s) {
     acb_set_d_d(aa, a.real(), a.imag());
     acb_set_d(bb, b);
     acb_set_d_d(zz, z.real(), z.imag());
-    // Probably overkill, but following example ("arb"itrary precission):
+    // Following example ("arb"itrary precission):
     // https://arblib.org/using.html
     slong prec = 64;
-    for (; prec <= 16384; prec *= 2) {
-      acb_hypgeom_m(res, aa, bb, zz, 0, prec);
-      if (acb_rel_accuracy_bits(res) >= 53) {
-        break;
+    if constexpr (use_arb) {
+      for (; prec <= 16384; prec *= 2) {
+        acb_hypgeom_m(res, aa, bb, zz, 0, prec);
+        if (acb_rel_accuracy_bits(res) >= 53) {
+          break;
+        }
       }
+    } else {
+      // Single fixed-precision call ("call normally"):
+      prec = fixed_prec;
+      acb_hypgeom_m(res, aa, bb, zz, 0, prec);
     }
     if (s != 0.0) {
       // apply scale e^{s} at matching precision (no accuracy loss)

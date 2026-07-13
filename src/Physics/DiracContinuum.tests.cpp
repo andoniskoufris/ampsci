@@ -86,7 +86,7 @@ TEST_CASE("DiracContinuum: bound-continuum nonrel limit",
                "For a range of energies, kappas, n\n";
 
   // Set true to print detailed (expected vs found) table:
-  constexpr bool print_table = false;
+  constexpr bool print_table = true;
 
   // Radial integrals <n kappa| r^pow |en kappa> (bound * continuum, pow =
   // +/-1): the relativistic functions evaluated at tiny alpha must match a
@@ -97,7 +97,7 @@ TEST_CASE("DiracContinuum: bound-continuum nonrel limit",
   const double r0 = 1.0e-7;
   const double rmax = 120.0;
   const double b = 1.0;
-  const auto npts = 1000;
+  const auto npts = 1200;
   const Grid grid(r0, rmax, npts, GridType::loglinear, b);
 
   if (print_table) {
