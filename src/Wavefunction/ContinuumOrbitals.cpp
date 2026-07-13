@@ -184,9 +184,6 @@ int ContinuumOrbitals::solveContinuumZeff(double ec, int min_l, int max_l,
   // Zeff = sqrt{I_{njl} eV / 13.6 eV} * n
   // au: Zeff = sqrt{2 * I_{njl}} * n
 
-  // Also orthogonalise against entire core: (make no difference)
-  const bool orthog_core = force_orthog;
-
   // Zeff potential (pointlike nucleus, spherical with Rn=0):
   const auto vc = Nuclear::sphericalNuclearPotential(Z_eff, 0.0, p_rgrid->r());
 
@@ -209,15 +206,41 @@ int ContinuumOrbitals::solveContinuumZeff(double ec, int min_l, int max_l,
 
   } // kappa
 
-  // Orthogonalise against entire core:
-  if (orthog_core) {
+  // Forcing orthogonality between continuum states and current core state
+  // (have to do this _after_ orthog_core, since that slightly breaks this)
+  if (force_orthog) {
     for (auto &Fc : orbitals) {
-      for (const auto &Fa : p_hf->core()) {
-        if (Fa.kappa() == Fc.kappa())
-          Fc -= (Fc * Fa) * Fa;
+      if (Fi != nullptr && Fi->kappa() == Fc.kappa()) {
+        Fc -= (*Fi * Fc) * *Fi;
       }
     }
   }
+
+  return 0;
+}
+
+//******************************************************************************
+int ContinuumOrbitals::solveContinuumZeffAnalytic(double ec, int min_l,
+                                                  int max_l, double Z_eff,
+                                                  const DiracSpinor *Fi,
+                                                  bool force_orthog) {
+  // Exact (analytic) Dirac-Coulomb continuum states for H-like (Zeff) model.
+  // See solveContinuumZeff for the numerical (DiracODE) version; the
+  // orthogonalisation steps are identical.
+  // nb: relativistic case requires FLINT (see DiracContinuum::available)
+
+  // loop through each kappa state
+  for (auto k_i = 0ul; true; ++k_i) {
+    const auto kappa = Angular::kindex_to_kappa(k_i);
+    const auto l = Angular::l_k(kappa);
+    if (l < min_l)
+      continue;
+    if (l > max_l)
+      break;
+
+    orbitals.push_back(
+      DiracSpinor::exactHlike_cntm(ec, kappa, p_rgrid, Z_eff, m_alpha));
+  } // kappa
 
   // Forcing orthogonality between continuum states and current core state
   // (have to do this _after_ orthog_core, since that slightly breaks this)

@@ -5,6 +5,7 @@
 #include "LinAlg/Matrix.hpp"
 #include "Maths/Grid.hpp"
 #include "Modules/Modules.hpp"
+#include "Physics/DiracContinuum.hpp"
 #include "Physics/PhysConst_constants.hpp"
 #include "Physics/UnitConv_conversions.hpp"
 #include "Wavefunction/ContinuumOrbitals.hpp"
@@ -15,6 +16,7 @@
 #include "qip/Methods.hpp"
 #include "qip/Widgets.hpp"
 #include <cassert>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 
@@ -120,7 +122,8 @@ void Kionisation(const IO::InputBlock &input, const Wavefunction &wf) {
   const Grid qgrid({q_steps, qmin_au, qmax_au, 0, GridType::logarithmic});
 
   // Check to see if grid is reasonable for maximum energy:
-  Kion::check_radial_grid(std::min(ec_max, Emax_au), qmax_au, wf.grid());
+  Kion::check_radial_grid(std::min(ec_max, Emax_au), qmax_au, wf.grid(),
+                          wf.alpha());
 
   //----------------------------------------------------------------------------
   // Read in and parse options:
@@ -683,8 +686,16 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
                        "potentials or if hole-particle is included. [false]"},
      {"hole_particle", "Subtract Hartree-Fock self-interaction (account for "
                        "hole-particle interaction) [true]"},
-     {"force_orthog",
-      "Enforce orthogonality of the continuum orbitals [true]"}});
+     {"force_orthog", "Enforce orthogonality of the continuum orbitals [true]"},
+     {"method",
+      "Method for bound and continuum states: HF (standard), Zeff (H-like, "
+      "solved numerically with DiracODE), ZeffAnalytic (H-like, exact "
+      "analytic functions; requires FLINT). [HF; Zeff if Zeff option is set]"},
+     {"Zeff",
+      "Effective charge for the Zeff/ZeffAnalytic methods. If set (to "
+      "anything), the default method becomes Zeff. Set to 'true' or <=0 to "
+      "use 'real' Zeff = n*sqrt(-2*en) from each binding energy; "
+      "set to a positive value to use that constant Zeff for all states."}});
   if (input.has_option("help")) {
     return;
   }
@@ -765,7 +776,7 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // Check to see if grid is reasonable for maximum energy/momentum.
   // Just prints warning to screen if not the case
-  Kion::check_radial_grid(Emax_au, q_max, wf.grid());
+  Kion::check_radial_grid(Emax_au, q_max, wf.grid(), wf.alpha());
 
   //----------------------------------------------------------------------------
 
@@ -879,11 +890,56 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto force_orthog = input.get("force_orthog", true);
   const auto force_rescale = input.get("force_rescale", false);
   const auto hole_particle = input.get("hole_particle", true);
+
+  // H-like (Zeff) approximation (for testing/comparison):
+  // If the Zeff option is set (to anything), the default method is Zeff.
+  // Zeff = 'true' or <= 0 (or not set): "real" Zeff = n*sqrt(-2*en);
+  // Zeff = positive value: use that constant Zeff for all states.
+  const auto zeff_input = input.get<std::string>("Zeff");
+  const auto t_method =
+    input.get<std::string>("method", zeff_input ? "Zeff" : "HF");
+
+  const auto states_method = Kion::parseStatesMethod(t_method);
+  const bool use_Zeff = states_method != Kion::AtomicMethod::HF;
+  const bool Zeff_analytic = states_method == Kion::AtomicMethod::ZeffAnalytic;
+
+  // Zeff value: positive number -> constant; 'true'/non-numeric/<=0 -> real:
+  double Zeff_constant = 0.0;
+  if (zeff_input && !qip::ci_compare(*zeff_input, "true")) {
+    // strtod returns 0.0 for non-numeric input (-> real Zeff)
+    const double z = std::strtod(zeff_input->c_str(), nullptr);
+    Zeff_constant = z > 0.0 ? z : 0.0;
+  }
+
+  if (zeff_input && !use_Zeff) {
+    fmt2::styled_print(fg(fmt::color::orange), "\nWarning: ");
+    fmt::print("Zeff option has no effect for method=HF; ignoring\n");
+  }
+  if (Zeff_analytic && !DiracContinuum::available) {
+    fmt2::styled_print(fg(fmt::color::red), "\nFail: ");
+    fmt::print("method=ZeffAnalytic requires ampsci be compiled with FLINT; "
+               "use method=Zeff (solves with DiracODE)\n");
+    return;
+  }
+
   std::cout << "\n";
-  if (force_rescale) {
+  if (use_Zeff) {
+    std::cout << "Using H-like (Zeff) bound and continuum states";
+    if (Zeff_constant != 0.0) {
+      fmt::print(": constant Zeff = {:g}\n", Zeff_constant);
+    } else {
+      std::cout << ": Zeff = n*sqrt(-2*en) for each state\n";
+    }
+    std::cout << (Zeff_analytic ?
+                    "Using exact analytic H-like functions\n" :
+                    "Solving H-like states numerically (DiracODE)\n");
+    std::cout << "(force_rescale/hole_particle have no effect for Zeff "
+                 "states)\n";
+  }
+  if (force_rescale && !use_Zeff) {
     std::cout << "Force rescale: Enforcing V(r) ~ -Z_ion/r at large r\n";
   }
-  if (hole_particle) {
+  if (hole_particle && !use_Zeff) {
     std::cout << "Subtracting HF self-interaction (account for hole-particle "
                  "interaction)\n";
   }
@@ -891,14 +947,14 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "Explicitely enforcing orthogonality between bound and "
                  "continuum states\n";
   }
-  if (!force_rescale && !hole_particle &&
+  if (!use_Zeff && !force_rescale && !hole_particle &&
       wf.vHF()->method() == HF::Method::HartreeFock) {
     fmt::print("\n"
                "Warning: Long-range behaviour of V(r) may be incorrect.\n"
                "Suggest to either force rescaling, or include hole-particle "
                "interaction.\n");
   }
-  if (force_rescale && hole_particle) {
+  if (!use_Zeff && force_rescale && hole_particle) {
     // meaningless to include
     fmt2::styled_print(fg(fmt::color::red), "\nFail: ");
     fmt::print("Do not force rescaling of V(r) if also subtracting hole "
@@ -947,10 +1003,15 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
   // Output format: Filename and descriptions:
 
   // Output file name: depends on approximation, options
-  const auto method = HF::parseMethod_short(wf.vHF()->method()) +
-                      (force_rescale ? "_rescale" : "") +
-                      (hole_particle ? "_hp" : "") +
-                      (force_orthog ? "_orth" : "");
+  // (force_rescale/hole_particle have no effect for Zeff states)
+  const auto base_method =
+    use_Zeff ? (Zeff_constant != 0.0 ? fmt::format("Zeff{:g}", Zeff_constant) :
+                                       std::string{"Zeff"}) +
+                 (Zeff_analytic ? "an" : "") :
+               HF::parseMethod_short(wf.vHF()->method());
+  const auto method =
+    base_method + (force_rescale && !use_Zeff ? "_rescale" : "") +
+    (hole_particle && !use_Zeff ? "_hp" : "") + (force_orthog ? "_orth" : "");
 
   const auto units = Kion::Units::Particle;
   const int num_digits = 6;
@@ -1002,13 +1063,19 @@ void formFactors(const IO::InputBlock &input, const Wavefunction &wf) {
     fmt::print("[{:2}/{:2}]: {:4s} -> {} - {}  (L = {} -> {} - {})\n", count++,
                wf.core().size(), Fa.shortSymbol(), AtomData::l_symbol(lc_min),
                AtomData::l_symbol(lc_max), Fa.l(), lc_min, lc_max);
+    if (use_Zeff) {
+      fmt::print("         Zeff = {:.4f}\n",
+                 Zeff_constant != 0.0 ? Zeff_constant :
+                                        Kion::Zeff_real(Fa.en(), Fa.n()));
+    }
     std::cout << std::flush;
 
     // Form factors for specific bound state, Fa:
     const auto K_factors_nk = Kion::calculate_formFactors_nk(
       wf.vHF(), Fa, lc_min, lc_max, ec_min, ec_max, force_rescale,
       hole_particle, force_orthog, Egrid, qgrid, diagonal_Eq, low_q, jK_tab,
-      Kmin, Kmax, vectorQ, axialQ, scalarQ, pseudoscalarQ, spatialQ);
+      Kmin, Kmax, vectorQ, axialQ, scalarQ, pseudoscalarQ, spatialQ,
+      states_method, Zeff_constant);
 
     assert(K_factors_nk.size() == K_factors.size());
 

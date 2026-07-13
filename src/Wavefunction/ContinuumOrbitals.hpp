@@ -34,6 +34,12 @@ public:
                          const DiracSpinor *Fi, bool force_orthog,
                          bool average_tail = false);
 
+  //! As solveContinuumZeff, but uses exact analytic Dirac-Coulomb functions
+  //! rather than solving the ODE numerically. Relativistic case requires
+  //! FLINT (see DiracContinuum::available).
+  int solveContinuumZeffAnalytic(double ec, int min_l, int max_l, double Z_eff,
+                                 const DiracSpinor *Fi, bool force_orthog);
+
   //! Checks orthogonality between cntm and core orbitals, returns worst eps
   double check_orthog(bool print = true) const;
 

@@ -1,22 +1,52 @@
 #include "Kion_functions.hpp"
+#include "DiracODE/include.hpp"
 #include "DiracOperator/include.hpp"
 #include "HF/HartreeFock.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "Maths/Grid.hpp"
+#include "Physics/AtomData.hpp"
 #include "Physics/PhysConst_constants.hpp"
 #include "Physics/UnitConv_conversions.hpp"
+#include "Potentials/NuclearPotentials.hpp"
 #include "Wavefunction/ContinuumOrbitals.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/color.hpp"
 #include "fmt/ostream.hpp"
 #include "qip/Maths.hpp"
-#include "qip/Methods.hpp"
+#include "qip/String.hpp"
 #include "qip/Widgets.hpp"
 #include "qip/omp.hpp"
 #include <iostream>
 #include <memory>
+#include <optional>
 
 namespace Kion {
+
+//==============================================================================
+AtomicMethod parseStatesMethod(const std::string &in_method) {
+  if (qip::ci_compare(in_method, "HF") ||
+      qip::ci_compare(in_method, "HartreeFock"))
+    return AtomicMethod::HF;
+  if (qip::ci_compare(in_method, "Zeff"))
+    return AtomicMethod::Zeff;
+  if (qip::ci_wc_compare(in_method, "ZeffAn*"))
+    return AtomicMethod::ZeffAnalytic;
+  std::cout << "Warning: AtomicMethod: " << in_method
+            << " ?? Defaulting to HF\n";
+  return AtomicMethod::HF;
+}
+
+std::string parseStatesMethod(const AtomicMethod &in_method) {
+  switch (in_method) {
+  case AtomicMethod::HF:
+    return "HF";
+  case AtomicMethod::Zeff:
+    return "Zeff";
+  case AtomicMethod::ZeffAnalytic:
+    return "ZeffAnalytic";
+  }
+  assert(false);
+}
 
 //==============================================================================
 LinAlg::Matrix<double>
@@ -120,13 +150,38 @@ std::array<LinAlg::Matrix<double>, 13> calculate_formFactors_nk(
   bool force_orthog, const std::vector<double> &Egrid,
   const std::vector<double> &qgrid, bool diagonal_Eq, bool low_q,
   const SphericalBessel::JL_table &jK_tab, int Kmin, int Kmax, bool vectorQ,
-  bool axialQ, bool scalarQ, bool pseudoscalarQ, bool spatialQ) {
+  bool axialQ, bool scalarQ, bool pseudoscalarQ, bool spatialQ,
+  AtomicMethod method, double zeff_constant) {
 
   // can never get this far, but debugging check
   assert(vHF != nullptr);
 
-  if (diagonal_Eq)
+  if (diagonal_Eq) {
     assert(qgrid.size() == 1);
+  }
+
+  // H-like (Zeff) approximation: constant Zeff (if given), else "real"
+  // Zeff = n*sqrt(-2*en) from the binding energy (same as DarkARC):
+  const bool use_zeff = method != AtomicMethod::HF;
+  const double Zeff =
+    zeff_constant > 0.0 ? zeff_constant : Zeff_real(Fa.en(), Fa.n());
+
+  // Bound state used in the matrix elements: the real state, or its H-like
+  // (Zeff, pointlike) version, solved analytically or numerically (DiracODE).
+  // nb: Zeff state will not have exactly right energy; continuum energies
+  // (ec = E + en) and occupation always use the real (input) Fa.
+  std::optional<DiracSpinor> Fa_zeff{};
+  if (method == AtomicMethod::ZeffAnalytic) {
+    Fa_zeff = DiracSpinor::exactHlike(Fa.n(), Fa.kappa(), Fa.grid_sptr(), Zeff,
+                                      vHF->alpha());
+  } else if (method == AtomicMethod::Zeff) {
+    const auto v_z =
+      Nuclear::sphericalNuclearPotential(Zeff, 0.0, vHF->grid().r());
+    const auto e0 = AtomData::diracen(Zeff, Fa.n(), Fa.kappa(), vHF->alpha());
+    Fa_zeff = DiracODE::boundState(Fa.n(), Fa.kappa(), e0, Fa.grid_sptr(), v_z,
+                                   {}, vHF->alpha());
+  }
+  const auto &Fa_t = use_zeff ? *Fa_zeff : Fa;
 
   const auto E_steps = Egrid.size();
   const auto q_steps = qgrid.size();
@@ -230,8 +285,15 @@ std::array<LinAlg::Matrix<double>, 13> calculate_formFactors_nk(
     assert(ec <= ec_max);
 
     ContinuumOrbitals cntm(vHF);
-    cntm.solveContinuumHF(ec, lc_min, lc_max, &Fa, force_rescale, hole_particle,
-                          force_orthog);
+    if (method == AtomicMethod::Zeff) {
+      cntm.solveContinuumZeff(ec, lc_min, lc_max, Zeff, &Fa_t, force_orthog);
+    } else if (method == AtomicMethod::ZeffAnalytic) {
+      cntm.solveContinuumZeffAnalytic(ec, lc_min, lc_max, Zeff, &Fa_t,
+                                      force_orthog);
+    } else {
+      cntm.solveContinuumHF(ec, lc_min, lc_max, &Fa_t, force_rescale,
+                            hole_particle, force_orthog);
+    }
 
     const auto tid = std::size_t(omp_get_thread_num());
     auto Phik = Phik_ops[tid].get();
@@ -299,18 +361,18 @@ std::array<LinAlg::Matrix<double>, 13> calculate_formFactors_nk(
         for (const auto &Fe : cntm.orbitals) {
 
           // vector:
-          const auto t = Phik ? Phik->reducedME(Fe, Fa) : 0.0;
-          const auto E = Ek ? Ek->reducedME(Fe, Fa) : 0.0;
-          const auto M = Mk ? Mk->reducedME(Fe, Fa) : 0.0;
-          const auto L = Lk ? Lk->reducedME(Fe, Fa) : 0.0;
+          const auto t = Phik ? Phik->reducedME(Fe, Fa_t) : 0.0;
+          const auto E = Ek ? Ek->reducedME(Fe, Fa_t) : 0.0;
+          const auto M = Mk ? Mk->reducedME(Fe, Fa_t) : 0.0;
+          const auto L = Lk ? Lk->reducedME(Fe, Fa_t) : 0.0;
           // axial:
-          const auto t5 = Phi5k ? Phi5k->reducedME(Fe, Fa) : 0.0;
-          const auto E5 = E5k ? E5k->reducedME(Fe, Fa) : 0.0;
-          const auto M5 = M5k ? M5k->reducedME(Fe, Fa) : 0.0;
-          const auto L5 = L5k ? L5k->reducedME(Fe, Fa) : 0.0;
+          const auto t5 = Phi5k ? Phi5k->reducedME(Fe, Fa_t) : 0.0;
+          const auto E5 = E5k ? E5k->reducedME(Fe, Fa_t) : 0.0;
+          const auto M5 = M5k ? M5k->reducedME(Fe, Fa_t) : 0.0;
+          const auto L5 = L5k ? L5k->reducedME(Fe, Fa_t) : 0.0;
           // Scalar, Pseudoscalar
-          const auto S = Sk ? Sk->reducedME(Fe, Fa) : 0.0;
-          const auto S5 = S5k ? S5k->reducedME(Fe, Fa) : 0.0;
+          const auto S = Sk ? Sk->reducedME(Fe, Fa_t) : 0.0;
+          const auto S5 = S5k ? S5k->reducedME(Fe, Fa_t) : 0.0;
 
           // Vector operators
           if (vectorQ) {
@@ -356,7 +418,8 @@ std::array<LinAlg::Matrix<double>, 13> calculate_formFactors_nk(
 }
 
 //==============================================================================
-bool check_radial_grid(double Emax_au, double qmax_au, const Grid &rgrid) {
+bool check_radial_grid(double Emax_au, double qmax_au, const Grid &rgrid,
+                       double alpha) {
   // Check grid type: only loglinear is reasonable for this module
   if (rgrid.type() != GridType::loglinear) {
     fmt2::styled_print(fg(fmt::color::orange), "\nWarning:\n");
@@ -365,48 +428,33 @@ bool check_radial_grid(double Emax_au, double qmax_au, const Grid &rgrid) {
               << "; consider changing to loglinear\n";
   }
 
-  // *Very* rough estimate of good aximum q range
-  const auto i = rgrid.getIndex(1.0);
-  const auto dr_q = rgrid.drdu(i) * rgrid.du();
-  const auto qmax_targ = 1.5 * 2.0 * M_PI / (3.0 * dr_q);
-  fmt::print("\nVery rough guess at maximum safe q: {:.0f} au = {:.2f} MeV\n",
-             qmax_targ, qmax_targ * UnitConv::Momentum_au_to_MeV);
-  if (qmax_au > qmax_targ) {
-    fmt::print("Warning: Grid may not be dense enough for highest q\n\n");
-  }
+  // Grid required to resolve the matrix-element integrand at large r:
+  // oscillates at up to k + q (k from the continuum state at Emax, q from
+  // jL(qr)). Uses relativistic wavelength; see RequiredContinuumGrid.
+  const auto [N_req, b_req] =
+    DiracODE::RequiredContinuumGrid(Emax_au, rgrid, qmax_au, alpha);
 
-  // Check if grid dense enough. If not, offers advice
-  const double approx_wavelength = 2.0 * M_PI / std::sqrt(2.0 * Emax_au);
-  const auto dr = rgrid.du(); //rough
-  const int N_ppw = 15;
-  const double dr_target = approx_wavelength / N_ppw;
-  fmt::print("Approx continuum wavelength for max E: {:.3f}.\n"
-             "Approx dr at large r: {:.4f}\n",
-             approx_wavelength, dr);
-  if (dr > dr_target) {
+  fmt::print("\nGrid check for continuum states: E_max = {:.3g} au, "
+             "q_max = {:.3g} au = {:.3g} MeV:\n",
+             Emax_au, qmax_au, qmax_au * UnitConv::Momentum_au_to_MeV);
+  fmt::print("Require num_points ~ {} (same r0, rmax, b); have {}\n", N_req,
+             rgrid.num_points());
+
+  if (rgrid.num_points() < N_req) {
     fmt2::styled_print(fg(fmt::color::orange), "Warning: ");
-    fmt::print(
-      "Grid may not be dense enough for continuum state with e={:.2f}\n",
-      Emax_au);
-    fmt::print("Have dr~{:.3f} at large r, but need dr~{:.3f}\n", dr,
-               dr_target);
-
-    // For given b, find required num_points:
-    const auto n_target =
-      Grid::calc_num_points_from_du(rgrid.r0(), rgrid.rmax(), 0.9 * dr_target,
-                                    GridType::loglinear, rgrid.loglin_b());
-    // For given num_points, find required b [by solving: du(b)-du_targ = 0]
-    const auto f = [&](double b) {
-      return Grid::calc_du_from_num_points(rgrid.r0(), rgrid.rmax(),
-                                           rgrid.num_points(),
-                                           GridType::loglinear, b) -
-             0.9 * dr_target;
-    };
-    const auto [b_target, db] =
-      qip::Newtons(f, 1.0, {0.05, 100.0}, 1.0e-1, 0.01);
-    fmt::print("Try increasing num_points to {}; or decreasing b to {:.2f}\n",
-               n_target, b_target);
-    std::cout << "(Program will continue, but results may be inaccurate)\n\n";
+    fmt::print("Grid may not be dense enough for continuum states with "
+               "E = {:.2f} au, q = {:.2f} au\n",
+               Emax_au, qmax_au);
+    if (b_req > 0.0) {
+      fmt::print("Try increasing num_points to {}; or decreasing b to {:.2f}\n",
+                 N_req, b_req);
+    } else {
+      fmt::print("Try increasing num_points to {} (no b > 0 is sufficient "
+                 "with current num_points)\n",
+                 N_req);
+    }
+    std::cout << "(Program will continue; continuum solutions are truncated "
+                 "(zeroed) at large r where the grid is too coarse)\n\n";
     return false;
   }
   return true;

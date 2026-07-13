@@ -2,7 +2,10 @@
 #include "DiracOperator/Operators/jL.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "Maths/SphericalBessel.hpp"
+#include "Physics/PhysConst_constants.hpp"
 #include <array>
+#include <cmath>
+#include <string>
 #include <vector>
 class DiracSpinor;
 class Grid;
@@ -32,15 +35,52 @@ enum class OutputFormat { matrix, xyz, Error };
 */
 enum class Units { Atomic, Particle, Error };
 
-//! Checks if radial grid is dense enough at large r for continuum state
-bool check_radial_grid(double Emax, double qmax, const Grid &rgrid);
+/*! @brief
+  Method used to solve bound/continuum states for form factors
 
-//! Calculates all 13 form factors (V,A,S,P) for a single core state Fa.
-/*! @details
- Returns an array of 13 matrices: {K_VT, K_VE, K_VM, K_VL, K_T5, K_E5,
- K_M5, K_L5, K_X, K_X5, K_Z, K_S, K_S5}. 
- @note: Matrix will be empty (0x0) if not calculated (set by bool).
- @note: order is important
+  @details
+  HF: real (Hartree-Fock) bound and continuum states (standard method).
+  Zeff: H-like (Zeff) bound and continuum states, solved numerically
+  with DiracODE.
+  ZeffAnalytic: H-like (Zeff) bound and continuum states, using exact
+  analytic Dirac-Coulomb functions. Relativistic continuum requires FLINT
+  (see DiracContinuum::available).
+*/
+enum class AtomicMethod { HF, Zeff, ZeffAnalytic };
+
+//! Parses string (HF, Zeff, ZeffAnalytic) to AtomicMethod (case-insensitive).
+//! Unknown input: warns, defaults to HF.
+AtomicMethod parseStatesMethod(const std::string &in_method);
+//! StatesMethod to string (HF, Zeff, ZeffAnalytic)
+std::string parseStatesMethod(const AtomicMethod &in_method);
+
+//! Effective charge from binding energy: Zeff = n * sqrt(-2*en).
+//! Same Zeff as used by DarkARC (see arxiv:1912.08204).
+inline double Zeff_real(double en, int n) {
+  return n * std::sqrt(std::abs(2.0 * en));
+}
+
+//! Checks if radial grid is dense enough at large r for continuum state
+//! (and for jL(qr) matrix elements: integrand oscillates at up to k + q)
+bool check_radial_grid(double Emax, double qmax, const Grid &rgrid,
+                       double alpha = PhysConst::alpha);
+
+/*! 
+  @brief Calculates all 13 form factors (V,A,S,P) for a single core state Fa.
+
+  @details
+  Returns an array of 13 matrices: {K_VT, K_VE, K_VM, K_VL, K_T5, K_E5,
+  K_M5, K_L5, K_X, K_X5, K_Z, K_S, K_S5}.
+  @note: Matrix will be empty (0x0) if not calculated (set by bool).
+  @note: order is important
+
+  Optionally (method != AtomicMethod::HF), uses H-like (Zeff) states for
+  both the bound state and the continuum, solved either numerically
+  (DiracODE) or with exact analytic Dirac-Coulomb functions (see
+  AtomicMethod). Zeff is zeff_constant if non-zero, else the "real"
+  Zeff = n*sqrt(-2*en) from the binding energy (see Zeff_real). Continuum
+  energies (ec = E + en) and occupation always use the real (input) Fa.
+  force_rescale and hole_particle have no effect for Zeff states.
 */
 std::array<LinAlg::Matrix<double>, 13> calculate_formFactors_nk(
   const HF::HartreeFock *vHF, const DiracSpinor &Fa, int lc_min, int lc_max,
@@ -48,7 +88,8 @@ std::array<LinAlg::Matrix<double>, 13> calculate_formFactors_nk(
   bool force_orthog, const std::vector<double> &Egrid,
   const std::vector<double> &qgrid, bool diagonal_Eq, bool low_q,
   const SphericalBessel::JL_table &jK_tab, int Kmin, int Kmax, bool vectorQ,
-  bool axialQ, bool scalarQ, bool pseudoscalarQ, bool spatialQ);
+  bool axialQ, bool scalarQ, bool pseudoscalarQ, bool spatialQ,
+  AtomicMethod method = AtomicMethod::HF, double zeff_constant = 0.0);
 
 //! Calculates ionisation factor K(E,q) for given core state, Fnk, using
 //! standard method. Stored as matrix. use_rpa0 is flag for including
