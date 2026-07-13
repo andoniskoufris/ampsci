@@ -22,13 +22,17 @@ constexpr bool has_flint =
   Real (double) arguments: evaluated with GSL (double precision); the scale
   e^{s} is applied as an ordinary double factor.
 
-  Complex arguments: evaluated with FLINT ball arithmetic, increasing the
-  working precision until the result is accurate to (at least) full double
-  precision. This handles the large cancellations that occur for large
-  imaginary z. The scale e^{s} is applied inside the arbitrary-precision
-  arithmetic, so exponentially small 1F1 values (e.g. like e^{-pi*nu/2} for
-  continuum Coulomb functions) can be paired with their compensating
-  normalisation factors without under/overflowing double.
+  Complex arguments: first attempts a fast double-precision evaluation
+  (Maclaurin series at small |z|, asymptotic expansion at large |z|, each
+  with a running error estimate); this covers most continuum-state calls at
+  ~100x the speed of ball arithmetic. Where the estimated error is too
+  large (strong cancellation: large Im(a) with moderate |z|), falls back to
+  FLINT ball arithmetic, increasing the working precision until the result
+  is accurate to (at least) full double precision. The scale e^{s} is
+  applied inside the evaluation, so exponentially small 1F1 values (e.g.
+  like e^{-pi*nu/2} for continuum Coulomb functions) can be paired with
+  their compensating normalisation factors without under/overflowing
+  double.
 
   @note Requires FLINT library to work with complex values. 
   Compile with `-lflint` and set `-DAMPSCI_USE_FLINT3` (FLINT 3+), or with

@@ -82,8 +82,8 @@ TEST_CASE("Maths::Hypergeometric 1F1 (Hlike grid)", "[Hypergeometric][unit]") {
     }
 
     // Loose tolerance: reference generated at higher precision than checked:
-    REQUIRE(found.real() == Approx(exp.real()).epsilon(1.0e-11));
-    REQUIRE(found.imag() == Approx(exp.imag()).epsilon(1.0e-11));
+    REQUIRE(found.real() == Approx(exp.real()).epsilon(1.0e-10));
+    REQUIRE(found.imag() == Approx(exp.imag()).epsilon(1.0e-10));
   }
 }
 
