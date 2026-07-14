@@ -1,6 +1,7 @@
 #pragma once
 #include "Coulomb/include.hpp"
 #include "Coulomb/meTable.hpp"
+#include "Feynman.hpp"
 #include "IO/FRW_fileReadWrite.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include <memory>
@@ -152,6 +153,11 @@ public:
   //! Normalisation factor; defined: <w||h||v>_norm = <w||h||v>(f_v + f_w)
   double f_norm(const DiracSpinor &v) const { return -0.5 * (n1(v) + n2(v)); }
 
+  //! Normalisation factor calculated in Feynman method; defined: <w||h||v>_norm = <w||h||v>(f_v + f_w)
+  double f_norm_Feyn(const DiracSpinor &v, const Feynman &Feyn) const {
+    return -0.5 * (norm_feyn_direct(v, Feyn) + n1(v, true) + n1(v, true));
+  }
+
   //! Returns sum of SR+Norm diagrams, reduced ME: <w||T+B+C+N||v>.
   //! @note Must call solve_core() first! h and dV used for norm() only
   double srn(const DiracSpinor &w, const DiracSpinor &v,
@@ -227,13 +233,19 @@ private:
             const DiracSpinor &v, const DiracSpinor &m) const;
 
   // "Normalisation" terms (most important)
-  double n1(const DiracSpinor &v) const;
-  double n2(const DiracSpinor &v) const;
+  double n1(const DiracSpinor &v, const bool &only_exchange = false) const;
+  double n2(const DiracSpinor &v, const bool &only_exchange = false) const;
   double dSigma_dE(const DiracSpinor &v, const DiracSpinor &i,
-                   const DiracSpinor &j, const DiracSpinor &k) const;
+                   const DiracSpinor &j, const DiracSpinor &k,
+                   const bool &only_exchange = false) const;
 
   double z_bo(const DiracSpinor &w, const DiracSpinor &v,
               bool transpose = false) const;
+
+  // Normalisation terms for Feynman calculation
+  double norm_feyn_direct(const DiracSpinor &v,
+                          const MBPT::Feynman &Feyn) const;
+  double norm_exchange(const DiracSpinor &v) const;
 
   //
   double Q(int k, const DiracSpinor &a, const DiracSpinor &b,

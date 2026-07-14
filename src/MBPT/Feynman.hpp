@@ -124,6 +124,11 @@ public:
   GMatrix Sigma_direct(int kappa_v, double en_v,
                        std::optional<int> k = {}) const;
 
+  // calculate derivative of direct part of correlation potential
+  // can include all-orders screening and hole-particle interaction if desired
+  GMatrix direct_dSigma_dE(int kappa_v, double en_v,
+                           std::optional<int> k = {}) const;
+
   //! Returns (reference to) q^k (radial) matrix. Note: includes drj? No?
   const ComplexRMatrix &get_qk(int k) const { return m_qk.at(std::size_t(k)); }
 

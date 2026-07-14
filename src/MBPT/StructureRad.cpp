@@ -4,6 +4,7 @@
 #include "ExternalField/CorePolarisation.hpp"
 #include "ExternalField/TDHF.hpp"
 #include "ExternalField/calcMatrixElements.hpp"
+#include "MBPT/Feynman.hpp"
 #include "Sigma2.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "qip/Vector.hpp"
@@ -640,8 +641,8 @@ double StructureRad::d2(const int k, const DiracSpinor &w, const DiracSpinor &r,
 
 //==============================================================================
 double StructureRad::dSigma_dE(const DiracSpinor &v, const DiracSpinor &i,
-                               const DiracSpinor &j,
-                               const DiracSpinor &k) const {
+                               const DiracSpinor &j, const DiracSpinor &k,
+                               const bool &only_exchange) const {
   double t = 0.0;
 
   const auto e_vijk = (v.en() + i.en() - j.en() - k.en());
@@ -653,7 +654,7 @@ double StructureRad::dSigma_dE(const DiracSpinor &v, const DiracSpinor &i,
 
     const auto tup1 = (2 * u + 1);
 
-    const auto q = Q(u, v, i, j, k);
+    const auto q = only_exchange ? 0.0 : Q(u, v, i, j, k);
     if (Angular::zeroQ(q))
       continue;
 
@@ -666,12 +667,12 @@ double StructureRad::dSigma_dE(const DiracSpinor &v, const DiracSpinor &i,
   return t / tjvp1;
 }
 //==============================================================================
-double StructureRad::n1(const DiracSpinor &v) const {
+double StructureRad::n1(const DiracSpinor &v, const bool &only_exchange) const {
   double t = 0.0;
   for (const auto &a : mCore) {
     for (const auto &b : mCore) {
       for (const auto &n : mExcited) {
-        t += dSigma_dE(v, n, a, b);
+        t += dSigma_dE(v, n, a, b, only_exchange);
       }
     }
   }
@@ -679,7 +680,26 @@ double StructureRad::n1(const DiracSpinor &v) const {
 }
 
 //==============================================================================
-double StructureRad::n2(const DiracSpinor &v) const {
+double StructureRad::n2(const DiracSpinor &v, const bool &only_exchange) const {
+  double t = 0.0;
+  for (const auto &a : mCore) {
+    for (const auto &n : mExcited) {
+      for (const auto &m : mExcited) {
+        t += dSigma_dE(v, a, m, n, only_exchange);
+      }
+    }
+  }
+  return t;
+}
+
+//==============================================================================
+double StructureRad::norm_feyn_direct(const DiracSpinor &v,
+                                      const Feynman &Feyn) const {
+  return v * (Feyn.direct_dSigma_dE(v.kappa(), v.en()) * v);
+}
+
+//==============================================================================
+double StructureRad::norm_exchange(const DiracSpinor &v) const {
   double t = 0.0;
   for (const auto &a : mCore) {
     for (const auto &n : mExcited) {

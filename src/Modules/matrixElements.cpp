@@ -926,7 +926,7 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "Stretched states with m=J [J=min(j_a,j_b) for off-diag]\n";
   } else {
     fmt2::warning();
-    std::cout << " - Unkown matrix element type?\n";
+    std::cout << " - Unknown matrix element type?\n";
   }
   std::cout << "Units: " << h->units() << "\n";
 
@@ -984,6 +984,10 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto sr = MBPT::StructureRad(wf.basis(), wf.FermiLevel());
 
+  const MBPT::Feynman feyn(
+    wf.vHF(), 0, 4, wf.grid().size(),
+    {MBPT::Screening::exclude, MBPT::HoleParticle::exclude}, 1, true, false);
+
   //----------------------------------------------------
   // First, diagonal:
   if (diagonal && h->parity() == 1) {
@@ -1007,13 +1011,16 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
       const auto &Sv1 = *Sigma1.getSigma(v.kappa(), v.n());
       const auto &Sv2 = *Sigma2.getSigma(v.kappa(), v.n());
       const auto dSv = lambda_v * v * ((Sv1 - Sv2) * v) / (2 * delta);
+      const auto dSv_Feyn =
+        lambda_v * v * (feyn.direct_dSigma_dE(v.kappa(), v.en()) * v);
 
       const auto h0 = factor * h->reducedME(v, v);
       const auto dV = rpaQ ? factor * rpa->dV(v, v) : 0.0;
 
-      fmt::print(os, "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
-                 v.shortSymbol(), v.shortSymbol(), h0, dV, dSv, dSv,
-                 (h0 + dV) * dSv);
+      fmt::print(
+        os, "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
+        v.shortSymbol(), v.shortSymbol(), h0, dV, dSv, dSv, (h0 + dV) * dSv,
+        dSv_Feyn);
     }
   }
   // Then, off-diagonal:
@@ -1055,20 +1062,26 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
         const auto &Sw2 = *Sigma2.getSigma(w.kappa(), w.n());
         const auto dSv = lambda_v * v * ((Sv1 - Sv2) * v) / (2 * delta);
         const auto dSw = lambda_w * w * ((Sw1 - Sw2) * w) / (2 * delta);
+        const auto dSv_Feyn =
+          lambda_v * v * (feyn.direct_dSigma_dE(v.kappa(), v.en()) * v);
+        const auto dSw_Feyn =
+          lambda_w * w * (feyn.direct_dSigma_dE(w.kappa(), w.en()) * w);
 
         const auto h0 = factor * h->reducedME(v, w);
         const auto dV = rpaQ ? factor * rpa->dV(v, w) : 0.0;
 
-        fmt::print(os, "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
-                   v.shortSymbol(), w.shortSymbol(), h0, dV, dSv, dSw,
-                   0.5 * (h0 + dV) * (dSv + dSw));
+        fmt::print(
+          os, "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
+          v.shortSymbol(), w.shortSymbol(), h0, dV, dSv, dSw,
+          0.5 * (h0 + dV) * (dSv + dSw),
+          0.5 * (h0 + dV) * (dSv_Feyn + dSw_Feyn));
       }
     }
   }
 
   std::cout
     << "\na    b     t_ab         dv_ab        dΣ_a         dΣ_b         "
-       "Norm\n";
+       "Norm         Norm (Feynman)\n";
   std::cout << os.str();
   std::cout << "\n";
 }

@@ -872,4 +872,70 @@ GMatrix Feynman::Sigma_direct(int kv, double env,
   return Sigma;
 }
 
+//==============================================================================
+GMatrix Feynman::direct_dSigma_dE(int kv, double env,
+                                  std::optional<int> in_k) const {
+  // If in_k is set, only calculate for single k
+  // Used both for testing, and for calculating f_k factors
+
+  GMatrix dSigma_dE(m_i0, m_stride, m_subgrid_points, m_include_G, m_grid);
+
+  constexpr std::complex<double> I{0.0, 1.0};
+  const auto num_kappas = m_max_ki + 1;
+
+  std::vector<GMatrix> Sigma_ts(std::size_t(omp_get_max_threads()), dSigma_dE);
+
+#pragma omp parallel for collapse(2)
+  for (auto iw = 0ul; iw < m_wgrid.num_points(); iw++) {
+    for (auto iB = 0ul; iB < num_kappas; ++iB) {
+
+      auto &Sigma_t = Sigma_ts[std::size_t(omp_get_thread_num())];
+
+      const auto omega = std::complex{m_omre, m_wgrid(iw)};
+
+      // Simpson's rule: Implicit ends (integrand zero at w=0 and w>wmax)
+      const auto weight = iw % 2 == 0 ? 4.0 / 3 : 2.0 / 3;
+
+      // I, since dw is on imag. grid; 2 from symmetric +/- w
+      const auto dw = I * weight * m_wgrid.drdu(iw);
+
+      const auto kB = Angular::kindex_to_kappa(iB);
+
+      // Silly, but ig gB includes G, then so will gB_QPQ
+      const auto gB =
+        m_include_G ? green(kB, env + omega) : green(kB, env + omega).drop_g();
+
+      // derivative of the Green's function: dG/dE = -G(E) * G(E)
+      const auto neg_gB2 = -1.0 * gB * gB;
+
+      for (auto k = 0ul; int(k) <= m_max_k; k++) {
+
+        // For doing single k (tests and for fk factors)
+        if (in_k && *in_k != int(k))
+          continue;
+
+        const auto ck_vB = Angular::Ck_kk(int(k), kv, kB);
+        if (ck_vB == 0.0)
+          continue;
+
+        const auto &qpq_dw = m_qpiq_wk[iw][k];
+
+        const auto c_ang_dw =
+          dw * ck_vB * ck_vB / double(Angular::twoj_k(kv) + 1);
+
+        Sigma_t += (c_ang_dw * mult_elements(neg_gB2, qpq_dw)).real();
+      }
+    }
+  }
+
+  for (const auto &Sigma_t : Sigma_ts) {
+    dSigma_dE += Sigma_t;
+  }
+
+  // Extra 2 from symmetric + / -w
+  dSigma_dE *= (m_wgrid.du() / M_PI);
+
+  return dSigma_dE;
+}
+
 } // namespace MBPT
