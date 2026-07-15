@@ -984,9 +984,16 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto sr = MBPT::StructureRad(wf.basis(), wf.FermiLevel());
 
+  const size_t num_points = wf.grid().num_points();
+  const size_t num_points_sub = wf.grid().num_points() / 4;
+  const size_t stride = num_points / num_points_sub;
+
+  IO::ChronoTimer timerfeyn("construct feynman object");
   const MBPT::Feynman feyn(
-    wf.vHF(), 0, 4, wf.grid().size(),
+    wf.vHF(), 215, stride, 158,
     {MBPT::Screening::exclude, MBPT::HoleParticle::exclude}, 1, true, false);
+
+  timerfeyn.stop();
 
   //----------------------------------------------------
   // First, diagonal:
@@ -1018,9 +1025,10 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
       const auto dV = rpaQ ? factor * rpa->dV(v, v) : 0.0;
 
       fmt::print(
-        os, "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
-        v.shortSymbol(), v.shortSymbol(), h0, dV, dSv, dSv, (h0 + dV) * dSv,
-        dSv_Feyn);
+        os,
+        "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
+        v.shortSymbol(), v.shortSymbol(), h0, dV, dSv, dSv, dSv_Feyn, dSv_Feyn,
+        (h0 + dV) * dSv);
     }
   }
   // Then, off-diagonal:
@@ -1070,18 +1078,17 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
         const auto h0 = factor * h->reducedME(v, w);
         const auto dV = rpaQ ? factor * rpa->dV(v, w) : 0.0;
 
-        fmt::print(
-          os, "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e}\n",
-          v.shortSymbol(), w.shortSymbol(), h0, dV, dSv, dSw,
-          0.5 * (h0 + dV) * (dSv + dSw),
-          0.5 * (h0 + dV) * (dSv_Feyn + dSw_Feyn));
+        fmt::print(os,
+                   "{:4s} {:4s} {:+.5e} {:+.5e} {:+.5e} {:+.5e} {:+.5e} "
+                   "{:+.5e} {:+.5e}\n",
+                   v.shortSymbol(), w.shortSymbol(), h0, dV, dSv, dSw, dSv_Feyn,
+                   dSw_Feyn, 0.5 * (h0 + dV) * (dSv + dSw));
       }
     }
   }
 
-  std::cout
-    << "\na    b     t_ab         dv_ab        dΣ_a         dΣ_b         "
-       "Norm         Norm (Feynman)\n";
+  std::cout << "\na    b     t_ab         dv_ab        dΣ_a         dΣ_b       "
+               "  dΣ_a(Feyn)         dΣ_b(Feyn)         Norm\n";
   std::cout << os.str();
   std::cout << "\n";
 }

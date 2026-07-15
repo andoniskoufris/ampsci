@@ -905,8 +905,10 @@ GMatrix Feynman::direct_dSigma_dE(int kv, double env,
       const auto gB =
         m_include_G ? green(kB, env + omega) : green(kB, env + omega).drop_g();
 
-      // derivative of the Green's function: dG/dE = -G(E) * G(E)
-      const auto neg_gB2 = -1.0 * gB * gB;
+      // derivative of the Green's function:
+      // dG/dE = -G(E) * G(E)
+      //       = -\sum_j G(ri,rj;E) * G(rj,rk;E)
+      const auto dG_dE = -1.0 * gB.drj() * gB;
 
       for (auto k = 0ul; int(k) <= m_max_k; k++) {
 
@@ -923,7 +925,7 @@ GMatrix Feynman::direct_dSigma_dE(int kv, double env,
         const auto c_ang_dw =
           dw * ck_vB * ck_vB / double(Angular::twoj_k(kv) + 1);
 
-        Sigma_t += (c_ang_dw * mult_elements(neg_gB2, qpq_dw)).real();
+        Sigma_t += (c_ang_dw * mult_elements(dG_dE, qpq_dw)).real();
       }
     }
   }
