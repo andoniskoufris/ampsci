@@ -330,7 +330,7 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
   // Here, "Fermi0" cancellation doesn't happen
   // So, Fermi and Fermi0 are the same
   const auto de_vw = denominators == Denominators::Fermi0 ?
-                       2.0 * e0 :
+                       -2.0 * e0 :
                      denominators == Denominators::Fermi ?
                        -0.5 * (v0 + w0 + x0 + y0) :
                        -0.5 * (v.en() + w.en() + x.en() + y.en());
