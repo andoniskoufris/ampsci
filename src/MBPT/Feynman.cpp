@@ -908,7 +908,7 @@ GMatrix Feynman::direct_dSigma_dE(int kv, double env,
       // derivative of the Green's function:
       // dG/dE = -G(E) * G(E)
       //       = -\sum_j G(ri,rj;E) * G(rj,rk;E)
-      const auto dG_dE = -1.0 * gB.drj() * gB;
+      const auto dG_dE = -1.0 * (gB.drj()) * gB;
 
       for (auto k = 0ul; int(k) <= m_max_k; k++) {
 

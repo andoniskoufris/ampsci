@@ -1070,10 +1070,8 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
         const auto &Sw2 = *Sigma2.getSigma(w.kappa(), w.n());
         const auto dSv = lambda_v * v * ((Sv1 - Sv2) * v) / (2 * delta);
         const auto dSw = lambda_w * w * ((Sw1 - Sw2) * w) / (2 * delta);
-        const auto dSv_Feyn =
-          lambda_v * v * (feyn.direct_dSigma_dE(v.kappa(), v.en()) * v);
-        const auto dSw_Feyn =
-          lambda_w * w * (feyn.direct_dSigma_dE(w.kappa(), w.en()) * w);
+        const auto dSv_Feyn = -2.0 * sr.f_norm_Feyn(v, feyn);
+        const auto dSw_Feyn = -2.0 * sr.f_norm_Feyn(w, feyn);
 
         const auto h0 = factor * h->reducedME(v, w);
         const auto dV = rpaQ ? factor * rpa->dV(v, w) : 0.0;
@@ -1088,7 +1086,7 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
   }
 
   std::cout << "\na    b     t_ab         dv_ab        dΣ_a         dΣ_b       "
-               "  dΣ_a(Feyn)         dΣ_b(Feyn)         Norm\n";
+               "  dΣ_a(Feyn)   dΣ_b(Feyn)   Norm\n";
   std::cout << os.str();
   std::cout << "\n";
 }
