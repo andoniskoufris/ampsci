@@ -81,8 +81,10 @@ split_basis(const std::vector<DiracSpinor> &basis, double E_Fermi,
   \f]
 
   Note: these have fewer symmetries than \f$ Q^k \f$; specifically
-  \f$ S^k_{vwxy} = S^k_{xyvw} \f$. We call with the "Lk" symmetry 
-  (though, we should have called it "Sk")
+  \f$ S^k_{vwxy} = S^k_{wvyx} \f$. We call with the "Lk" symmetry
+  (though, we should have called it "Sk").
+  Note: the bra-ket symmetry \f$ S^k_{vwxy} = S^k_{xyvw} \f$ holds only for
+  Fermi0 denominators (it is broken by the energy dependence otherwise).
 
   @param k            Multipolarity.
   @param v            External spinor.
