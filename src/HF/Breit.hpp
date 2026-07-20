@@ -626,6 +626,20 @@ public:
   DiracSpinor Bkv_bcd_freqw(int k, int kappa_v, const DiracSpinor &Fb,
                             const DiracSpinor &Fc, const DiracSpinor &Fd,
                             const double w) const;
+  /*!
+    @brief Frequency-dependent direct Breit two-body integral averaged over frequencies w_vc and w_bd 
+
+    @details Used for including two-body frequency-dependent Breit into correlation potential
+  */
+  DiracSpinor Breit::Bkv_bcd_freqw_avgd(int k, int kappa_v, const double en_v,
+                                        const DiracSpinor &Fb,
+                                        const DiracSpinor &Fc,
+                                        const DiracSpinor &Fd) const {
+    return 0.5 * (Bkv_bcd_freqw(k, kappa_v, Fb, Fc, Fd,
+                                PhysConst::alpha * abs(en_v - Fc.en())) +
+                  Bkv_bcd_freqw(k, kappa_v, Fb, Fc, Fd,
+                                PhysConst::alpha * abs(Fb.en() - Fd.en())));
+  }
 
   /*!
     @brief Frequency-dependent exchange Breit two-body integral "right-hand-side"

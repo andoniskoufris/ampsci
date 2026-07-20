@@ -346,7 +346,10 @@ GMatrix Goldstone::dSigma_Breit2(int kappa_v, double en_v,
           const auto dele = en_v + a.en() - m.en() - n.en();
           const auto factor = fk / (f_kkjj * dele);
 
-          const auto Bkv = m_Br->Bkv_bcd(k, kappa_v, a, m, n);
+          const auto Bkv =
+            m_Br->lambda_f() == 0.0 ?
+              m_Br->Bkv_bcd(k, kappa_v, a, m, n) :
+              m_Br->Bkv_bcd_freqw_avgd(k, kappa_v, en_v, a, m, n);
           // factor of 2: correct each side of symmetric diagram
           Sd_t.add(Bkv, etak * Qkv + Pkv, 2.0 * factor);
         }
@@ -362,7 +365,10 @@ GMatrix Goldstone::dSigma_Breit2(int kappa_v, double en_v,
           const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, n, b, a);
           const auto dele = en_v + n.en() - b.en() - a.en();
           const auto factor = fk / (f_kkjj * dele);
-          const auto Bkv = m_Br->Bkv_bcd(k, kappa_v, n, b, a);
+          const auto Bkv =
+            m_Br->lambda_f() == 0.0 ?
+              m_Br->Bkv_bcd(k, kappa_v, n, b, a) :
+              m_Br->Bkv_bcd_freqw_avgd(k, kappa_v, en_v, n, b, a);
           Sd_t.add(Bkv, etak * Qkv + Pkv, 2.0 * factor);
         }
       }

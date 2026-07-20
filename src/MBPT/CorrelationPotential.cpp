@@ -302,6 +302,7 @@ GMatrix CorrelationPotential::formSigma_G(int kappa, double ev,
   if (m_includeBreit_b2) {
     // nb: do some extra work to calculate it seperately (Qk and Pk)..
     // But, since selection rules are different, it's better this way
+    const auto freq_breit = m_HF->vBreit()->lambda_f();
     fmt::print("  de[B2]  = ");
     std::cout << std::flush;
     const auto dS =
