@@ -583,6 +583,18 @@ DiracSpinor Breit::Bkv_bcd_freqw(int k, int kappa_v, const DiracSpinor &Fb,
 }
 
 //==============================================================================
+
+DiracSpinor Breit::Bkv_bcd_freqw_avgd(int k, int kappa_v, const double en_v,
+                                      const DiracSpinor &Fb,
+                                      const DiracSpinor &Fc,
+                                      const DiracSpinor &Fd) const {
+  return 0.5 * (Bkv_bcd_freqw(k, kappa_v, Fb, Fc, Fd,
+                              PhysConst::alpha * abs(en_v - Fc.en())) +
+                Bkv_bcd_freqw(k, kappa_v, Fb, Fc, Fd,
+                              PhysConst::alpha * abs(Fb.en() - Fd.en())));
+}
+
+//==============================================================================
 DiracSpinor Breit::BPkv_bcd_freqw(int k, int kappa_v, const DiracSpinor &Fb,
                                   const DiracSpinor &Fc, const DiracSpinor &Fd,
                                   const double w) const {
