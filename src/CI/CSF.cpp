@@ -152,6 +152,20 @@ void PsiJPi::solve(const LinAlg::Matrix<double> &Hci, int num_solutions,
   }
 }
 
+// Stores a single solution, that was not found by diagonalising Hci
+void PsiJPi::set_solution(double energy, const LinAlg::Vector<double> &coefs) {
+  assert(coefs.size() == m_CSFs.size());
+
+  m_num_solutions = 1;
+  m_Solution.first = LinAlg::Vector<double>{energy};
+  m_Solution.second = LinAlg::Matrix<double>(1, coefs.size());
+  for (std::size_t i = 0; i < coefs.size(); ++i) {
+    m_Solution.second(0, i) = coefs[i];
+  }
+  m_Info.clear();
+  m_Info.resize(m_num_solutions);
+}
+
 // You must manually update the config. info for each solution (if required)
 void PsiJPi::update_config_info(std::size_t i, const ConfigInfo &info) {
   assert(m_Info.size() == m_num_solutions);

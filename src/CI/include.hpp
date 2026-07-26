@@ -3,3 +3,4 @@
 #include "CI/CI_Integrals.hpp"
 #include "CI/CSF.hpp"
 #include "CI/ConfigurationInteraction.hpp"
+#include "CI/MixedStates.hpp"

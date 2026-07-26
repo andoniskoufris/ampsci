@@ -187,6 +187,18 @@ public:
   void solve(const LinAlg::Matrix<double> &Hci, int num_solutions = 0,
              std::optional<double> all_below = {});
 
+  /*!
+    @brief Stores a single solution directly, without diagonalising.
+    @details
+    Replaces any existing solutions with the single one given.  For states that
+    are not eigenstates of the CI Hamiltonian: e.g., the mixed states of
+    @ref solve_mixed_state, for which @p energy is that of the reference state.
+
+    @param energy Energy to be associated with the solution (atomic units).
+    @param coefs  CI expansion coefficients; one per CSF.
+  */
+  void set_solution(double energy, const LinAlg::Vector<double> &coefs);
+
   //! Set configuration info for the ith solution (must be called manually after solve())
   void update_config_info(std::size_t i, const ConfigInfo &info);
 
