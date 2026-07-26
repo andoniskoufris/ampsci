@@ -10,9 +10,14 @@ namespace MBPT {
 
 /*! @brief Type of energy demoninators: RS, Fermi, Fermi0
 
- - RS     : Use energy denominator ascociated with actual orbital for external legs. Symmeterised so that diagram is symmetric. May be danger of accidental enhancement.
+ - RS     : Use actual orbital energies for external legs. May be danger of accidental enhancement.
  - Fermi  : Use energy from the "Fermi" level (i.e., lowest state for given kappa in excited spectrum).
  - Fermi0 : As above, but assume Fermi level for all kappas the same. These often cancel, so there is no (excited-excited) term in denominator (except diagram d). Fine, since the remaining core-excited always dominates.
+
+In each case, each diagram is averaged with its bra-ket partner,
+0.5*(1/de + 1/de'), so that S^k (and hence the CI matrix) is symmetric.
+This is the Hermitian effective Hamiltonian, correct to
+this order in PT. For Fermi0 the two partners coincide.
 
 Energy for internal legs (hole-particle) always actual orbtials.
 */
@@ -83,8 +88,9 @@ split_basis(const std::vector<DiracSpinor> &basis, double E_Fermi,
   Note: these have fewer symmetries than \f$ Q^k \f$; specifically
   \f$ S^k_{vwxy} = S^k_{wvyx} \f$. We call with the "Lk" symmetry
   (though, we should have called it "Sk").
-  Note: the bra-ket symmetry \f$ S^k_{vwxy} = S^k_{xyvw} \f$ holds only for
-  Fermi0 denominators (it is broken by the energy dependence otherwise).
+  Since each diagram is averaged with its bra-ket partner (Hermitised, see
+  \ref MBPT::Denominators), the bra-ket symmetry
+  \f$ S^k_{vwxy} = S^k_{xyvw} \f$ also holds, for all denominator options.
 
   @param k            Multipolarity.
   @param v            External spinor.
@@ -95,7 +101,7 @@ split_basis(const std::vector<DiracSpinor> &basis, double E_Fermi,
   @param core         Core (hole) states for internal lines.
   @param excited      Excited (particle) states (internal lines).
   @param SixJ         Precomputed 6-j symbol table.
-  @param denominators Energy denominator convention (RS or BW) ** not implemented correctly **.
+  @param denominators Energy denominator convention: see \ref MBPT::Denominators.
 
   @return \f$ S^k_{vwxy} \f$.
 */

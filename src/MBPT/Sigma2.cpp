@@ -2,17 +2,23 @@
 #include "Angular/include.hpp"
 #include "Coulomb/include.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
+#include <cassert>
 
 namespace MBPT {
 
 //==============================================================================
 // Returns string representation of Denominators enum
 std::string parse_Denominators(Denominators d) {
-  if (d == Denominators::RS)
+  switch (d) {
+  case Denominators::RS:
     return "RS";
-  if (d == Denominators::Fermi)
+  case Denominators::Fermi:
     return "Fermi";
-  return "Fermi0";
+  case Denominators::Fermi0:
+    return "Fermi0";
+  }
+  assert(false);
+  return "Error";
 }
 
 // Parses string to Denominators enum (case-insensitive); returns Fermi0 if unrecognised
@@ -120,17 +126,28 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
   const auto x0 = e_bar(x.kappa(), excited);
   const auto y0 = e_bar(y.kappa(), excited);
 
-  // const auto de_xv = x.en() - v.en();
-  const auto de_xv = denominators == Denominators::Fermi0 ?
-                       0.0 :
-                     denominators == Denominators::Fermi ?
-                       0.5 * (x0 - v0 + y0 - w0) :
-                       0.5 * (x.en() - v.en() + y.en() - w.en());
+  // External-leg parts of the energy denominators:
+  // diagram a: (e_x - e_v), diagram b: (e_y - e_w)
+  const auto de_xv = denominators == Denominators::Fermi0 ? 0.0 :
+                     denominators == Denominators::Fermi  ? x0 - v0 :
+                                                            x.en() - v.en();
+  const auto de_yw = denominators == Denominators::Fermi0 ? 0.0 :
+                     denominators == Denominators::Fermi  ? y0 - w0 :
+                                                            y.en() - w.en();
 
   double sum = 0.0;
   for (const auto &a : core) {
     for (const auto &n : excited) {
-      const auto de = de_xv + a.en() - n.en();
+      const auto de_an = a.en() - n.en();
+
+      // Hermitianse: average each diagram with its dagged partner
+      // [diagram a of <xy|S|vw> has the numerator of diagram b of <vw|S|xy>,
+      // with the external part of the denominator negated, and vice versa].
+      // Gives symmetric CI matrix; correct to this order.
+      const auto inv_de_a =
+        0.5 * (1.0 / (de_an + de_xv) + 1.0 / (de_an - de_yw));
+      const auto inv_de_b =
+        0.5 * (1.0 / (de_an + de_yw) + 1.0 / (de_an - de_xv));
 
       // A diagrams:
       const auto qk_vnxa = qk.Q(k, v, n, x, a);
@@ -141,7 +158,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       const auto wk_awny = qk_awny + pk_awny;
 
       // diagrams a1, a2, a3:
-      sum += (qk_vnxa * wk_awny + pk_vnxa * qk_awny) / de;
+      sum += (qk_vnxa * wk_awny + pk_vnxa * qk_awny) * inv_de_a;
 
       // B diagrams: a <-> n
       const auto qk_vaxn = qk_vnxa;
@@ -151,7 +168,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       const auto wk_nway = qk_nway + pk_nway;
 
       // diagrams b1, b2, b3:
-      sum += (qk_vaxn * wk_nway + pk_vaxn * qk_nway) / de;
+      sum += (qk_vaxn * wk_nway + pk_vaxn * qk_nway) * inv_de_b;
     }
   }
 
@@ -178,12 +195,15 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
   const auto x0 = e_bar(x.kappa(), excited);
   const auto y0 = e_bar(y.kappa(), excited);
 
-  // const auto de_yv = y.en() - v.en();
-  const auto de_yv = denominators == Denominators::Fermi0 ?
-                       0.0 :
-                     denominators == Denominators::Fermi ?
-                       0.5 * (y0 - v0 + x0 - w0) :
-                       0.5 * (y.en() - v.en() + x.en() - w.en());
+  // External-leg parts of the energy denominators:
+  // c1's own denominator has (e_y - e_v); its bra-ket partner (c1 of the
+  // reversed element, same numerator) has (e_w - e_x)
+  const auto de_yv = denominators == Denominators::Fermi0 ? 0.0 :
+                     denominators == Denominators::Fermi  ? y0 - v0 :
+                                                            y.en() - v.en();
+  const auto de_xw = denominators == Denominators::Fermi0 ? 0.0 :
+                     denominators == Denominators::Fermi  ? x0 - w0 :
+                                                            x.en() - w.en();
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -198,7 +218,9 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
       if (!Coulomb::sixjTriads({}, {}, k, y, w, n))
         continue;
 
-      const auto de = de_yv + a.en() - n.en();
+      const auto de_an = a.en() - n.en();
+      // Hermitise: average with bra-ket partner (see S_Sigma2_ab)
+      const auto inv_de = 0.5 * (1.0 / (de_an + de_yv) + 1.0 / (de_an - de_xw));
 
       for (int u = u0; u <= u1; u += 2) {
         const auto l0_SixJ = l0; // allow += 2
@@ -212,7 +234,7 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
           const auto qk_vnay = qk.Q(u, v, n, a, y);
           const auto qk_awxn = qk.Q(l, a, w, x, n);
 
-          sum += s * SixJ1 * SixJ2 * qk_vnay * qk_awxn / de;
+          sum += s * SixJ1 * SixJ2 * qk_vnay * qk_awxn * inv_de;
         }
       }
     }
@@ -240,11 +262,14 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
     Angular::neg1pow_2(v.twoj() + w.twoj() + x.twoj() + y.twoj() + 2 * k) *
     (2.0 * k + 1.0);
 
-  const auto de_yv = denominators == Denominators::Fermi0 ?
-                       0.0 :
-                     denominators == Denominators::Fermi ?
-                       0.5 * (x0 - w0 + y0 - v0) :
-                       0.5 * (x.en() - w.en() + y.en() - v.en());
+  // External-leg parts of the energy denominators:
+  // c2's denominator has (e_x - e_w); its HC partner has (e_v - e_y)
+  const auto de_xw = denominators == Denominators::Fermi0 ? 0.0 :
+                     denominators == Denominators::Fermi  ? x0 - w0 :
+                                                            x.en() - w.en();
+  const auto de_yv = denominators == Denominators::Fermi0 ? 0.0 :
+                     denominators == Denominators::Fermi  ? y0 - v0 :
+                                                            y.en() - v.en();
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -260,7 +285,9 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
       if (!Coulomb::sixjTriads({}, {}, k, v, x, n))
         continue;
 
-      const auto de = de_yv + a.en() - n.en();
+      const auto de_an = a.en() - n.en();
+      // Hermitianise: average with HC partner
+      const auto inv_de = 0.5 * (1.0 / (de_an + de_xw) + 1.0 / (de_an - de_yv));
 
       for (int u = u0; u <= u1; u += 2) {
         const auto l0_SixJ = l0; // allow += 2
@@ -274,7 +301,7 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
           const auto qk_vany = qk.Q(u, v, a, n, y);
           const auto qk_nwxa = qk.Q(l, n, w, x, a);
 
-          sum += s * SixJ1 * SixJ2 * qk_vany * qk_nwxa / de;
+          sum += s * SixJ1 * SixJ2 * qk_vany * qk_nwxa * inv_de;
         }
       }
     }
@@ -300,13 +327,14 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
   const auto y0 = e_bar(y.kappa(), excited);
   const auto e0 = DiracSpinor::min_En(excited);
 
-  // Here, "Fermi0" cancellation doesn't happen
-  // So, Fermi and Fermi0 are the same
-  const auto de_vw = denominators == Denominators::Fermi0 ?
-                       -2.0 * e0 :
-                     denominators == Denominators::Fermi ?
-                       -0.5 * (v0 + w0 + x0 + y0) :
-                       -0.5 * (v.en() + w.en() + x.en() + y.en());
+  // Here, "Fermi0" cancellation doesn't happen: valence energies remain.
+  // Own denominator has -(e_v + e_w); bra-ket partner has -(e_x + e_y)
+  const auto e_vw = denominators == Denominators::Fermi0 ? 2.0 * e0 :
+                    denominators == Denominators::Fermi  ? v0 + w0 :
+                                                           v.en() + w.en();
+  const auto e_xy = denominators == Denominators::Fermi0 ? 2.0 * e0 :
+                    denominators == Denominators::Fermi  ? x0 + y0 :
+                                                           x.en() + y.en();
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -323,7 +351,9 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
       if (!Coulomb::sixjTriads({}, {}, k, w, y, b))
         continue;
 
-      const auto de = de_vw + a.en() + b.en();
+      const auto e_ab = a.en() + b.en();
+      // Hermitianise: average with bra-ket partner (see S_Sigma2_ab)
+      const auto inv_de = 0.5 * (1.0 / (e_ab - e_vw) + 1.0 / (e_ab - e_xy));
       const auto s = Angular::neg1pow_2(a.twoj() - b.twoj());
 
       for (int u = u0; u <= u1; u += 2) {
@@ -340,7 +370,7 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
           const auto qu_vwab = qk.Q(u, v, w, a, b);
           const auto ql_abxy = qk.Q(l, a, b, x, y);
 
-          sum += s * SixJ1 * SixJ2 * qu_vwab * ql_abxy / de;
+          sum += s * SixJ1 * SixJ2 * qu_vwab * ql_abxy * inv_de;
         }
       }
     }
