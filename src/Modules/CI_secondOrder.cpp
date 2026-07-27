@@ -76,7 +76,9 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"t_options{}", "Options for the t operator"},
      {"s", "Static operator [E1]"},
      {"s_options{}", "Options for the s operator"},
-     {"omega", "Frequency of t [default: E_b - E_a]"},
+     {"omega", "Frequency of t. Generally must be transition frequency, and be "
+               "left as default. [default: "
+               "E_b - E_a]"},
      {"K", "Rank K of the amplitude. Requires |kt-ks| <= K <= kt+ks, and the "
            "triangle rule for (Jb,K,Ja) [default: smallest allowed]"},
      {"rpa", "Method used for RPA: true(=TDHF), false, TDHF, basis, diagram "
@@ -88,9 +90,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"StructureRadiation{}",
       "Options for structure radiation and normalisation. If this block is "
       "included, SR+N is added to every single-particle matrix element used in "
-      "the amplitude, including the internal lines. This double counts against "
-      "sigma2, and is not a controlled approximation: use with care [not "
-      "included]"}});
+      "the amplitude: use with care"}});
 
   // Check for Structure Radiation
   const auto t_SR_input = input.getBlock("StructureRadiation");
@@ -262,10 +262,8 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
         (Qk_file_t == "true" ? wf.identity() + ".qk.abf" : Qk_file_t) :
         "";
     std::cout << "\nIncluding structure radiation and normalisation:\n";
-    fmt2::warning();
-    std::cout << ": SR+N is added to every single-particle matrix element, "
-                 "including the internal lines. This is not a controlled "
-                 "approximation\n";
+    std::cout << "SR+N is added to every single-particle matrix element, "
+                 "including the internal lines\n";
     sr =
       MBPT::StructureRad(wf.basis(), wf.FermiLevel(), {n_min, n_max}, Qk_file);
   }
@@ -292,11 +290,37 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     CI::A_K(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me, hs.get(), s_me, omega,
             ints, levels_to_remove);
 
+  //----------------------------------------------------------------------------
+  // Intermediate states carrying a core hole. These lie outside the CI space,
+  // so the mixed states cannot produce them: the polarisation of the core
+  // (K=0 and diagonal only), and the core-valence term, which is the Pauli
+  // blocking of the core excitations by the valence electrons
+  const auto &spectrum = wf.spectrum().empty() ? wf.basis() : wf.spectrum();
+  const auto excited =
+    DiracSpinor::split_by_energy(spectrum, wf.FermiLevel()).second;
+
+  // The core is the same in A and B, so its amplitude needs <B|A>
+  const auto A_core =
+    (Psi_a == Psi_b && ia == ib) ?
+      CI::A_K_core(K, Psi_a->twoJ(), ht.get(), hs.get(), omega, wf.core(),
+                   excited, rpa_t.get(), rpa_s.get()) :
+      0.0;
+  const auto A_cv =
+    CI::A_K_cv(K, *Psi_b, ib, *Psi_a, ia, ht.get(), hs.get(), omega, wf.core(),
+               ints.ci_basis, rpa_t.get(), rpa_s.get());
+  const auto A_total = A_s + A_core + A_cv;
+
+  fmt::print("\nA^{}:\n", K);
+  fmt::print("valence (CI)  {:16.6e}\n", A_s);
+  fmt::print("core          {:16.6e}\n", A_core);
+  fmt::print("core-valence  {:16.6e}\n", A_cv);
+  fmt::print("total         {:16.6e}\n", A_total);
+
   // The z-component of the rank-K amplitude: m_a = m_b = m, and q = 0 for both
   // operators
   const auto two_m = std::min(Psi_a->twoJ(), Psi_b->twoJ());
   const auto A_K0 =
-    A_s * CI::z_component(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ(), two_m);
+    A_total * CI::z_component(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ(), two_m);
 
   fmt::print("\nA^{}_0 = {:.6e}   (z-component, m = {})\n", K, A_K0, two_m / 2);
 
@@ -309,7 +333,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // Scalar polarisability
   if (K == 0 && E1_s) {
     // alpha_0 = (2/3)[J]^-1 sum_n |<a||d||n>|^2/(E_n-E_a), for a = b
-    const auto alpha = A_s / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
+    const auto alpha = A_total / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
     fmt::print("\nScalar{}polarisability:\n", diagonal ? " " : " transition ");
     fmt::print("alpha = {:.6e} au\n", alpha);
   }
@@ -323,7 +347,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
                  (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
     fmt::print("\nTensor{}polarisability:\n", diagonal ? " " : " transition ");
-    fmt::print("alpha_2 = {:.6e} au\n", factor * A_s);
+    fmt::print("alpha_2 = {:.6e} au\n", factor * A_total);
   }
 
   // Vector transition polarisability, beta = A^1/(sqrt(2) <b||sigma||a>).
@@ -337,7 +361,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       std::cout << "beta: not defined - the states have no spin-angular "
                    "structure in common\n";
     } else {
-      fmt::print("beta = {:.6e} au\n", A_s / (std::sqrt(2.0) * sigma));
+      fmt::print("beta = {:.6e} au\n", A_total / (std::sqrt(2.0) * sigma));
     }
   }
 

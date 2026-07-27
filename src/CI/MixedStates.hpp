@@ -23,9 +23,8 @@ namespace CI {
   \f$ \Psi_0 \f$ (solution @p i0 of @p Psi0), and \f$ c^{(0)}_K \f$ are its CI
   expansion coefficients.
 
-  The CSF matrix elements are the reduced ones (see @ref RME_CSF2), formed from
-  the single-particle reduced matrix elements stored in @p h; the result is
-  therefore also a reduced quantity.
+  The CSF matrix elements are reduced (see @ref RME_CSF2), formed from the
+  single-particle reduced matrix elements in @p h; so is the result.
 
   @param CSFs   CSFs spanning the sector the operator maps into.
   @param twoJ   Twice the total angular momentum, 2J, of @p CSFs.
@@ -70,12 +69,12 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
       = \frac{\redmatel{A}{T^{(K)}}{\Psi_0}}{E_0 + \omega - E_A},
   \f]
 
-  i.e., it is the sum over the entire spectrum of that sector, without the need
-  to find (or sum over) the individual CI solutions.
+  i.e., the sum over the entire spectrum of that sector, without finding (or
+  summing over) the individual CI solutions.
 
-  There is a single solution: it is returned as a @ref PsiJPi holding one
-  "solution", the coefficients \f$ c_I \f$. The stored energy is \f$ E_0 \f$,
-  the energy of the reference state (not an eigenvalue).
+  Returned as a @ref PsiJPi holding a single "solution", the coefficients
+  \f$ c_I \f$. Its stored energy is \f$ E_0 \f$, that of the reference state
+  (not an eigenvalue).
 
   @param Psi0    CI solutions containing the reference state.
   @param i0      Index of the reference solution within @p Psi0.
@@ -120,8 +119,8 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
   \f]
 
   Subtracting the projection onto the listed levels removes exactly their terms
-  from that sum, so they may be treated separately (e.g., with experimental
-  energies or matrix elements).
+  from that sum, so they may be treated separately: e.g., with experimental
+  energies or matrix elements.
 
   @param dPsi    Mixed state, from @ref solve_mixed_state (taken by value).
   @param levels  Solved CI levels of the same (J, parity): the eigenstates of

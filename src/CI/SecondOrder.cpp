@@ -171,4 +171,106 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
   return {A_s, A_t};
 }
 
+//==============================================================================
+double A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
+                const DiracOperator::TensorOperator *s, double omega,
+                const std::vector<DiracSpinor> &core,
+                const std::vector<DiracSpinor> &excited,
+                const ExternalField::CorePolarisation *dVt,
+                const ExternalField::CorePolarisation *dVs) {
+
+  // The core is a closed shell: only a scalar, even-parity, amplitude survives
+  if (K != 0 || t->parity() * s->parity() != 1)
+    return 0.0;
+
+  if (core.empty() || excited.empty())
+    return 0.0;
+
+  const auto kt = t->rank();
+  const auto ks = s->rank();
+
+  // Of each pair of matrix elements, only the one acting on the core orbital
+  // carries RPA; see the note on A_K_core
+  const auto t_0 = ExternalField::me_table(core, excited, t);
+  const auto t_v = ExternalField::me_table(core, excited, t, dVt);
+  const auto s_0 = ExternalField::me_table(core, excited, s);
+  const auto s_v = ExternalField::me_table(core, excited, s, dVs);
+
+  double A_core = 0.0;
+  for (const auto &c : core) {
+    double Uc = 0.0;
+    for (const auto &m : excited) {
+      const auto [c1, c2] = A_K_coefs(0, kt, ks, c.twoj(), m.twoj(), c.twoj());
+      // 'ts': s excites the core electron, t returns it
+      if (c1 != 0.0) {
+        Uc += c1 * t_0.getv(c, m) * s_v.getv(m, c) / (c.en() - m.en());
+      }
+      // 'st': t excites the core electron, s returns it
+      if (c2 != 0.0) {
+        Uc += c2 * s_0.getv(c, m) * t_v.getv(m, c) / (c.en() + omega - m.en());
+      }
+    }
+    A_core += std::sqrt(double(c.twojp1())) * Uc;
+  }
+
+  return std::sqrt(double(twoJ + 1)) * A_core;
+}
+
+//==============================================================================
+double A_K_cv(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
+              std::size_t ia, const DiracOperator::TensorOperator *t,
+              const DiracOperator::TensorOperator *s, double omega,
+              const std::vector<DiracSpinor> &core,
+              const std::vector<DiracSpinor> &ci_basis,
+              const ExternalField::CorePolarisation *dVt,
+              const ExternalField::CorePolarisation *dVs) {
+
+  const auto pi_ts = t->parity() * s->parity();
+
+  if (core.empty() || ci_basis.empty())
+    return 0.0;
+  if (Psi_b.parity() * Psi_a.parity() != pi_ts)
+    return 0.0;
+  if (Angular::triangle(Psi_b.twoJ(), 2 * K, Psi_a.twoJ()) == 0)
+    return 0.0;
+
+  const auto kt = t->rank();
+  const auto ks = s->rank();
+
+  // Matrix elements between the CI basis and the core. RPA on both, since the
+  // blocked pair is a link of the chain; see the note on A_K_cv
+  const auto t_vc = ExternalField::me_table(ci_basis, core, t, dVt);
+  const auto s_vc = ExternalField::me_table(ci_basis, core, s, dVs);
+
+  // The effective one-body operator of rank K, in the valence space
+  Coulomb::meTable<double> W;
+  for (const auto &vp : ci_basis) {
+    for (const auto &v : ci_basis) {
+
+      if (vp.parity() * v.parity() != pi_ts)
+        continue;
+      if (Angular::triangle(vp.twoj(), 2 * K, v.twoj()) == 0)
+        continue;
+
+      double Wvv = 0.0;
+      for (const auto &c : core) {
+        const auto [c1, c2] =
+          A_K_coefs(K, kt, ks, vp.twoj(), c.twoj(), v.twoj());
+        // 'ts': s excites the core electron to v', t drops v into the hole
+        if (c2 != 0.0) {
+          Wvv += c2 * s_vc.getv(vp, c) * t_vc.getv(c, v) / (vp.en() - c.en());
+        }
+        // 'st': t excites the core electron to v', s drops v into the hole
+        if (c1 != 0.0) {
+          Wvv += c1 * t_vc.getv(vp, c) * s_vc.getv(c, v) /
+                 (vp.en() - omega - c.en());
+        }
+      }
+      W.add(vp, v, Wvv);
+    }
+  }
+
+  return ReducedME(Psi_b, ib, Psi_a, ia, W, K, pi_ts);
+}
+
 } // namespace CI

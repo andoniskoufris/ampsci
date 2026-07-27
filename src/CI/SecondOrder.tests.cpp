@@ -247,3 +247,113 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
     REQUIRE(eps < 1.0e-10);
   }
 }
+
+//==============================================================================
+// Tests the two contributions from intermediate states with a core hole, for
+// which the reference values are the standard sum-over-states expressions of
+// the core and core-valence parts of the polarisability (as in the
+// polarisability module):
+//   alpha_core = -(2/3) sum_{c,m} |<c||d||m>|^2/(e_c - e_m)
+//   alpha_cv   = -(2/3) (n_v/[j_v]) sum_c |<v||d||c>|^2/(e_v - e_c)
+TEST_CASE("CI: second-order core and core-valence", "[CI][SecondOrder][unit]") {
+
+  std::cout << "\nCI second-order: core and core-valence contributions\n";
+
+  // Mg: the core has a p shell, so the core-valence term is non-zero
+  Wavefunction wf({800, 1.0e-5, 40.0, 0.33 * 40.0, "loglinear"},
+                  {"Mg", -1, "Fermi"}, 1.0);
+  wf.solve_core("HartreeFock", "[Ne]", std::nullopt, 1.0e-8);
+  wf.formBasis(SplineBasis::Parameters("15spd", 30, 7, 1.0e-3, 1.0e-3, 40.0));
+
+  const auto excited =
+    DiracSpinor::split_by_energy(wf.basis(), wf.FermiLevel()).second;
+  REQUIRE(!wf.core().empty());
+  REQUIRE(!excited.empty());
+
+  const DiracOperator::E1 d{wf.grid()};
+
+  // A one-orbital CI basis: the only J=0 even CSF is then 3s^2, so the CI
+  // state is exactly the closed 3s shell, and the core-valence term must be
+  // the Pauli blocking of the c -> 3s excitations, at full weight
+  const auto ci_basis =
+    CI::basis_subset(wf.basis(), "3s", wf.coreConfiguration());
+  REQUIRE(ci_basis.size() == 1);
+  const auto &Fv = ci_basis.front();
+
+  CI::Integrals ints;
+  ints.ci_basis = ci_basis;
+  {
+    const Coulomb::YkTable yk(ints.ci_basis);
+    ints.qk.fill(ints.ci_basis, yk, 8, false);
+  }
+  ints.h1 = CI::calculate_h1_table(ints.ci_basis, {}, {}, ints.qk, false);
+  REQUIRE(ints.availableQ());
+
+  CI::PsiJPi Psi(0, +1, ints.ci_basis);
+  Psi.solve(CI::construct_Hci(Psi, ints));
+  REQUIRE(Psi.CSFs().size() == 1);
+
+  //----------------------------------------------------------------------------
+  // Core: A^0/sqrt(3[J]) must be the core polarisability
+  {
+    double expected = 0.0;
+    for (const auto &c : wf.core()) {
+      for (const auto &m : excited) {
+        if (d.isZero(c, m))
+          continue;
+        const auto d_cm = d.reducedME(c, m);
+        expected += -2.0 / 3.0 * d_cm * d_cm / (c.en() - m.en());
+      }
+    }
+
+    const auto A_core =
+      CI::A_K_core(0, Psi.twoJ(), &d, &d, 0.0, wf.core(), excited);
+    const auto found = A_core / std::sqrt(3.0 * (Psi.twoJ() + 1));
+    const auto eps = std::abs(found - expected) / std::abs(expected);
+
+    fmt::print("\n{:<14} {:>14} {:>14} {:>9}\n", "", "expected", "found",
+               "eps");
+    fmt::print("{:<14} {:14.8e} {:14.8e} {:9.1e}\n", "alpha_core", expected,
+               found, eps);
+    REQUIRE(eps < 1.0e-12);
+  }
+
+  //----------------------------------------------------------------------------
+  // Core-valence: the blocking of c -> 3s, with the 3s shell full
+  {
+    double expected = 0.0;
+    for (const auto &c : wf.core()) {
+      if (d.isZero(Fv, c))
+        continue;
+      const auto d_vc = d.reducedME(Fv, c);
+      // occupation 2 in a shell of [j] = 2: the blocking weight is one
+      expected += -2.0 / 3.0 * d_vc * d_vc / (Fv.en() - c.en());
+    }
+
+    const auto A_cv =
+      CI::A_K_cv(0, Psi, 0, Psi, 0, &d, &d, 0.0, wf.core(), ci_basis);
+    const auto found = A_cv / std::sqrt(3.0 * (Psi.twoJ() + 1));
+    const auto eps = std::abs(found - expected) / std::abs(expected);
+
+    fmt::print("{:<14} {:14.8e} {:14.8e} {:9.1e}\n", "alpha_cv", expected,
+               found, eps);
+    REQUIRE(expected < 0.0);
+    REQUIRE(eps < 1.0e-12);
+  }
+
+  //----------------------------------------------------------------------------
+  // The core is a J=0 state: only a scalar, even-parity, amplitude survives
+  {
+    const auto no_K2 =
+      CI::A_K_core(2, Psi.twoJ(), &d, &d, 0.0, wf.core(), excited);
+    fmt::print("\nA^2_core (must vanish): {:.1e}\n", no_K2);
+    REQUIRE(no_K2 == 0.0);
+
+    // sigma is even parity, so the amplitude is odd overall
+    const DiracOperator::s spin{};
+    const auto no_parity =
+      CI::A_K_core(0, Psi.twoJ(), &d, &spin, 0.0, wf.core(), excited);
+    fmt::print("A^0_core (odd parity, must vanish): {:.1e}\n", no_parity);
+    REQUIRE(no_parity == 0.0);
+  }
+}
