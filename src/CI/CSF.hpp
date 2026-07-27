@@ -5,6 +5,7 @@
 #include <array>
 #include <iostream>
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -101,6 +102,40 @@ public:
 */
 std::vector<CSF2> form_CSFs(int twoJ, int parity,
                             const std::vector<DiracSpinor> &cisp_basis);
+
+//==============================================================================
+/*!
+  @brief Identifies one CI level: its (J, parity), and which solution.
+  @details
+  The standard text form is `J{+,-}:index`, e.g., `2+:3` is the fourth solution
+  (index counts from zero) of the J=2, even parity, CI. 
+  The index may be omitted, in which case it is zero:
+  `0+` is the lowest even-parity J=0 solution. See @ref parse_level and
+  @ref to_string.
+*/
+struct Level {
+  //! Twice the total angular momentum, 2J
+  int twoJ{0};
+  //! Parity: +1 or -1
+  int parity{1};
+  //! Which solution, counting from zero, in order of energy
+  std::size_t index{0};
+};
+
+/*!
+  @brief Parses the text form of a CI level reference; see @ref Level.
+  @details
+  Accepts `2+:3` (standard) and `e2:3`; the index is optional. Surrounding
+  whitespace is ignored. Only integer J is accepted, since only two-electron CI
+  is implemented.
+
+  @param str  Text form, e.g., `2+:3`, `e2:3`, `0+`.
+  @return The level; empty if @p str is not a valid level reference.
+*/
+[[nodiscard]] std::optional<Level> parse_level(std::string_view str);
+
+//! Text form of a CI level reference, e.g., "2+:3"; see @ref Level
+[[nodiscard]] std::string to_string(const Level &level);
 
 //==============================================================================
 /*!

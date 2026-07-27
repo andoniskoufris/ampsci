@@ -59,8 +59,9 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     const Coulomb::meTable<double> &s_me, double omega, const Integrals &ints,
     const std::vector<Level> &levels_to_remove, std::ostream &outstream) {
 
-  double A_ket{0.0};
-  double A_bra{0.0};
+  // The amplitude, evaluated with the mixed states of s, and of t
+  double A_s{0.0};
+  double A_t{0.0};
 
   const auto kt = t->rank();
   const auto ks = s->rank();
@@ -69,8 +70,8 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
   const auto Ea = Psi_a.energy(ia);
   const auto Eb = Psi_b.energy(ib);
 
-  fmt::print(outstream, "{:>4} {:>2} {:>7} {:>4}  {:>14} {:>14} {:>8}\n", "2Jn",
-             "pi", "CSFs", "term", "from ket", "from bra", "eps");
+  fmt::print(outstream, "{:>5} {:>7} {:>4}  {:>16} {:>16} {:>8}\n", "J^pi",
+             "CSFs", "term", "<B_s||t||A_s>", "<B_t||s||A_t>", "eps");
 
   // Intermediate states are connected to a by one operator, and to b by the
   // other. The first ('ts') term has s acting on a, so those states have parity
@@ -110,21 +111,21 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
       }
 
       // The two sums over the intermediate states of this (J, parity), each
-      // formed from the ket (mixed state of a) and from the bra (of b)
-      double ts_ket{0.0}, ts_bra{0.0}, st_ket{0.0}, st_bra{0.0};
+      // formed with the mixed states of s, and with those of t
+      double ts_s{0.0}, ts_t{0.0}, st_s{0.0}, st_t{0.0};
 
       if (do_ts) {
         // sum_n <b||t||n><n||s||a>/(E_a - E_n)
         const auto da =
           project_out(solve_mixed_state(Psi_a, ia, target, Hci, s_me, ks, 0.0),
                       target, indices);
-        ts_ket = ReducedME(Psi_b, ib, da, 0, t_me, kt, t->parity());
+        ts_s = ReducedME(Psi_b, ib, da, 0, t_me, kt, t->parity());
 
         const auto Db = project_out(
           solve_mixed_state(Psi_b, ib, target, Hci, t_me, kt, Ea - Eb), target,
           indices);
-        ts_bra = symm_sign(t, twoJb, twoJn) *
-                 ReducedME(Db, 0, Psi_a, ia, s_me, ks, s->parity());
+        ts_t = symm_sign(t, twoJb, twoJn) *
+               ReducedME(Db, 0, Psi_a, ia, s_me, ks, s->parity());
       }
 
       if (do_st) {
@@ -132,39 +133,42 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
         const auto Da = project_out(
           solve_mixed_state(Psi_a, ia, target, Hci, t_me, kt, omega), target,
           indices);
-        st_ket = ReducedME(Psi_b, ib, Da, 0, s_me, ks, s->parity());
+        st_t = ReducedME(Psi_b, ib, Da, 0, s_me, ks, s->parity());
 
         const auto db = project_out(
           solve_mixed_state(Psi_b, ib, target, Hci, s_me, ks, Ea + omega - Eb),
           target, indices);
-        st_bra = symm_sign(s, twoJb, twoJn) *
-                 ReducedME(db, 0, Psi_a, ia, t_me, kt, t->parity());
+        st_s = symm_sign(s, twoJb, twoJn) *
+               ReducedME(db, 0, Psi_a, ia, t_me, kt, t->parity());
       }
 
-      // A^K: from the ket, this uses the mixed states of s (ts term) and of t
-      // (st term); from the bra, the other way around
+      // Contributions to A^K. With the mixed states of s, the 'ts' term is
+      // formed from a and the 'st' term from b; with those of t, the other
+      // way around
       const auto [c1, c2] = A_K_coefs(K, kt, ks, twoJb, twoJn, twoJa);
-      A_ket += c1 * ts_ket + c2 * st_bra;
-      A_bra += c1 * ts_bra + c2 * st_ket;
+      A_s += c1 * ts_s + c2 * st_s;
+      A_t += c1 * ts_t + c2 * st_t;
 
-      const auto pi_str = pi_n == 1 ? '+' : '-';
+      const auto Jpi = std::to_string(twoJn / 2) + (pi_n == 1 ? "+" : "-");
       if (do_ts) {
-        fmt::print(
-          outstream, "{:>4} {:>2} {:>7} {:>4}  {:14.6e} {:14.6e} {:8.1e}\n",
-          twoJn, pi_str, target.CSFs().size(), "ts", ts_ket, ts_bra,
-          std::abs(ts_ket - ts_bra) / std::max(std::abs(ts_ket), 1.0e-30));
+        fmt::print(outstream, "{:>5} {:>7} {:>4}  {:16.6e} {:16.6e} {:8.1e}\n",
+                   Jpi, target.CSFs().size(), "ts", c1 * ts_s, c1 * ts_t,
+                   std::abs(ts_s - ts_t) / std::max(std::abs(ts_s), 1.0e-30));
       }
       if (do_st) {
-        fmt::print(
-          outstream, "{:>4} {:>2} {:>7} {:>4}  {:14.6e} {:14.6e} {:8.1e}\n",
-          twoJn, pi_str, target.CSFs().size(), "st", st_ket, st_bra,
-          std::abs(st_ket - st_bra) / std::max(std::abs(st_bra), 1.0e-30));
+        fmt::print(outstream, "{:>5} {:>7} {:>4}  {:16.6e} {:16.6e} {:8.1e}\n",
+                   Jpi, target.CSFs().size(), "st", c2 * st_s, c2 * st_t,
+                   std::abs(st_s - st_t) / std::max(std::abs(st_s), 1.0e-30));
       }
       outstream << std::flush;
     }
   }
 
-  return {A_ket, A_bra};
+  fmt::print(outstream, "{:>5} {:>7} {:>4}  {:16.6e} {:16.6e} {:8.1e}\n", "",
+             "", fmt::format("A^{}", K), A_s, A_t,
+             std::abs(A_s - A_t) / std::max(std::abs(A_s), 1.0e-30));
+
+  return {A_s, A_t};
 }
 
 } // namespace CI

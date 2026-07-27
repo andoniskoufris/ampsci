@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cctype>
 #include <iostream>
 
 namespace CI {
@@ -81,6 +82,79 @@ std::string CSF2::config(bool relativistic) const {
     s2.pop_back();
   }
   return s1 == s2 ? s1 + "^2" : s1 + s2;
+}
+
+//==============================================================================
+// Parses "2+:3" or "e2:3" (the index is optional)
+std::optional<Level> parse_level(std::string_view str) {
+
+  if (str.empty())
+    return std::nullopt;
+
+  // Reads the digits of str[first,last), returns empty if there are none, or
+  // if any character is not a digit
+  const auto read_int = [&str](std::size_t first,
+                               std::size_t last) -> std::optional<int> {
+    if (last <= first)
+      return std::nullopt;
+    int value = 0;
+    for (auto i = first; i < last; ++i) {
+      if (!std::isdigit(str.at(i)))
+        return std::nullopt;
+      value = 10 * value + (str.at(i) - '0');
+    }
+    return value;
+  };
+
+  // Leading 'e' or 'o' form
+  int parity = 0;
+  std::size_t first = 0;
+  if (str.front() == 'e' || str.front() == 'E') {
+    parity = 1;
+    first = 1;
+  } else if (str.front() == 'o' || str.front() == 'O') {
+    parity = -1;
+    first = 1;
+  }
+
+  // Optional ':index'
+  std::size_t index = 0;
+  auto last = str.size();
+  const auto colon = str.find(':');
+  if (colon != std::string_view::npos) {
+    const auto t_index = read_int(colon + 1, str.size());
+    if (!t_index)
+      return std::nullopt;
+    index = std::size_t(*t_index);
+    last = colon;
+  }
+
+  // Trailing '+' or '-' form
+  if (parity == 0) {
+    if (last == 0)
+      return std::nullopt;
+    const auto pi_char = str.at(last - 1);
+    if (pi_char == '+') {
+      parity = 1;
+    } else if (pi_char == '-') {
+      parity = -1;
+    } else {
+      return std::nullopt;
+    }
+    --last;
+  }
+
+  const auto J = read_int(first, last);
+  if (!J)
+    return std::nullopt;
+
+  return Level{2 * *J, parity, index};
+}
+
+//==============================================================================
+std::string to_string(const Level &level) {
+  return std::to_string(level.twoJ / 2) + (level.parity == 1 ? "+" : "-") +
+         ":" + std::to_string(level.index);
 }
 
 //==============================================================================

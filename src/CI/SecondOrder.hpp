@@ -11,14 +11,6 @@
 namespace CI {
 
 //==============================================================================
-//! Identifies one CI level: 2J, parity (+/-1), and index (in order of energy)
-struct Level {
-  int twoJ{0};
-  int parity{1};
-  std::size_t index{0};
-};
-
-//==============================================================================
 /*!
   @brief Angular coefficients of the two terms of the second-order amplitude
   \f$ A^K \f$.
@@ -148,17 +140,19 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
   states of a given (J, parity) share the same angular coefficient, so one
   mixed state per (J, parity) and per term is required.
 
-  Each sum is formed in two independent ways, from the ket and from the bra:
+  Each sum is formed in two independent ways: with the mixed states of
+  \f$ s \f$, and with those of \f$ t \f$. Writing \f$ \ket{A_s} \f$ for the
+  state \f$ a \f$ plus its mixed state due to \f$ s \f$, these are the
+  first-order parts of
 
   \f[
-    A^K \propto \redmatel{b}{t}{\delta a} + \redmatel{\delta b}{t}{a}
+    \redmatel{B_s}{t}{A_s}
     \qquad{\rm and}\qquad
-    \redmatel{\Delta b}{s}{a} + \redmatel{b}{s}{\Delta a},
+    \redmatel{B_t}{s}{A_t},
   \f]
 
-  where \f$ \delta \f$ denotes a mixed state due to \f$ s \f$ and \f$ \Delta \f$
-  one due to \f$ t \f$. These are returned as the two elements of the pair;
-  they must agree, and the difference is a check on the numerics.
+  returned as the two elements of the pair. They must agree, and the difference
+  is a check on the numerics.
 
   This covers, e.g., static and transition polarisabilities
   (\f$ t = s = E1 \f$) and PNC amplitudes (\f$ s \f$ = PNC operator).
@@ -180,12 +174,12 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
                  intermediate (J, parity); e.g., Wavefunction::CI_integrals().
   @param levels_to_remove  CI levels to be removed from the intermediate
                  states (see @ref project_out), so that they may be treated
-                 separately - e.g., with experimental energies. Each is
-                 identified by (2J, parity, index), and the CI problem for those
-                 (J, parity) is solved here, as far as required.
+                 separately - e.g., with experimental energies. See @ref Level;
+                 the CI problem for those (J, parity) is solved here, as far as
+                 required.
   @param outstream  Stream for progress and the intermediate sums.
-  @return \f$ \{{\rm ket}, {\rm bra}\} \f$: the two evaluations of
-          \f$ A^K \f$.
+  @return The two evaluations of \f$ A^K \f$: with the mixed states of
+          \f$ s \f$, and with those of \f$ t \f$.
 
   @note The parity selection rule \f$ \pi_a\pi_b = \pi_t\pi_s \f$ must hold,
         else the amplitude is zero.

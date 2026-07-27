@@ -3,7 +3,6 @@
 #include "DiracOperator/include.hpp"
 #include "ExternalField/CorePolarisation.hpp"
 #include "ExternalField/calcMatrixElements.hpp"
-#include "IO/ChronoTimer.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/StructureRad.hpp"
 #include "Modules/Modules.hpp"
@@ -15,22 +14,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-//==============================================================================
-// Parses the input list {J, parity, index} that identifies a CI level. The
-// index may be omitted, in which case it is zero. Returns parity = 0 if the
-// list is malformed
-static CI::Level parse_level(const std::vector<int> &input_list) {
-  if (input_list.size() < 2 || input_list.size() > 3)
-    return {0, 0, 0};
-  const auto parity = input_list.at(1);
-  if (input_list.at(0) < 0 || (parity != 1 && parity != -1))
-    return {0, 0, 0};
-  const auto index = input_list.size() == 3 ? input_list.at(2) : 0;
-  if (index < 0)
-    return {0, 0, 0};
-  return {2 * input_list.at(0), parity, std::size_t(index)};
-}
 
 //==============================================================================
 // Is this rank K allowed: triangle rules for the operators, and for the states
@@ -50,11 +33,12 @@ static int smallest_allowed_K(int kt, int ks, int twoJb, int twoJa) {
 }
 
 //==============================================================================
-// Short label for a CI state, e.g., "J=1,- #0 6s6p 3P"
+// Short label for a CI state, e.g., "1-:0  6s6p 3P"
 static std::string label(const CI::PsiJPi &psi, std::size_t index) {
   const auto &info = psi.info(index);
-  return fmt::format("J={},{} #{} {} {}", psi.twoJ() / 2,
-                     psi.parity() == 1 ? '+' : '-', index, info.config,
+  return fmt::format("{:<6} {} {}",
+                     CI::to_string({psi.twoJ(), psi.parity(), index}),
+                     info.config,
                      CI::Term_Symbol(int(std::round(info.L)),
                                      int(std::round(info.twoS)), psi.parity()));
 }
@@ -76,17 +60,18 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
     {{"",
-      "Second-order amplitude A^K between two CI states, a -> b, for a dynamic "
+      "Second-order amplitude A^K between two CI states, A -> B, for a dynamic "
       "operator t and a static operator s:\n"
-      "A^K = sum_n [c1 <b||t||n><n||s||a>/(E_a-E_n) "
-      "+ c2 <b||s||n><n||t||a>/(E_a+omega-E_n)].\n"
+      "A^K = sum_n [c1 <B||t||n><n||s||A>/(E_A-E_n) "
+      "+ c2 <B||s||n><n||t||A>/(E_A+omega-E_n)].\n"
       "The sums over the intermediate spectrum are evaluated with CI mixed "
       "states, so are complete (no sum over CI solutions). Requires a CI{} "
       "block (which is where the CI options are set)."},
-     {"a", "Initial CI state, as J,parity,index - e.g., '0,1,0' is the lowest "
-           "J=0 even-parity solution. Parity is +1 or -1; the index counts "
-           "from 0, in order of energy [required]"},
-     {"b", "Final CI state, as for a [default: same as a]"},
+     {"A", "Initial CI state, as J{+,-}:index - e.g., '0+' is the lowest J=0 "
+           "even-parity solution, and '1-:2' the third J=1 odd-parity one (the "
+           "index counts from 0, in order of energy, and may be omitted). The "
+           "form 'e0', 'o1:2' is also accepted [required]"},
+     {"B", "Final CI state, as for A [default: same as A]"},
      {"t", "Dynamic operator: the one that carries the frequency omega [E1]"},
      {"t_options{}", "Options for the t operator"},
      {"s", "Static operator [E1]"},
@@ -97,9 +82,9 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"rpa", "Method used for RPA: true(=TDHF), false, TDHF, basis, diagram "
              "[true]"},
      {"project_out",
-      "List of CI states, as J,parity,index triples, that the intermediate "
-      "states are forced to be orthogonal to - e.g., '1,-1,0, 1,-1,1' removes "
-      "the two lowest J=1 odd solutions from the sums [none]"},
+      "List of CI states, as for A, that are removed from the intermediate "
+      "states - e.g., '1-:0, 1-:1' removes the two lowest J=1 odd solutions "
+      "from the sums [none]"},
      {"StructureRadiation{}",
       "Options for structure radiation and normalisation. If this block is "
       "included, SR+N is added to every single-particle matrix element used in "
@@ -130,8 +115,6 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   using namespace std::string_literals;
 
-  IO::ChronoTimer timer("CI_secondOrder");
-
   //----------------------------------------------------------------------------
   // The CI solutions, and the integrals used to construct them
   const auto &ints = wf.CI_integrals();
@@ -145,21 +128,23 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   //----------------------------------------------------------------------------
   // The two CI states
-  const auto input_a = input.get("a", std::vector<int>{});
-  const auto level_a = parse_level(input_a);
-  const auto level_b = parse_level(input.get("b", input_a));
-  const auto Psi_a = wf.CIwf(level_a.twoJ / 2, level_a.parity);
-  const auto Psi_b = wf.CIwf(level_b.twoJ / 2, level_b.parity);
-  const auto ia = level_a.index;
-  const auto ib = level_b.index;
+  const auto input_A = input.get("A", ""s);
+  const auto level_A = CI::parse_level(input_A);
+  const auto level_B = CI::parse_level(input.get("B", input_A));
+  const auto Psi_a =
+    level_A ? wf.CIwf(level_A->twoJ / 2, level_A->parity) : nullptr;
+  const auto Psi_b =
+    level_B ? wf.CIwf(level_B->twoJ / 2, level_B->parity) : nullptr;
+  const auto ia = level_A ? level_A->index : 0;
+  const auto ib = level_B ? level_B->index : 0;
   if (Psi_a == nullptr || Psi_b == nullptr || ia >= Psi_a->num_solutions() ||
       ib >= Psi_b->num_solutions()) {
     fmt2::error();
     std::cout << ": Could not find the requested CI state(s). Give as "
-                 "J,parity,index; e.g., a = 0,1,0; b = 1,-1,0;\n"
+                 "J{+,-}:index; e.g., A = 0+; B = 1-:2;\n"
                  "Available (J,parity):";
     for (const auto &psi : wf.CIwfs()) {
-      fmt::print(" ({},{:+})", psi.twoJ() / 2, psi.parity());
+      fmt::print(" {}{}", psi.twoJ() / 2, psi.parity() == 1 ? '+' : '-');
     }
     std::cout << "\n";
     return;
@@ -167,9 +152,9 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto Ea = Psi_a->energy(ia);
   const auto Eb = Psi_b->energy(ib);
 
-  std::cout << "\nSecond-order amplitude, a -> b:\n";
-  fmt::print("a: {}  E = {:.8f} au\n", label(*Psi_a, ia), Ea);
-  fmt::print("b: {}  E = {:.8f} au\n", label(*Psi_b, ib), Eb);
+  std::cout << "\nSecond-order amplitude, A -> B:\n";
+  fmt::print("A: {}  E = {:.8f} au\n", label(*Psi_a, ia), Ea);
+  fmt::print("B: {}  E = {:.8f} au\n", label(*Psi_b, ib), Eb);
 
   //----------------------------------------------------------------------------
   // The two operators
@@ -186,17 +171,20 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto omega = input.get("omega", Eb - Ea);
 
-  fmt::print("t: {} (rank {}, {} parity), dynamic, at omega = {:.6f}\n",
-             ht->name(), kt, ht->parity() == 1 ? "even" : "odd", omega);
+  // nb: t is the dynamic operator; it is only static if omega happens to be
+  // zero (as for the diagonal, static, polarisabilities)
+  if (omega == 0.0) {
+    fmt::print("t: {} (rank {}, {} parity), static\n", ht->name(), kt,
+               ht->parity() == 1 ? "even" : "odd");
+  } else {
+    fmt::print("t: {} (rank {}, {} parity), dynamic, at omega = {:.6f}\n",
+               ht->name(), kt, ht->parity() == 1 ? "even" : "odd", omega);
+  }
   fmt::print("s: {} (rank {}, {} parity), static\n", hs->name(), ks,
              hs->parity() == 1 ? "even" : "odd");
-  if (std::abs(omega - (Eb - Ea)) > 1.0e-10) {
-    fmt::print("nb: omega is not the transition frequency, {:.6f}\n", Eb - Ea);
-  }
 
   // Overall parity selection rule
   if (Psi_a->parity() * Psi_b->parity() != ht->parity() * hs->parity()) {
-    fmt2::warning();
     std::cout << ": Amplitude is zero by parity\n";
     return;
   }
@@ -205,7 +193,6 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto K_minimum =
     smallest_allowed_K(kt, ks, Psi_b->twoJ(), Psi_a->twoJ());
   if (K_minimum < 0) {
-    fmt2::warning();
     std::cout << ": No allowed K. Require |kt-ks| <= K <= kt+ks, and the "
                  "triangle rule for (Jb, K, Ja)\n";
     return;
@@ -213,28 +200,28 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto K = input.get("K", K_minimum);
   fmt::print("K = {}{}\n", K, K == K_minimum ? " (smallest allowed)" : "");
   if (!allowed_K(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ())) {
-    fmt2::warning();
     std::cout << ": K is not allowed: the amplitude is zero\n";
   }
 
   //----------------------------------------------------------------------------
   // Levels to remove from the intermediate states
-  const auto level_list = input.get("project_out", std::vector<int>{});
-  if (level_list.size() % 3 != 0) {
-    fmt2::error();
-    std::cout << ": project_out must be a list of J,parity,index triples\n";
-    return;
-  }
   std::vector<CI::Level> levels_to_remove;
-  for (std::size_t i = 0; i < level_list.size(); i += 3) {
-    levels_to_remove.push_back({2 * level_list.at(i), level_list.at(i + 1),
-                                std::size_t(level_list.at(i + 2))});
+  for (const auto &str : input.get("project_out", std::vector<std::string>{})) {
+    const auto level = CI::parse_level(str);
+    if (!level) {
+      fmt2::error();
+      fmt::print(
+        ": Could not parse '{}' as a CI level: give as J{{+,-}}:index, "
+        "e.g., 1-:0\n",
+        str);
+      return;
+    }
+    levels_to_remove.push_back(*level);
   }
   if (!levels_to_remove.empty()) {
     std::cout << "\nRemoving from the intermediate states:";
     for (const auto &level : levels_to_remove) {
-      fmt::print(" (J={},{} #{})", level.twoJ / 2,
-                 level.parity == 1 ? '+' : '-', level.index);
+      fmt::print(" {}", CI::to_string(level));
     }
     std::cout << "\n";
   }
@@ -300,8 +287,8 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   //----------------------------------------------------------------------------
   // The amplitude
-  std::cout << "\nSums over the intermediate spectrum:\n";
-  const auto [A_ket, A_bra] =
+  fmt::print("\nContributions to A^{}, by intermediate J and parity:\n", K);
+  const auto [A_s, A_t] =
     CI::A_K(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me, hs.get(), s_me, omega,
             ints, levels_to_remove);
 
@@ -309,24 +296,22 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // operators
   const auto two_m = std::min(Psi_a->twoJ(), Psi_b->twoJ());
   const auto A_K0 =
-    A_ket * CI::z_component(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ(), two_m);
+    A_s * CI::z_component(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ(), two_m);
 
-  fmt::print("\nA^{}      = {:.6e}  (from the ket)\n", K, A_ket);
-  fmt::print("A^{}      = {:.6e}  (from the bra) [eps = {:.1e}]\n", K, A_bra,
-             std::abs(A_ket - A_bra) / std::max(std::abs(A_ket), 1.0e-30));
-  fmt::print("A^{}_0    = {:.6e}  (z-component, m = {})\n", K, A_K0, two_m / 2);
+  fmt::print("\nA^{}_0 = {:.6e}   (z-component, m = {})\n", K, A_K0, two_m / 2);
 
   //----------------------------------------------------------------------------
   // Specific quantities, as in the dcp module. Only s is tested: t is E1 in
   // all of these cases
   const auto E1_s = hs->name() == "E1";
+  const auto diagonal = Psi_a == Psi_b && ia == ib;
 
   // Scalar polarisability
   if (K == 0 && E1_s) {
     // alpha_0 = (2/3)[J]^-1 sum_n |<a||d||n>|^2/(E_n-E_a), for a = b
-    const auto alpha = A_ket / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
-    fmt::print("\nalpha (scalar{}polarisability) = {:.6e} au\n",
-               Psi_a == Psi_b && ia == ib ? " " : " transition ", alpha);
+    const auto alpha = A_s / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
+    fmt::print("\nScalar{}polarisability:\n", diagonal ? " " : " transition ");
+    fmt::print("alpha = {:.6e} au\n", alpha);
   }
 
   // Tensor polarisability. The normalisation comes from the m-dependence of
@@ -337,9 +322,8 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto factor =
       -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
                  (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
-    fmt::print("\nalpha_2 (tensor{}polarisability) = {:.6e} au\n",
-               Psi_a == Psi_b && ia == ib ? " " : " transition ",
-               factor * A_ket);
+    fmt::print("\nTensor{}polarisability:\n", diagonal ? " " : " transition ");
+    fmt::print("alpha_2 = {:.6e} au\n", factor * A_s);
   }
 
   // Vector transition polarisability, beta = A^1/(sqrt(2) <b||sigma||a>).
@@ -347,20 +331,20 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // amplitude, so no radial overlap enters it; see CI::sigma_rme
   if (K == 1 && E1_s) {
     const auto sigma = CI::sigma_rme(*Psi_b, ib, *Psi_a, ia, ints.ci_basis);
-    fmt::print("\n<b||sigma||a> = {:.6e}\n", sigma);
+    fmt::print("\nVector{}polarisability:\n", diagonal ? " " : " transition ");
+    fmt::print("<B||sigma||A> = {:.6e}\n", sigma);
     if (std::abs(sigma) < 1.0e-12) {
       std::cout << "beta: not defined - the states have no spin-angular "
                    "structure in common\n";
     } else {
-      fmt::print("beta (vector{}polarisability) = {:.6e} au\n",
-                 Psi_a == Psi_b && ia == ib ? " " : " transition ",
-                 A_ket / (std::sqrt(2.0) * sigma));
+      fmt::print("beta = {:.6e} au\n", A_s / (std::sqrt(2.0) * sigma));
     }
   }
 
   // PNC amplitude: the static operator is the PNC interaction
   if (hs->name().substr(0, 3) == "pnc") {
-    fmt::print("\nE_pnc = A^{}_0 = {:.6e} {}\n", K, A_K0, hs->units());
+    fmt::print("\nPNC amplitude:\n");
+    fmt::print("E_pnc = A^{}_0 = {:.6e} {}\n", K, A_K0, hs->units());
   }
 }
 
