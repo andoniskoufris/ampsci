@@ -372,7 +372,7 @@ void dcp(const IO::InputBlock &input, const Wavefunction &wf) {
   // Specific output:
   std::cout << "\n";
   if (K == 0 && s->name() == "E1") {
-    std::cout << "alpha: " << -AK / std::sqrt(3.0 * w.twojp1()) << "\n";
+    std::cout << "alpha: " << AK / std::sqrt(3.0 * w.twojp1()) << "\n";
   }
 
   if (K == 1 && s->name() == "E1") {
@@ -420,8 +420,8 @@ void dcp(const IO::InputBlock &input, const Wavefunction &wf) {
   // Specific output:
   std::cout << "\n";
   if (K == 0 && s->name() == "E1") {
-    std::cout << "alpha: " << -AK / std::sqrt(3.0 * w.twojp1()) << " + "
-              << -delta_AK / std::sqrt(3.0 * w.twojp1()) << "\n";
+    std::cout << "alpha: " << AK / std::sqrt(3.0 * w.twojp1()) << " + "
+              << delta_AK / std::sqrt(3.0 * w.twojp1()) << "\n";
   }
 
   if (K == 1 && s->name() == "E1") {

@@ -54,7 +54,7 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
   The coefficients solve the linear system
 
   \f[
-    \sum_J \left[ \matel{I}{H}{J} - E_0 \, \delta_{IJ} \right] c_J
+    \sum_J \left[ \matel{I}{H}{J} - (E_0 + \omega) \, \delta_{IJ} \right] c_J
       = - \sum_K \redmatel{I}{T^{(K)}}{K} \, c^{(0)}_K,
   \f]
 
@@ -66,7 +66,8 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
   any CI state \f$ A \f$ in the same sector, the mixed state satisfies
 
   \f[
-    \sum_I c^A_I \, c_I = \frac{\redmatel{A}{T^{(K)}}{\Psi_0}}{E_0 - E_A},
+    \sum_I c^A_I \, c_I
+      = \frac{\redmatel{A}{T^{(K)}}{\Psi_0}}{E_0 + \omega - E_A},
   \f]
 
   i.e., it is the sum over the entire spectrum of that sector, without the need
@@ -83,14 +84,21 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
   @param Hci     CI Hamiltonian matrix in the CSF basis of @p target.
   @param h       Table of single-particle reduced matrix elements of T.
   @param K_rank  Rank of the tensor operator T.
+  @param omega   Frequency: the mixed state due to a time-dependent operator,
+                 \f$ T e^{-i\omega t} \f$, has denominators
+                 \f$ E_0 + \omega - E_A \f$ [0].
   @return PsiJPi for the @p target sector, holding the single mixed state.
+  @see project_out, to remove individual levels from the mixed state.
 
-  @note If @p target has the same J and parity as @p Psi0, the matrix on the
-        left is singular, since \f$ \Psi_0 \f$ itself has zero eigenvalue. In
-        that case, \f$ \Psi_0 \f$ is projected out of both the right-hand side
-        (equivalent to subtracting \f$ \redmatel{\Psi_0}{T}{\Psi_0} \f$) and
-        the solution. Any state exactly degenerate with \f$ \Psi_0 \f$ is not
-        projected out, and will make the system singular.
+  @note If @p target has the same J and parity as @p Psi0, and
+        \f$ \omega = 0 \f$, the matrix on the left is singular, since
+        \f$ \Psi_0 \f$ itself has zero eigenvalue. In that case,
+        \f$ \Psi_0 \f$ is projected out (equivalent to subtracting
+        \f$ \redmatel{\Psi_0}{T}{\Psi_0} \f$ from the right-hand side).
+
+  @note Any other state degenerate with \f$ E_0 + \omega \f$ also makes the
+        system singular. Its term in the sum over states is divergent, and must
+        be dealt with separately, as in degenerate perturbation theory.
 
   @note If the operator cannot connect the two sectors (triangle rule or
         parity), the right-hand side vanishes, and the mixed state is zero.
@@ -99,7 +107,34 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
                                        const PsiJPi &target,
                                        const LinAlg::Matrix<double> &Hci,
                                        const Coulomb::meTable<double> &h,
-                                       int K_rank);
+                                       int K_rank, double omega = 0.0);
+
+/*!
+  @brief Removes CI levels from a mixed state, so that it is orthogonal to them.
+  @details
+  A mixed state is implicitly a sum over the entire spectrum of its (J, parity):
+
+  \f[
+    \ket{\delta\Psi} = \sum_A \ket{A}
+      \frac{\redmatel{A}{T^{(K)}}{\Psi_0}}{E_0 + \omega - E_A}.
+  \f]
+
+  Subtracting the projection onto the listed levels removes exactly their terms
+  from that sum, so they may be treated separately (e.g., with experimental
+  energies or matrix elements).
+
+  @param dPsi    Mixed state, from @ref solve_mixed_state (taken by value).
+  @param levels  Solved CI levels of the same (J, parity): the eigenstates of
+                 the CI Hamiltonian used for the mixed state.
+  @param indices Which solutions of @p levels to remove.
+  @return The mixed state, orthogonal to the listed levels.
+
+  @note Removing a level degenerate with \f$ E_0 + \omega \f$ does not help:
+        the mixed state itself does not exist in that case (see
+        @ref solve_mixed_state).
+*/
+[[nodiscard]] PsiJPi project_out(PsiJPi dPsi, const PsiJPi &levels,
+                                 const std::vector<std::size_t> &indices);
 
 /*!
   @brief Solves the CI mixed-states equation; constructs the CI matrix
@@ -125,14 +160,17 @@ TPsi_reduced(const std::vector<CSF2> &CSFs, int twoJ, const PsiJPi &Psi0,
   @param qk          Coulomb Q^k integral table.
   @param Bk          Pointer to Breit W^k table; ignored if nullptr.
   @param Sk          Pointer to Sigma_2 L^k table; ignored if nullptr.
+  @param omega       Frequency; see the other overload [0].
   @return PsiJPi for the (@p twoJ, @p parity) sector, holding the single mixed
           state.
 */
-[[nodiscard]] PsiJPi solve_mixed_state(
-  const PsiJPi &Psi0, std::size_t i0, int twoJ, int parity,
-  const std::vector<DiracSpinor> &ci_sp_basis,
-  const Coulomb::meTable<double> &h, int K_rank,
-  const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
-  const Coulomb::WkTable *Bk = nullptr, const Coulomb::LkTable *Sk = nullptr);
+[[nodiscard]] PsiJPi
+solve_mixed_state(const PsiJPi &Psi0, std::size_t i0, int twoJ, int parity,
+                  const std::vector<DiracSpinor> &ci_sp_basis,
+                  const Coulomb::meTable<double> &h, int K_rank,
+                  const Coulomb::meTable<double> &h1,
+                  const Coulomb::QkTable &qk,
+                  const Coulomb::WkTable *Bk = nullptr,
+                  const Coulomb::LkTable *Sk = nullptr, double omega = 0.0);
 
 } // namespace CI

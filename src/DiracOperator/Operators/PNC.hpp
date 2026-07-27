@@ -60,7 +60,7 @@ public:
       N == 1 ? "i(-Qw)e-11" : "i(-Qw/" + std::to_string(N) + ")e-11";
     if (input.get("print", true))
       std::cout << "pnc: with c=" << c << ", t=" << t << " [" << units << "]\n";
-    return std::make_unique<PNCnsi>(c, t, wf.grid(), -1.0 * N, "units");
+    return std::make_unique<PNCnsi>(c, t, wf.grid(), -1.0 * N, units);
   }
 
 private:

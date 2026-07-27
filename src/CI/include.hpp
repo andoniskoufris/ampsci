@@ -4,3 +4,4 @@
 #include "CI/CSF.hpp"
 #include "CI/ConfigurationInteraction.hpp"
 #include "CI/MixedStates.hpp"
+#include "CI/SecondOrder.hpp"

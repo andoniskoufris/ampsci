@@ -113,6 +113,70 @@ TEST_CASE("CI: mixed states", "[CI][MixedStates][unit]") {
   REQUIRE(test_mixed_state(0, +1, &r2) < 1.0e-10);
 
   //----------------------------------------------------------------------------
+  // As above, but at non-zero frequency, and with states projected out:
+  //   <A|dPsi> = <A||h||Psi_0> / (E_0 + omega - E_A),
+  // and zero for any A that was projected out
+  {
+    const auto d_tab = ExternalField::me_table(ci_basis, &d);
+
+    CI::PsiJPi target(2, -1, ci_basis);
+    const auto Hci = CI::construct_Hci(target, h1, qk);
+    target.solve(Hci);
+
+    // Remove these solutions from the mixed state
+    const std::vector<std::size_t> project{0, 2};
+
+    const auto omega = 0.05;
+    const auto dPsi = CI::project_out(
+      CI::solve_mixed_state(Psi0, 0, target, Hci, d_tab, d.rank(), omega),
+      target, project);
+    const auto dc = dPsi.coefs(0);
+
+    fmt::print("\n{}: 2J={}, pi={:+}, omega={}, projecting out 0 and 2\n",
+               d.name(), 2, -1, omega);
+    fmt::print("{:>3} {:>12} {:>16} {:>16} {:>9}\n", "A", "E0+w-EA",
+               "<A||h||Psi>", "(E0+w-EA)<A|dPsi>", "eps");
+
+    double worst = 0.0;
+    double max_me = 0.0;
+    for (std::size_t iA = 0; iA < target.num_solutions(); ++iA) {
+
+      const auto dE = E0 + omega - target.energy(iA);
+      const auto me =
+        CI::ReducedME(target, iA, Psi0, 0, d_tab, d.rank(), d.parity());
+
+      const auto cA = target.coefs(iA);
+      double overlap = 0.0;
+      for (std::size_t i = 0; i < cA.size(); ++i) {
+        overlap += cA[i] * dc[i];
+      }
+
+      // Projected-out solutions have no part in the mixed state
+      const auto projectedQ =
+        std::find(project.begin(), project.end(), iA) != project.end();
+      if (projectedQ) {
+        REQUIRE(std::abs(overlap * dE) < 1.0e-10 * std::abs(me));
+        continue;
+      }
+
+      const auto me_ms = dE * overlap;
+      max_me = std::max(max_me, std::abs(me));
+      worst = std::max(worst, std::abs(me_ms - me));
+
+      const auto last = target.num_solutions() - 1;
+      if (iA == last && last > 5) {
+        fmt::print("...\n");
+      }
+      if (iA < 5 || iA == last) {
+        fmt::print("{:>3} {:12.6f} {:16.8e} {:16.8e} {:9.1e}\n", iA, dE, me,
+                   me_ms, std::abs(me_ms - me));
+      }
+    }
+    fmt::print("worst: {:.1e}\n", worst / max_me);
+    REQUIRE(worst / max_me < 1.0e-10);
+  }
+
+  //----------------------------------------------------------------------------
   // The overload that constructs the CI matrix itself must agree
   {
     const auto d_tab = ExternalField::me_table(ci_basis, &d);
