@@ -30,7 +30,7 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
                                      ci_filename + ";"};
 
   // Initial CI calculation (writes to file):
-  const auto CIWFs = CI::configuration_interaction(input, wf);
+  const auto CIWFs = CI::configuration_interaction(input, wf).levels;
 
   // Expected values: (not accurate, just simple unit test)
   std::vector J{0, 1, 0, 1};
@@ -60,7 +60,7 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
   // Read from ci file; compare energies, gJ, and coefficients
   auto input2 = input;
   input2.add("read_only = true;");
-  const auto CIWFs_2 = CI::configuration_interaction(input2, wf);
+  const auto CIWFs_2 = CI::configuration_interaction(input2, wf).levels;
 
   REQUIRE(CIWFs.size() == CIWFs_2.size());
 
@@ -111,9 +111,9 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
                                       ci_filename + ";"};
 
   // Reads from file (2 stored, 3 required, re-calculates)
-  const auto CIWFs_3a = CI::configuration_interaction(input3, wf);
+  const auto CIWFs_3a = CI::configuration_interaction(input3, wf).levels;
   // calculate 3 from scratch
-  const auto CIWFs_3b = CI::configuration_interaction(input3, wf);
+  const auto CIWFs_3b = CI::configuration_interaction(input3, wf).levels;
 
   REQUIRE(CIWFs_3a.size() == CIWFs.size());
   REQUIRE(CIWFs_3b.size() == CIWFs.size());

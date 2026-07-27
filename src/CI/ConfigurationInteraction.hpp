@@ -1,4 +1,5 @@
 #pragma once
+#include "CI_Integrals.hpp"
 #include "CSF.hpp"
 #include "Coulomb/QkTable.hpp"
 #include "Coulomb/meTable.hpp"
@@ -22,7 +23,7 @@
 namespace CI {
 
 /*!
-  @brief Runs Configuration Interation: returns CI solutions for all 
+  @brief Runs Configuration Interation: returns CI solutions for all
   requested J and parity values.
 
   @details
@@ -148,10 +149,14 @@ namespace CI {
   @param input   Input block containing CI options.
   @param wf      Fully initialised Wavefunction object supplying the orbital
                  basis and radial grid.
-  @return Vector of PsiJPi, one entry per (J, parity) combination requested.
+  @return @ref Solutions: one PsiJPi per (J, parity) combination requested,
+          together with the integral tables used to build the CI Hamiltonians.
+
+  @note If run with `read_only`, no integrals are calculated, and the returned
+        integral tables are empty (see Integrals::availableQ()).
 */
-std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
-                                              const Wavefunction &wf);
+Solutions configuration_interaction(const IO::InputBlock &input,
+                                    const Wavefunction &wf);
 
 /*!
   @brief Constructs and solves the CI eigenvalue problem for a single J,pi

@@ -778,7 +778,7 @@ void Wavefunction::ConfigurationInteraction(const IO::InputBlock &input) {
   std::cout << "\n========================================================\n"
             << "Configuration Interaction:\n";
   IO::ChronoTimer t("CI");
-  m_CIwfs = CI::configuration_interaction(input, *this);
+  m_CI = CI::configuration_interaction(input, *this);
   std::cout << "\n";
 }
 

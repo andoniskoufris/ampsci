@@ -560,4 +560,11 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
   return Hci;
 }
 
+//==============================================================================
+LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints) {
+  const auto Bk = ints.Bk.emptyQ() ? nullptr : &ints.Bk;
+  const auto Sk = ints.Sk.emptyQ() ? nullptr : &ints.Sk;
+  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk);
+}
+
 } // namespace CI

@@ -16,6 +16,62 @@ class Breit;
 
 namespace CI {
 
+//==============================================================================
+/*!
+  @brief The integral tables required to construct the CI Hamiltonian matrix.
+  @details
+  Everything needed to construct the CI Hamiltonian for any (J, parity), as it
+  was constructed for the CI solutions: the single-particle basis, the one-body
+  matrix elements (which may include \f$ \Sigma_1 \f$), and the two-body
+  Coulomb, Breit and \f$ \Sigma_2 \f$ tables.
+
+  Filled by @ref configuration_interaction and stored in the Wavefunction (see
+  Wavefunction::CI_integrals), so that later calculations can construct CI
+  Hamiltonians - e.g., for the mixed-states equation, @ref solve_mixed_state -
+  without recalculating any integrals.
+
+  @note The Breit and \f$ \Sigma_2 \f$ tables are empty if those corrections
+        were not included; @ref construct_Hci then skips them.
+
+  @note These tables are large (the Coulomb table especially): keeping them for
+        the entire run costs memory.
+*/
+struct Integrals {
+  //! Single-particle basis used for the CI expansion
+  std::vector<DiracSpinor> ci_basis{};
+  //! One-body matrix elements, <a|h1|b>; may include Sigma_1
+  Coulomb::meTable<double> h1{};
+  //! Two-body Coulomb integrals, Q^k
+  Coulomb::QkTable qk{};
+  //! Two-body Breit integrals, B^k; empty if not included
+  Coulomb::WkTable Bk{};
+  //! Two-body Sigma_2 integrals, S^k; empty if not included
+  Coulomb::LkTable Sk{};
+
+  //! False if the tables were never calculated (e.g., CI was run 'read_only')
+  [[nodiscard]] bool availableQ() const {
+    return !ci_basis.empty() && !h1.empty();
+  }
+};
+
+//==============================================================================
+/*!
+  @brief The result of a CI calculation: the solutions, and the integrals used
+  to construct the CI Hamiltonian.
+  @details
+  Returned by @ref configuration_interaction, and stored in the Wavefunction
+  (see Wavefunction::CIwfs and Wavefunction::CI_integrals). The integrals are
+  kept so that CI Hamiltonians for other (J, parity) may be constructed later
+  without recalculating them - e.g., for the mixed-states equation,
+  @ref solve_mixed_state. See @ref Integrals.
+*/
+struct Solutions {
+  //! One entry per {J, parity} requested
+  std::vector<PsiJPi> levels{};
+  //! Integral tables used to construct the CI Hamiltonians
+  Integrals integrals{};
+};
+
 /*!
   @brief Antisymmetrised two-body Coulomb matrix element in the coupled CSF
   basis.
@@ -313,5 +369,17 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
                                      const Coulomb::QkTable &qk,
                                      const Coulomb::WkTable *Bk = nullptr,
                                      const Coulomb::LkTable *Sk = nullptr);
+
+/*!
+  @brief Constructs the CI Hamiltonian matrix from a set of integral tables.
+  @details
+  Overload of construct_Hci() taking the tables as @ref Integrals; the Breit
+  and \f$ \Sigma_2 \f$ corrections are included if those tables are non-empty.
+
+  @param psi   CI solution container holding the CSF basis and J/parity.
+  @param ints  Integral tables, e.g., from Wavefunction::CI_integrals().
+  @return Full CI Hamiltonian matrix in the CSF basis.
+*/
+LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints);
 
 } // namespace CI

@@ -1,4 +1,5 @@
 #pragma once
+#include "CI/CI_Integrals.hpp"
 #include "CI/CSF.hpp"
 #include "HF/HartreeFock.hpp"
 #include "MBPT/CorrelationPotential.hpp"
@@ -75,7 +76,8 @@ private:
   std::string m_core_string = "";
   std::string m_aboveFermi_core_string = "";
 
-  std::vector<CI::PsiJPi> m_CIwfs{};
+  // CI solutions, and the integrals used to construct the CI Hamiltonians
+  CI::Solutions m_CI{};
 
 public:
   //! Returns a const reference to the radial grid
@@ -123,15 +125,19 @@ public:
   const std::vector<DiracSpinor> &spectrum() const { return m_spectrum; }
   std::vector<DiracSpinor> &spectrum() { return m_spectrum; }
 
-  const std::vector<CI::PsiJPi> &CIwfs() const { return m_CIwfs; }
+  const std::vector<CI::PsiJPi> &CIwfs() const { return m_CI.levels; }
 
   const CI::PsiJPi *CIwf(int J, int parity) const {
-    for (const auto &ci_wf : m_CIwfs) {
+    for (const auto &ci_wf : m_CI.levels) {
       if (ci_wf.twoJ() == 2 * J && ci_wf.parity() == parity)
         return &ci_wf;
     }
     return nullptr;
   }
+
+  //! Integral tables used to construct the CI Hamiltonians. Empty unless CI
+  //! was run; see CI::Integrals
+  const CI::Integrals &CI_integrals() const { return m_CI.integrals; }
 
   //! Nuclear potential. Only provide const version, since HF and WF version of
   //! vnuc must be kept in sync

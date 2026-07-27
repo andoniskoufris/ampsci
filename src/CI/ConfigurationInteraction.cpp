@@ -21,8 +21,8 @@
 #include <vector>
 
 namespace CI {
-std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
-                                              const Wavefunction &wf) {
+Solutions configuration_interaction(const IO::InputBlock &input,
+                                    const Wavefunction &wf) {
 
   // Check input options:
   input.check({
@@ -117,7 +117,7 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
-    return levels;
+    return {};
   }
 
   //----------------------------------------------------------------------------
@@ -338,13 +338,12 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
     std::cout << "Calculate one-body integrals.\n";
     std::cout << std::flush;
   }
-  const auto h1 =
-    read_only  ? Coulomb::meTable<double>{} :
-    Brueckner  ? CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false) :
-    wf.Sigma() ? CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(),
-                                        include_Sigma1) :
-                 CI::calculate_h1_table(ci_sp_basis, core_s1, excited_s1, qk,
-                                        include_Sigma1);
+  auto h1 = read_only ? Coulomb::meTable<double>{} :
+            Brueckner ? CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false) :
+            wf.Sigma() ? CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(),
+                                                include_Sigma1) :
+                         CI::calculate_h1_table(ci_sp_basis, core_s1,
+                                                excited_s1, qk, include_Sigma1);
 
   //----------------------------------------------------------------------------
   // Breit and QED
@@ -505,7 +504,17 @@ std::vector<PsiJPi> configuration_interaction(const IO::InputBlock &input,
   }
   std::cout << std::flush;
 
-  return levels;
+  // Keep the integrals: they are required to construct the CI Hamiltonian for
+  // any other J/parity later on (e.g., for the mixed states)
+  Solutions out;
+  out.levels = std::move(levels);
+  out.integrals.ci_basis = ci_sp_basis;
+  out.integrals.h1 = std::move(h1);
+  out.integrals.qk = std::move(qk);
+  out.integrals.Bk = std::move(Bk);
+  out.integrals.Sk = std::move(Sk);
+
+  return out;
 }
 
 //==============================================================================
