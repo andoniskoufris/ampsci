@@ -236,8 +236,20 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
   // Create lookup table for one-particle matrix elements, h1
   Coulomb::meTable<double> h1;
 
-  // Calculate + store all 1-body integrals
+  // First, in serial, add a zero for each element. The map structure is then
+  // fixed, so the values may be filled in parallel below
   for (const auto &v : ci_basis) {
+    for (const auto &w : ci_basis) {
+      if (w.kappa() == v.kappa())
+        h1.add(v, w, 0.0);
+    }
+  }
+
+// Calculate + store all 1-body integrals
+// Each v writes only its own elements, so this is safe in parallel
+#pragma omp parallel for schedule(dynamic)
+  for (auto iv = 0ul; iv < ci_basis.size(); ++iv) {
+    const auto &v = ci_basis[iv];
 
     // Find lowest valence state of this kappa; for Sigma energy
     const auto vp = std::find_if(
@@ -252,16 +264,15 @@ calculate_h1_table(const std::vector<DiracSpinor> &ci_basis,
         continue;
       const auto h0_vw = v == w ? v.en() : 0.0;
 
-      // Can use Sigma matrix instead: all-orders?
       const auto Sigma_vw =
         include_Sigma1 ?
           MBPT::Sigma_vw(v, w, qk, s1_basis_core, s1_basis_excited, 99, ev) :
           0.0;
 
-      h1.add(v, w, h0_vw + Sigma_vw);
+      *h1.get(v, w) = h0_vw + Sigma_vw;
       // Add symmetric partner:
       if (v != w)
-        h1.add(w, v, h0_vw + Sigma_vw);
+        *h1.get(w, v) = h0_vw + Sigma_vw;
     }
   }
   return h1;

@@ -41,7 +41,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     {"sigma1", "Include one-body MBPT correlations? [false]"},
     {"sigma2", "Include two-body MBPT correlations? [false]"},
     {"Brueckner", "Use Brueckner (spectrum) states for CI basis? Must have "
-                  "Spectrum and sigma1. [false]"},
+                  "Correlations, Spectrum, and sigma1. [false]"},
     {"cis2_basis",
      "The subset of ci_basis for which the two-body MBPT corrections are "
      "calculated. Must be a subset of ci_basis. If existing sk file has "
@@ -80,13 +80,15 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "(and thus cancels in all except diagram 'd'). [Fermi0]"},
     {"qk_file",
      "Filename for storing two-body Coulomb integrals. By default, is "
-     "~ At.qk, where At is atomic symbol + 'identity'."},
+     "~ At.qk, where At is atomic symbol + 'identity'. Set to 'false' to "
+     "disable read/write."},
     {"sk_file",
      "Filename for storing two-body Sigma_2 integrals. By default, is "
      "At_n_b_k.sk, where At is atomic symbol, n is n_min_core, b is "
-     "cis2_basis, k is max_k."},
+     "cis2_basis, k is max_k. Set to 'false' to disable read/write."},
     {"bk_file", "Filename for storing two-body Breit integrals. By default, is "
-                "~ At.bk, where At is atomic symbol + 'identity'."},
+                "~ At.bk, where At is atomic symbol + 'identity'. Set to "
+                "'false' to disable read/write."},
     {"ci_file",
      "Filename for storing CI solutions (energies + eigenvectors). Default "
      "is auto-generated: identity_cibasis[_s1][_s2][_bru].ci.abf. "
@@ -101,7 +103,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "Usually false. If set to true, ampsci will not calculate any new "
      "Coulomb or Sigma_2 integrals, even if they are implied by the above "
      "settings. This saves time when we know all required integrals already "
-     "exist, since the code doesn't need to check. [true]"},
+     "exist, since the code doesn't need to check. [false]"},
     {"exclude_wrong_parity_box",
      "Excludes the Sigma_2 box corrections that "
      "have 'wrong' parity when calculating Sigma2 matrix elements. Note: If "
@@ -139,8 +141,11 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // (When not using Brueckner there is also <v|Sigma1|w>, which is not diag)
   // Perhaps a slight inconsistancy when including RPA into matrix elements?
   const auto Brueckner_raw = input.get("Brueckner", false);
+  // nb: require wf.Sigma(): without it, the Spectrum is formed without
+  // correlations, so the "Brueckner" states would just be regular basis states
+  // (and Sigma1 would then be missed entirely)
   const auto Brueckner =
-    Brueckner_raw && include_Sigma1 && !wf.spectrum().empty();
+    Brueckner_raw && include_Sigma1 && wf.Sigma() && !wf.spectrum().empty();
 
   const auto &t_basis = Brueckner ? wf.spectrum() : wf.basis();
 
@@ -162,8 +167,18 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   }
   if (Brueckner_raw && !Brueckner) {
     fmt2::warning();
-    std::cout << ": Requested Brueckner method, but conditions (Spectrum and "
-                 "Sigma1) not met\n";
+    std::cout << ": Requested Brueckner method, but conditions not met:\n";
+    if (!include_Sigma1) {
+      std::cout << " - sigma1 option is false\n";
+    }
+    if (wf.spectrum().empty()) {
+      std::cout << " - no Spectrum\n";
+    }
+    if (!wf.Sigma()) {
+      std::cout << " - no correlation potential: Spectrum was formed without "
+                   "Sigma\n";
+    }
+    std::cout << "Not using Brueckner method: using regular basis\n";
   }
 
   // aditional output string for br method:
@@ -172,7 +187,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
   const auto read_only = input.get("read_only", false);
   if (read_only) {
-    std::cout << "\nReading existing CI solutions - no new CI performed\n";
+    std::cout << "\nReading existing CI solutions and integrals - no new CI "
+                 "performed\n";
   }
 
   //----------------------------------------------------------------------------
@@ -259,9 +275,13 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // Often, we don't need to calculate new integrals.
   // It takes time to check if we need to, so faster to skip if we already
   // know all integrals exist.
-  const auto no_new_integralsQ = input.get("no_new_integrals", false);
-  if (!read_only) {
-    std::cout << "Calculate two-body Coulomb integrals: Q^k_abcd\n";
+  // If read_only, we still read the integrals in (the modules need them), but
+  // calculate nothing new
+  const auto no_new_integralsQ =
+    input.get("no_new_integrals", false) || read_only;
+  {
+    std::cout << (no_new_integralsQ ? "Read" : "Calculate")
+              << " two-body Coulomb integrals: Q^k_abcd\n";
     std::cout << std::flush;
 
     const auto qk_filename =
@@ -278,7 +298,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
       // First, calculate the integrals between ci basis states:
       {
-        std::cout << "For: " << DiracSpinor::state_config(ci_sp_basis) << "\n"
+        std::cout << "For: " << DiracSpinor::state_config(ci_sp_basis)
+                  << " (for CI)\n"
                   << std::flush;
         const auto yk = Coulomb::YkTable(ci_sp_basis);
         qk.fill(ci_sp_basis, yk, max_k_Coulomb, false);
@@ -299,7 +320,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       // Then, add those required for Sigma_1 (unless we have matrix!)
       if (include_Sigma1 && !wf.Sigma()) {
         const auto temp_basis = qip::merge(core_s1, excited_s1);
-        std::cout << "and: " << DiracSpinor::state_config(temp_basis) << "\n"
+        std::cout << "and: " << DiracSpinor::state_config(temp_basis)
+                  << " (for MBPT)\n"
                   << std::flush;
         const auto yk = Coulomb::YkTable(temp_basis);
         qk.fill_if(temp_basis, yk, select_Q_sigma, max_k_Coulomb, false);
@@ -308,7 +330,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       // Then, add those required for Sigma_2 (unless we already did Sigma_1)
       if (include_Sigma2 && !(include_Sigma1 && !wf.Sigma())) {
         const auto temp_basis = qip::merge(core_s2, excited_s2);
-        std::cout << "and: " << DiracSpinor::state_config(temp_basis) << "\n"
+        std::cout << "and: " << DiracSpinor::state_config(temp_basis)
+                  << " (for MBPT)\n"
                   << std::flush;
         const auto yk = Coulomb::YkTable(temp_basis);
         qk.fill_if(temp_basis, yk, select_Q_sigma, max_k_Coulomb, false);
@@ -334,16 +357,15 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
   // Create lookup table for one-particle matrix elements, h1
   // nb: if Brueckner, Sigma1 already accounted for!
-  if (!read_only) {
-    std::cout << "Calculate one-body integrals.\n";
-    std::cout << std::flush;
-  }
-  auto h1 = read_only ? Coulomb::meTable<double>{} :
-            Brueckner ? CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false) :
-            wf.Sigma() ? CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(),
-                                                include_Sigma1) :
-                         CI::calculate_h1_table(ci_sp_basis, core_s1,
-                                                excited_s1, qk, include_Sigma1);
+  // nb: not stored on disk, so is re-calculated even if read_only
+  std::cout << "Calculate one-body integrals.\n";
+  std::cout << std::flush;
+  auto h1 = Brueckner ?
+              CI::calculate_h1_table(ci_sp_basis, {}, {}, {}, false) :
+            wf.Sigma() ?
+              CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(), include_Sigma1) :
+              CI::calculate_h1_table(ci_sp_basis, core_s1, excited_s1, qk,
+                                     include_Sigma1);
 
   //----------------------------------------------------------------------------
   // Breit and QED
@@ -359,15 +381,15 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // Creat Breit table (only for CI, not MBPT part)
   Coulomb::WkTable Bk;
   const auto Breit2 = input.get("Breit2", true);
-  if (wf.vHF()->vBreit() && Breit2 && !read_only) {
+  if (wf.vHF()->vBreit() && Breit2) {
 
     // use a subset of basis for Breit?
     const auto Breit_basis_string =
       input.get("Breit_basis", std::to_string(N_max_core + 6) + "spdf");
     const auto Breit_basis = CI::basis_subset(ci_sp_basis, Breit_basis_string);
 
-    std::cout
-      << "\nCalculate + include two-body Breit integrals for CI: B^k_abcd\n";
+    std::cout << (no_new_integralsQ ? "\nRead" : "\nCalculate +")
+              << " include two-body Breit integrals for CI: B^k_abcd\n";
     std::cout << "For: " << DiracSpinor::state_config(Breit_basis) << "\n";
     std::cout << std::flush;
 
@@ -382,7 +404,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // Calculate MBPT corrections to two-body Coulomb integrals
 
   Coulomb::LkTable Sk;
-  if (include_Sigma2 && !read_only) {
+  if (include_Sigma2) {
 
     // Here, write basis info into filename, since these are _internal_ lines!
     const auto Sk_filename =
@@ -393,7 +415,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                                 "") +
                              br_string + ".sk.abf");
 
-    std::cout << "\nCalculate two-body MBPT integrals: Σ^k_abcd\n";
+    std::cout << (no_new_integralsQ ? "\nRead" : "\nCalculate")
+              << " two-body MBPT integrals: Σ^k_abcd\n";
 
     std::cout << "For: " << DiracSpinor::state_config(cis2_basis) << ", using "
               << DiracSpinor::state_config(excited_s2) << "\n";
@@ -440,9 +463,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
           std::pair{2 * J_even_list.at(i), +1} :
           std::pair{2 * J_odd_list.at(i - J_even_list.size()), -1};
 
-      levels.at(i) =
-        run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
-               Sk, include_Sigma2, print_details, std::cout, ci_fname);
+      levels.at(i) = run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm,
+                            h1, qk, Bk, Sk, include_Sigma2, print_details,
+                            read_only, std::cout, ci_fname);
     }
   }
 
@@ -524,8 +547,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               int num_solutions, std::optional<double> all_below_cm,
               const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
-              bool include_Sigma2, bool print_details, std::ostream &outstream,
-              const std::string &ci_fname) {
+              bool include_Sigma2, bool print_details, bool read_only,
+              std::ostream &outstream, const std::string &ci_fname) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -549,10 +572,6 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
 
   const auto N_CSFs = psi.CSFs().size();
   outstream << "Total CSFs: " << N_CSFs << "\n" << std::flush;
-
-  // If "read only" then h1 should be empty
-  // (or we could just pass read_only in)
-  const bool read_only = h1.empty();
 
   // Try to read existing solutions from file
   bool read_ok =

@@ -127,8 +127,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (wf.CIwfs().empty() || !ints.availableQ()) {
     fmt2::error();
     std::cout << ": Requires CI solutions and the integrals used to construct "
-                 "the CI Hamiltonian. Include a CI{} block (and don't run it "
-                 "with read_only)\n";
+                 "the CI Hamiltonian. Include a CI{} block\n";
     return;
   }
 

@@ -60,7 +60,14 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
   // Read from ci file; compare energies, gJ, and coefficients
   auto input2 = input;
   input2.add("read_only = true;");
-  const auto CIWFs_2 = CI::configuration_interaction(input2, wf).levels;
+  const auto solution_2 = CI::configuration_interaction(input2, wf);
+  const auto CIWFs_2 = solution_2.levels;
+
+  // read_only must still read in the integrals: the modules need them to
+  // re-construct the CI Hamiltonian of any other J/parity
+  REQUIRE(solution_2.integrals.availableQ());
+  REQUIRE(solution_2.integrals.qk.count() ==
+          CI::configuration_interaction(input, wf).integrals.qk.count());
 
   REQUIRE(CIWFs.size() == CIWFs_2.size());
 

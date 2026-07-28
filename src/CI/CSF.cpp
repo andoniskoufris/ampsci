@@ -364,7 +364,15 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
     std::fstream f;
     IO::FRW::open_binary(f, fname, IO::FRW::read);
     f.seekg(match_offset + static_cast<std::streamoff>(prefix_bytes));
-    rw_binary(f, IO::FRW::read, m_num_solutions);
+    std::size_t num_solutions = 0;
+    rw_binary(f, IO::FRW::read, num_solutions);
+    if (num_solutions > nc) {
+      // corrupt file: cannot have more solutions than CSFs
+      outstream << "\nCannot read from " << fname << ": " << num_solutions
+                << " solutions, but only " << nc << " CSFs.\n";
+      return false;
+    }
+    m_num_solutions = num_solutions;
     const auto Jstr = (m_twoj % 2 == 0) ? std::to_string(m_twoj / 2) :
                                           std::to_string(m_twoj) + "/2";
     outstream << "Reading J=" << Jstr << " pi=" << (m_pi > 0 ? "+" : "-")

@@ -64,7 +64,7 @@ namespace CI {
       // Include two-body MBPT correlations? [false]
     Brueckner;
       // Use Brueckner (spectrum) states for CI basis? Must
-      // have Spectrum and sigma1. [false]
+      // have Correlations, Spectrum, and sigma1. [false]
     cis2_basis;
       // The subset of ci_basis for which the two-body MBPT
       // corrections are calculated. Must be a subset of
@@ -112,21 +112,22 @@ namespace CI {
     qk_file;
       // Filename for storing two-body Coulomb integrals. By
       // default, is ~ At.qk, where At is atomic symbol +
-      // 'identity'.
+      // 'identity'. Set to 'false' to disable read/write.
     sk_file;
       // Filename for storing two-body Sigma_2 integrals. By
       // default, is At_n_b_k.sk, where At is atomic symbol, n
-      // is n_min_core, b is cis2_basis, k is max_k.
+      // is n_min_core, b is cis2_basis, k is max_k. Set to
+      // 'false' to disable read/write.
     bk_file;
       // Filename for storing two-body Breit integrals. By
       // default, is ~ At.bk, where At is atomic symbol +
-      // 'identity'.
+      // 'identity'. Set to 'false' to disable read/write.
     no_new_integrals;
       // Usually false. If set to true, ampsci will not
       // calculate any new Coulomb or Sigma_2 integrals, even
       // if they are implied by the above settings. This saves
       // time when we know all required integrals already
-      // exist, since the code doesn't need to check. [true]
+      // exist, since the code doesn't need to check. [false]
     exclude_wrong_parity_box;
       // Excludes the Sigma_2 box corrections that have
       // 'wrong' parity when calculating Sigma2 matrix
@@ -197,8 +198,11 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   @param include_Sigma2 If true, add two-body MBPT corrections from @p Sk to
                         the CI Hamiltonian.
   @param print_details  If true, print a breakdown of the leading configurations
-                        for each solution. Leads to very large output if 
+                        for each solution. Leads to very large output if
                         @p num_solutions is large
+  @param read_only    If true, only the solutions already in the file are read;
+                      the eigenvalue problem is not solved, and nothing is
+                      written [default: false].
   @param outstream    Output stream for progress and results [default: stdout].
   @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion 
   coefficients for the requested solutions.
@@ -207,7 +211,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               int num_solutions, std::optional<double> all_below_cm,
               const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
-              bool include_Sigma2, bool print_details,
+              bool include_Sigma2, bool print_details, bool read_only = false,
               std::ostream &outstream = std::cout,
               const std::string &ci_fname = "");
 

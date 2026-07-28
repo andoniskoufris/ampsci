@@ -92,8 +92,13 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
   const auto Ea = Psi_a.energy(ia);
   const auto Eb = Psi_b.energy(ib);
 
+  // Each row below requires the CI Hamiltonian of that (J, parity), and a
+  // mixed state for each term: both are slow, so say so before starting
+  fmt::print(outstream,
+             "\nSolving the mixed states for each required J^pi..\n\n");
   fmt::print(outstream, "{:>5} {:>7} {:>4}  {:>16} {:>16} {:>8}\n", "J^pi",
              "CSFs", "term", "<B_s||t||A_s>", "<B_t||s||A_t>", "eps");
+  outstream << std::flush;
 
   // Intermediate states are connected to a by one operator, and to b by the
   // other. The first ('ts') term has s acting on a, so those states have parity

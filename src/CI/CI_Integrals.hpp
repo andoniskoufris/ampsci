@@ -10,7 +10,7 @@ class DiracDiracSpinor;
 namespace MBPT {
 class CorrelationPotential;
 class StructureRad;
-}
+} // namespace MBPT
 namespace HF {
 class Breit;
 }

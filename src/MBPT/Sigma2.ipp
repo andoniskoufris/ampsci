@@ -31,7 +31,7 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
     max_l_internal = 999;
 
   double sum = 0.0;
-#pragma omp parallel for reduction(+ : sum) collapse(2)
+#pragma omp parallel for reduction(+ : sum) collapse(2) schedule(dynamic)
   for (auto ia = 0ul; ia < core.size(); ia++) {
     for (auto in = 0ul; in < excited.size(); in++) {
 
