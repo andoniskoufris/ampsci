@@ -210,10 +210,12 @@ fi
 # On Linux: try pkg-config first, then detect OpenBLAS (used by foss and other
 # HPC toolchains), then fall back to standard -llapack -lblas.
 # EBROOTOPENBLAS is set by EasyBuild when OpenBLAS module is loaded.
-# GSL flags come from gsl-config (already run above).
+# GSL flags come from gsl-config (already run above). They go last, since they
+# include -lgslcblas, which must come after the real BLAS or it captures the
+# cblas_* symbols (and is much slower).
 ################################################################################
 if [[ "${machine}" == "Mac" ]]; then
-  ldlibs="${gsllibs} -framework Accelerate ${flint_libs}"
+  ldlibs="-framework Accelerate ${gsllibs} ${flint_libs}"
   echo "LDLIBS          : ${ldlibs}"
   sed -i.bak "s@^LDLIBS ?=.*@LDLIBS ?= ${ldlibs}@" Makefile
 else
@@ -237,7 +239,7 @@ else
     fi
   fi
 
-  ldlibs="${gsllibs} ${blas_libs} ${flint_libs}"
+  ldlibs="${blas_libs} ${gsllibs} ${flint_libs}"
   echo "LDLIBS          : ${ldlibs}"
   sed -i.bak "s@^LDLIBS ?=.*@LDLIBS ?= ${ldlibs}@" Makefile
 fi

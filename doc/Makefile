@@ -36,7 +36,8 @@ GSL_PATH ?=
 
 ################################################################################
 ## Set GSL and LAPACK/BLAS library flags. These are typical, but sometimes differ
-LDLIBS ?= -lgsl -lgslcblas -llapack -lblas
+## Order matters: put the fast BLAS before -lgslcblas, or the slow one is used
+LDLIBS ?= -lgsl -llapack -lblas -lgslcblas
 
 
 ################################################################################

@@ -1,4 +1,6 @@
 #include "version.hpp"
+#include "Maths/Hypergeometric.hpp" // for has_flint
+#include <cstdlib>
 #include <dlfcn.h>
 #include <gsl/gsl_version.h>
 #include <string>
@@ -78,6 +80,33 @@ std::string version() {
 
 std::string compiled() { return cxx_version + " " + compiled_time; }
 
+// GSL version we compiled against, compared to the library actually loaded.
+// gsl_version (unqualified) is the compile-time GSL_VERSION macro from the
+// header; ::gsl_version is a global exported by libgsl itself. If these
+// disagree, the header and library are mismatched and behaviour is undefined
+static std::string gsl_info() {
+  const std::string loaded{::gsl_version};
+  if (gsl_version == loaded)
+    return gsl_version;
+  return gsl_version + " (compiled) does not match " + loaded + " (loaded!)";
+}
+
+// FLINT is optional; it provides the complex hypergeometric functions.
+// Reports whether it was compiled in, and the version actually loaded.
+// flint_version is a global exported by libflint, found here with dlsym so we
+// do not need the FLINT headers (which are only available in some builds).
+// Note it is declared 'char flint_version[]', an array, so dlsym returns the
+// address of the string itself; do not dereference it (unlike ::gsl_version,
+// which is a pointer)
+static std::string flint_info() {
+  if (!Hypergeometric::has_flint)
+    return "not compiled in (optional)";
+  const auto symbol = dlsym(RTLD_DEFAULT, "flint_version");
+  if (symbol == nullptr)
+    return "compiled in (version unknown)";
+  return static_cast<const char *>(symbol);
+}
+
 static std::string blas_info() {
   using fn_str = const char *(*)();
   using fn_mkl = void (*)(char *, int);
@@ -95,6 +124,27 @@ static std::string blas_info() {
   return "Reference LAPACK/BLAS";
 }
 
+// Full path of the library that actually provides symbol at run time.
+// This is not always the one named on the link line: libgslcblas and openblas
+// both define cblas_dgemm, and whichever is linked first wins.
+// One symbol is enough per family: an implementation defines the whole cblas_*
+// set, or the whole LAPACK set, so the linker picks one library for each.
+static std::string symbol_provider(const char *symbol) {
+  const auto address = dlsym(RTLD_DEFAULT, symbol);
+  if (address == nullptr)
+    return "not found";
+  Dl_info info;
+  if (dladdr(address, &info) == 0 || info.dli_fname == nullptr)
+    return "unknown";
+  // resolve any symlinks: e.g., libblas.so.3 may point to openblas or reference
+  char *resolved = realpath(info.dli_fname, nullptr);
+  if (resolved == nullptr)
+    return info.dli_fname;
+  const std::string path{resolved};
+  std::free(resolved);
+  return path;
+}
+
 std::string blas_threads() {
   using fn_int = int (*)();
   auto oblas_thr =
@@ -109,8 +159,11 @@ std::string blas_threads() {
 }
 
 std::string libraries() {
-  return "  GSL (GNU Scientific Libraries): " + gsl_version + '\n' +
-         "  OpenMP: " + omp_version + '\n' + "  LAPACK/BLAS: " + blas_info();
+  return "  GSL (GNU Scientific Libraries): " + gsl_info() + '\n' +
+         "  OpenMP: " + omp_version + '\n' + "  LAPACK/BLAS: " + blas_info() +
+         '\n' + "    cblas from: " + symbol_provider("cblas_dgemm") + '\n' +
+         "    lapack from: " + symbol_provider("dgetrf_") + '\n' +
+         "  FLINT: " + flint_info();
 }
 
 } // namespace version
