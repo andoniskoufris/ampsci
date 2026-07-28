@@ -106,7 +106,13 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
                  "blank will not use QkTable; if exists, will read it in; if "
                  "doesn't exist, will create it and write to disk. If 'true' "
                  "will use default filename"},
-     {"n_minmax", "list; min,max n for core/excited: [1,inf]"}});
+     {"n_minmax", "list; min,max n for core/excited (internal): [1,inf]"},
+     {"n_max_legs",
+      "Max n of the CI basis states that SR+N is applied to. SR+N is only "
+      "meaningful between physical states, and the high-n states of the CI "
+      "basis are cavity states [default: max_n_core + 3]"},
+     {"norm", "Include the normalisation of states? If false, only the "
+              "structure radiation is included [true]"}});
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
@@ -250,7 +256,12 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   }
 
   //----------------------------------------------------------------------------
-  // Structure radiation
+  // Structure radiation. SR+N is only meaningful between physical states, so
+  // it is applied only to the low-n part of the CI basis
+  const auto sr_n_max =
+    SR_input.get("n_max_legs", DiracSpinor::max_n(wf.core()) + 3);
+  const auto sr_norm = SR_input.get("norm", true);
+
   std::optional<MBPT::StructureRad> sr;
   if (t_SR_input) {
     const auto n_minmax = SR_input.get("n_minmax", std::vector{1});
@@ -261,9 +272,11 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       Qk_file_t != "false" ?
         (Qk_file_t == "true" ? wf.identity() + ".qk.abf" : Qk_file_t) :
         "";
-    std::cout << "\nIncluding structure radiation and normalisation:\n";
-    std::cout << "SR+N is added to every single-particle matrix element, "
-                 "including the internal lines\n";
+    std::cout << "\nIncluding structure radiation";
+    std::cout << (sr_norm ? " and normalisation:\n" : " (no normalisation):\n");
+    std::cout << "Added to the single-particle matrix elements used in the "
+                 "amplitude, including the internal lines\n";
+    fmt::print("Applied to CI basis states with n <= {}\n", sr_n_max);
     sr =
       MBPT::StructureRad(wf.basis(), wf.FermiLevel(), {n_min, n_max}, Qk_file);
   }
@@ -274,13 +287,15 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (sr) {
     sr->solve_core(ht.get(), rpa_t.get());
   }
-  const auto t_me = ExternalField::me_table(
-    ints.ci_basis, ht.get(), rpa_t.get(), sr ? &*sr : nullptr, omega);
+  const auto t_me =
+    ExternalField::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
+                            sr ? &*sr : nullptr, omega, sr_n_max, sr_norm);
   if (sr) {
     sr->solve_core(hs.get(), rpa_s.get());
   }
-  const auto s_me = ExternalField::me_table(
-    ints.ci_basis, hs.get(), rpa_s.get(), sr ? &*sr : nullptr, 0.0);
+  const auto s_me =
+    ExternalField::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
+                            sr ? &*sr : nullptr, 0.0, sr_n_max, sr_norm);
   std::cout << "done\n" << std::flush;
 
   //----------------------------------------------------------------------------

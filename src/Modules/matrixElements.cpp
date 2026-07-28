@@ -1127,7 +1127,14 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
       "create it and write to disk. If 'true' will use default filename. "
       "Save time (10x) at cost of memory. Note: Using QkTable "
       "implies splines used for diagram legs"},
-     {"n_minmax", "list; min,max n for core/excited: [1,inf]"}});
+     {"n_minmax", "list; min,max n for core/excited: [1,inf]"},
+     {"n_max_legs",
+      "Max n of the CI basis states that SR+N is applied to. SR+N is only "
+      "meaningful between physical states, and the high-n states of the CI "
+      "basis are cavity states [default: maximum n for core + 3, as for "
+      "cis2_basis]"},
+     {"norm", "Include the normalisation of states? If false, only the "
+              "structure radiation is included [true]"}});
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
@@ -1190,6 +1197,12 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
   const std::vector<DiracSpinor> ci_basis =
     CI::basis_subset(wf.basis(), basis_string, wf.coreConfiguration());
 
+  // SR+N is only meaningful between physical states, so it is applied only to
+  // the low-n part of the CI basis
+  const auto sr_n_max =
+    SR_input.get("n_max_legs", DiracSpinor::max_n(wf.core()) + 3);
+  const auto sr_norm = SR_input.get("norm", true);
+
   std::optional<MBPT::StructureRad> sr;
   if (t_SR_input) {
     // min/max n (for core/excited basis)
@@ -1202,12 +1215,14 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
         Qk_file_t == "true" ? wf.identity() + ".qk.abf" : Qk_file_t :
         "";
 
-    std::cout
-      << "\nIncluding Structure radiation and normalisation of states:\n";
+    std::cout << "\nIncluding Structure radiation";
+    std::cout << (sr_norm ? " and normalisation of states:\n" :
+                            " (no normalisation of states):\n");
     if (n_min > 1)
       std::cout << "Including from n = " << n_min << "\n";
     if (n_max < 999)
       std::cout << "Including to n = " << n_max << "\n";
+    std::cout << "Applied to CI basis states with n <= " << sr_n_max << "\n";
     if (!Qk_file.empty()) {
       std::cout
         << "Will read/write Qk integrals to file: " << Qk_file
@@ -1250,7 +1265,8 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
   Coulomb::meTable<double> me_tab;
   if (!eachFreqQ || !h->freqDependantQ()) {
     std::cout << "Calculate matrix element table.." << std::flush;
-    me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr, omega);
+    me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr, omega,
+                                     sr_n_max, sr_norm);
     std::cout << "..done\n" << std::flush;
   }
 
@@ -1275,8 +1291,8 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     }
     if (eachFreqQ && h->freqDependantQ()) {
       std::cout << "Re-Calculate matrix element table.." << std::flush;
-      me_tab =
-        ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr, t_omega);
+      me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr,
+                                       t_omega, sr_n_max, sr_norm);
       std::cout << "..done\n" << std::flush;
     }
 

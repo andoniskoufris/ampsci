@@ -130,6 +130,13 @@ calcMatrixElements(const std::vector<DiracSpinor> &orbs,
                  If nullptr, not applied.
   @param omega   Only used for Structure Radiation. If set, use this fixed
                  frequency for all elements; otherwise uses |eb - ea|.
+  @param sr_n_max  SR+N is applied only to pairs with both n <= @p sr_n_max.
+                 SR+N is meaningful only between physical states, so this
+                 limits it to the low-n part of a large basis, where the
+                 states are not cavity states. Does not affect the internal
+                 lines of the diagrams (see MBPT::StructureRad) [999].
+  @param sr_norm If false, only the structure radiation is added, not the
+                 normalisation of states [true].
 
   @return meTable containing t_ab for all non-zero pairs (and conjugates).
 
@@ -141,7 +148,8 @@ Coulomb::meTable<double> me_table(const std::vector<DiracSpinor> &a_orbs,
                                   const DiracOperator::TensorOperator *h,
                                   const CorePolarisation *dV = nullptr,
                                   const MBPT::StructureRad *srn = nullptr,
-                                  std::optional<double> omega = {});
+                                  std::optional<double> omega = {},
+                                  int sr_n_max = 999, bool sr_norm = true);
 
 /*!
   @brief Builds a matrix element table for a single set of orbitals.
@@ -152,8 +160,9 @@ Coulomb::meTable<double> me_table(const std::vector<DiracSpinor> &a_orbs,
 inline Coulomb::meTable<double> me_table(
   const std::vector<DiracSpinor> &a_orbs,
   const DiracOperator::TensorOperator *h, const CorePolarisation *dV = nullptr,
-  const MBPT::StructureRad *srn = nullptr, std::optional<double> omega = {}) {
-  return me_table(a_orbs, a_orbs, h, dV, srn, omega);
+  const MBPT::StructureRad *srn = nullptr, std::optional<double> omega = {},
+  int sr_n_max = 999, bool sr_norm = true) {
+  return me_table(a_orbs, a_orbs, h, dV, srn, omega, sr_n_max, sr_norm);
 }
 
 /*!

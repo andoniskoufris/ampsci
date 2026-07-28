@@ -113,7 +113,8 @@ Coulomb::meTable<double> me_table(const std::vector<DiracSpinor> &a_orbs,
                                   const DiracOperator::TensorOperator *h,
                                   const CorePolarisation *dV,
                                   const MBPT::StructureRad *srn,
-                                  std::optional<double> omega) {
+                                  std::optional<double> omega, int sr_n_max,
+                                  bool sr_norm) {
 
   Coulomb::meTable<double> h_ab;
 
@@ -147,7 +148,11 @@ Coulomb::meTable<double> me_table(const std::vector<DiracSpinor> &a_orbs,
 
       const auto tab = h->reducedME(a, b);
       const auto dv = dV ? dV->dV(a, b) : 0.0;
-      const auto sr = srn ? srn->srn(a, b, h, dV, ww) : 0.0;
+      // SR+N only between physical (low-n) states; optionally without the norm
+      const auto do_sr = srn && a.n() <= sr_n_max && b.n() <= sr_n_max;
+      const auto sr = !do_sr  ? 0.0 :
+                      sr_norm ? srn->srn(a, b, h, dV, ww) :
+                                srn->SR(a, b, ww);
 
       const auto me = tab + dv + sr;
 
