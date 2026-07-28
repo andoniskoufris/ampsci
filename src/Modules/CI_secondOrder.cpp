@@ -60,10 +60,14 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
     {{"",
-      "Second-order amplitude A^K between two CI states, A -> B, for a dynamic "
-      "operator t and a static operator s:\n"
-      "A^K = sum_n [c1 <B||t||n><n||s||A>/(E_A-E_n) "
+      "Second-order amplitude A^K between two CI states, A -> B, for two "
+      "operators t and s, at frequencies omega and omega_s:\n"
+      "A^K = sum_n [c1 <B||t||n><n||s||A>/(E_A+omega_s-E_n) "
       "+ c2 <B||s||n><n||t||A>/(E_A+omega-E_n)].\n"
+      "Energy conservation fixes omega_s = E_B - E_A - omega, so only omega is "
+      "an input: at its default, t carries the whole transition frequency and "
+      "s is static. For a dynamic polarisability, set B = A and omega to the "
+      "frequency; then omega_s = -omega.\n"
       "The sums over the intermediate spectrum are evaluated with CI mixed "
       "states, so are complete (no sum over CI solutions). Requires a CI{} "
       "block (which is where the CI options are set)."},
@@ -72,13 +76,14 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
            "index counts from 0, in order of energy, and may be omitted). The "
            "form 'e0', 'o1:2' is also accepted [required]"},
      {"B", "Final CI state, as for A [default: same as A]"},
-     {"t", "Dynamic operator: the one that carries the frequency omega [E1]"},
+     {"t", "The operator that carries the frequency omega [E1]"},
      {"t_options{}", "Options for the t operator"},
-     {"s", "Static operator [E1]"},
+     {"s", "The other operator; it carries omega_s = E_b - E_a - omega [E1]"},
      {"s_options{}", "Options for the s operator"},
-     {"omega", "Frequency of t. Generally must be transition frequency, and be "
-               "left as default. [default: "
-               "E_b - E_a]"},
+     {"omega", "Frequency of t. For a transition, leave as default, so that t "
+               "carries it all and s is static. For a dynamic polarisability "
+               "(B = A), set this to the frequency: s then carries -omega. "
+               "[default: E_b - E_a]"},
      {"K", "Rank K of the amplitude. Requires |kt-ks| <= K <= kt+ks, and the "
            "triangle rule for (Jb,K,Ja) [default: smallest allowed]"},
      {"rpa", "Method used for RPA: true(=TDHF), false, TDHF, basis, diagram "
@@ -176,17 +181,26 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto omega = input.get("omega", Eb - Ea);
 
-  // nb: t is the dynamic operator; it is only static if omega happens to be
-  // zero (as for the diagonal, static, polarisabilities)
-  if (omega == 0.0) {
-    fmt::print("t: {} (rank {}, {} parity), static\n", ht->name(), kt,
-               ht->parity() == 1 ? "even" : "odd");
-  } else {
-    fmt::print("t: {} (rank {}, {} parity), dynamic, at omega = {:.6f}\n",
-               ht->name(), kt, ht->parity() == 1 ? "even" : "odd", omega);
-  }
-  fmt::print("s: {} (rank {}, {} parity), static\n", hs->name(), ks,
-             hs->parity() == 1 ? "even" : "odd");
+  // s carries whatever frequency t does not, so that energy is conserved:
+  // E_b = E_a + omega + omega_s. With omega at its default, s is static, as
+  // for a real transition. For a dynamic polarisability, A = B (so E_b = E_a)
+  // and omega is set: then omega_s = -omega, giving the usual pair of
+  // denominators, E_a -+ omega - E_n
+  const auto omega_s = Eb - Ea - omega;
+  const auto dynamic = omega != 0.0 && omega_s != 0.0;
+
+  const auto print_op = [](const std::string &label,
+                           const DiracOperator::TensorOperator *h, double w) {
+    fmt::print("{}: {} (rank {}, {} parity), ", label, h->name(), h->rank(),
+               h->parity() == 1 ? "even" : "odd");
+    if (w == 0.0) {
+      fmt::print("static\n");
+    } else {
+      fmt::print("at omega = {:.6f}\n", w);
+    }
+  };
+  print_op("t", ht.get(), omega);
+  print_op("s", hs.get(), omega_s);
 
   // Overall parity selection rule
   if (Psi_a->parity() * Psi_b->parity() != ht->parity() * hs->parity()) {
@@ -206,6 +220,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   fmt::print("K = {}{}\n", K, K == K_minimum ? " (smallest allowed)" : "");
   if (!allowed_K(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ())) {
     std::cout << ": K is not allowed: the amplitude is zero\n";
+    return;
   }
 
   //----------------------------------------------------------------------------
@@ -245,13 +260,16 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (ht->freqDependantQ()) {
     ht->updateFrequency(omega);
   }
+  if (hs->freqDependantQ()) {
+    hs->updateFrequency(omega_s);
+  }
   if (rpa_t) {
     std::cout << "Solve RPA for t at omega = " << omega << "\n";
     rpa_t->solve_core(omega);
   }
   if (rpa_s) {
-    std::cout << "Solve RPA for s at omega = 0\n";
-    rpa_s->solve_core(0.0);
+    std::cout << "Solve RPA for s at omega = " << omega_s << "\n";
+    rpa_s->solve_core(omega_s);
   }
 
   //----------------------------------------------------------------------------
@@ -297,7 +315,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   }
   const auto s_me =
     ExternalField::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
-                            sr ? &*sr : nullptr, 0.0, sr_n_max, false);
+                            sr ? &*sr : nullptr, omega_s, sr_n_max, false);
 
   // One-body norm defect, for the CI states
   const auto f_norm = sr && sr_norm ?
@@ -310,7 +328,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   fmt::print("\nContributions to A^{}, by intermediate J and parity:\n", K);
   const auto [A_s, A_t] =
     CI::A_K(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me, hs.get(), s_me, omega,
-            ints, levels_to_remove, f_norm);
+            omega_s, ints, levels_to_remove, f_norm);
 
   //----------------------------------------------------------------------------
   // Intermediate states carrying a core hole. These lie outside the CI space,
@@ -324,12 +342,12 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // The core is the same in A and B, so its amplitude needs <B|A>
   const auto A_core =
     (Psi_a == Psi_b && ia == ib) ?
-      CI::A_K_core(K, Psi_a->twoJ(), ht.get(), hs.get(), omega, wf.core(),
-                   excited, rpa_t.get(), rpa_s.get()) :
+      CI::A_K_core(K, Psi_a->twoJ(), ht.get(), hs.get(), omega, omega_s,
+                   wf.core(), excited, rpa_t.get(), rpa_s.get()) :
       0.0;
   const auto A_cv =
-    CI::A_K_cv(K, *Psi_b, ib, *Psi_a, ia, ht.get(), hs.get(), omega, wf.core(),
-               ints.ci_basis, rpa_t.get(), rpa_s.get());
+    CI::A_K_cv(K, *Psi_b, ib, *Psi_a, ia, ht.get(), hs.get(), omega, omega_s,
+               wf.core(), ints.ci_basis, rpa_t.get(), rpa_s.get());
 
   // Normalisation of the external legs: A^K(1 + F_a + F_b). The intermediate
   // states are done inside A_K; the core term has its own normalisation, which
@@ -363,12 +381,16 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // all of these cases
   const auto E1_s = hs->name() == "E1";
   const auto diagonal = Psi_a == Psi_b && ia == ib;
+  // e.g., "Scalar polarisability", "Scalar dynamic polarisability",
+  // "Scalar transition polarisability"
+  const auto kind =
+    " "s + (dynamic ? "dynamic "s : ""s) + (diagonal ? ""s : "transition "s);
 
   // Scalar polarisability
   if (K == 0 && E1_s) {
     // alpha_0 = (2/3)[J]^-1 sum_n |<a||d||n>|^2/(E_n-E_a), for a = b
     const auto alpha = A_total / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
-    fmt::print("\nScalar{}polarisability:\n", diagonal ? " " : " transition ");
+    fmt::print("\nScalar{}polarisability:\n", kind);
     fmt::print("alpha = {:.6e} au\n", alpha);
   }
 
@@ -380,7 +402,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto factor =
       -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
                  (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
-    fmt::print("\nTensor{}polarisability:\n", diagonal ? " " : " transition ");
+    fmt::print("\nTensor{}polarisability:\n", kind);
     fmt::print("alpha_2 = {:.6e} au\n", factor * A_total);
   }
 
@@ -389,7 +411,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // amplitude, so no radial overlap enters it; see CI::sigma_rme
   if (K == 1 && E1_s) {
     const auto sigma = CI::sigma_rme(*Psi_b, ib, *Psi_a, ia, ints.ci_basis);
-    fmt::print("\nVector{}polarisability:\n", diagonal ? " " : " transition ");
+    fmt::print("\nVector{}polarisability:\n", kind);
     fmt::print("<B||sigma||A> = {:.6e}\n", sigma);
     if (std::abs(sigma) < 1.0e-12) {
       std::cout << "beta: not defined - the states have no spin-angular "

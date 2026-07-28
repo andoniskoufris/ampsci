@@ -74,8 +74,8 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     std::size_t ia, const DiracOperator::TensorOperator *t,
     const Coulomb::meTable<double> &t_me,
     const DiracOperator::TensorOperator *s,
-    const Coulomb::meTable<double> &s_me, double omega, const Integrals &ints,
-    const std::vector<Level> &levels_to_remove,
+    const Coulomb::meTable<double> &s_me, double omega, double omega_s,
+    const Integrals &ints, const std::vector<Level> &levels_to_remove,
     const Coulomb::meTable<double> &f_norm, std::ostream &outstream) {
 
   // Normalisation of the intermediate states: the 2F_n of the two vertices
@@ -142,15 +142,16 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
       double ts_s{0.0}, ts_t{0.0}, st_s{0.0}, st_t{0.0};
 
       if (do_ts) {
-        // sum_n <b||t||n><n||s||a>/(E_a - E_n)
-        const auto da =
-          project_out(solve_mixed_state(Psi_a, ia, target, Hci, s_me, ks, 0.0),
-                      target, indices);
+        // sum_n <b||t||n><n||s||a>/(E_a + omega_s - E_n)
+        const auto da = project_out(
+          solve_mixed_state(Psi_a, ia, target, Hci, s_me, ks, omega_s), target,
+          indices);
         ts_s = ReducedME(Psi_b, ib, da, 0, t_me, kt, t->parity());
 
-        const auto Db = project_out(
-          solve_mixed_state(Psi_b, ib, target, Hci, t_me, kt, Ea - Eb), target,
-          indices);
+        const auto Db =
+          project_out(solve_mixed_state(Psi_b, ib, target, Hci, t_me, kt,
+                                        Ea + omega_s - Eb),
+                      target, indices);
         ts_t = symm_sign(t, twoJb, twoJn) *
                ReducedME(Db, 0, Psi_a, ia, s_me, ks, s->parity());
 
@@ -217,7 +218,7 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
 //==============================================================================
 double A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
                 const DiracOperator::TensorOperator *s, double omega,
-                const std::vector<DiracSpinor> &core,
+                double omega_s, const std::vector<DiracSpinor> &core,
                 const std::vector<DiracSpinor> &excited,
                 const ExternalField::CorePolarisation *dVt,
                 const ExternalField::CorePolarisation *dVs) {
@@ -246,7 +247,8 @@ double A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
       const auto [c1, c2] = A_K_coefs(0, kt, ks, c.twoj(), m.twoj(), c.twoj());
       // 'ts': s excites the core electron, t returns it
       if (c1 != 0.0) {
-        Uc += c1 * t_0.getv(c, m) * s_v.getv(m, c) / (c.en() - m.en());
+        Uc +=
+          c1 * t_0.getv(c, m) * s_v.getv(m, c) / (c.en() + omega_s - m.en());
       }
       // 'st': t excites the core electron, s returns it
       if (c2 != 0.0) {
@@ -263,7 +265,7 @@ double A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
 double A_K_cv(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
               std::size_t ia, const DiracOperator::TensorOperator *t,
               const DiracOperator::TensorOperator *s, double omega,
-              const std::vector<DiracSpinor> &core,
+              double omega_s, const std::vector<DiracSpinor> &core,
               const std::vector<DiracSpinor> &ci_basis,
               const ExternalField::CorePolarisation *dVt,
               const ExternalField::CorePolarisation *dVs) {
@@ -301,7 +303,8 @@ double A_K_cv(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
           A_K_coefs(K, kt, ks, vp.twoj(), c.twoj(), v.twoj());
         // 'ts': s excites the core electron to v', t drops v into the hole
         if (c2 != 0.0) {
-          Wvv += c2 * s_vc.getv(vp, c) * t_vc.getv(c, v) / (vp.en() - c.en());
+          Wvv += c2 * s_vc.getv(vp, c) * t_vc.getv(c, v) /
+                 (vp.en() - omega_s - c.en());
         }
         // 'st': t excites the core electron to v', s drops v into the hole
         if (c1 != 0.0) {

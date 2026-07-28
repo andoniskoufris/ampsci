@@ -190,22 +190,46 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
   }
 
   //----------------------------------------------------------------------------
-  // Static polarisability of the ground state (all K), and the dynamic case
-  for (const auto omega : {0.0, 0.05}) {
-    fmt::print("\nE1-E1, J=0 -> J=0, omega = {:.2f}\n", omega);
-    const auto [A_ket, A_bra] =
-      CI::A_K(0, Psi_0e, 0, Psi_0e, 0, &d, d_me, &d, d_me, omega, ints);
-    const auto eps = std::abs(A_ket - A_bra) / std::abs(A_ket);
-    fmt::print("A^0: {:.8e} (ket), {:.8e} (bra) [{:.1e}]\n", A_ket, A_bra, eps);
-    REQUIRE(eps < 1.0e-10);
+  // Static polarisability of the ground state (all K), and the dynamic case,
+  // for which s carries -omega. The only intermediate sector is J=1 odd, so
+  // the direct sum over its complete CI spectrum is the reference
+  {
+    CI::PsiJPi Psi_1o(2, -1, ints.ci_basis);
+    Psi_1o.solve(CI::construct_Hci(Psi_1o, ints));
+    const auto [c1, c2] = CI::A_K_coefs(0, 1, 1, 0, 2, 0);
 
-    if (omega == 0.0) {
-      // alpha_0 = +A^0/sqrt(3[J]); exact for He is 1.383 au, but this basis is
-      // small: only the sign and rough magnitude are meaningful
-      const auto alpha = A_ket / std::sqrt(3.0);
-      fmt::print("alpha_0 = {:.4f} au (expect ~1.4)\n", alpha);
-      REQUIRE(alpha > 1.0);
-      REQUIRE(alpha < 2.0);
+    for (const auto omega : {0.0, 0.05}) {
+      const auto omega_s = -omega;
+      fmt::print("\nE1-E1, J=0 -> J=0, omega = {:.2f}\n", omega);
+      const auto [A_ket, A_bra] = CI::A_K(0, Psi_0e, 0, Psi_0e, 0, &d, d_me, &d,
+                                          d_me, omega, omega_s, ints);
+      const auto eps = std::abs(A_ket - A_bra) / std::abs(A_ket);
+      fmt::print("A^0: {:.8e} (ket), {:.8e} (bra) [{:.1e}]\n", A_ket, A_bra,
+                 eps);
+      REQUIRE(eps < 1.0e-10);
+
+      // Direct sum over states: c1/(E_a + omega_s - E_p) + c2/(E_a + omega -
+      // E_p)
+      double A_sos = 0.0;
+      for (std::size_t ip = 0; ip < Psi_1o.num_solutions(); ++ip) {
+        const auto dE = Psi_0e.energy(0) - Psi_1o.energy(ip);
+        const auto d_bp = CI::ReducedME(Psi_0e, 0, Psi_1o, ip, d_me, 1, -1);
+        const auto d_pa = CI::ReducedME(Psi_1o, ip, Psi_0e, 0, d_me, 1, -1);
+        A_sos += d_bp * d_pa * (c1 / (dE + omega_s) + c2 / (dE + omega));
+      }
+      const auto eps_sos = std::abs(A_ket - A_sos) / std::abs(A_sos);
+      fmt::print("     {:.8e} (sum over states)          [{:.1e}]\n", A_sos,
+                 eps_sos);
+      REQUIRE(eps_sos < 1.0e-10);
+
+      if (omega == 0.0) {
+        // alpha_0 = +A^0/sqrt(3[J]); exact for He is 1.383 au, but this basis
+        // is small: only the sign and rough magnitude are meaningful
+        const auto alpha = A_ket / std::sqrt(3.0);
+        fmt::print("alpha_0 = {:.4f} au (expect ~1.4)\n", alpha);
+        REQUIRE(alpha > 1.0);
+        REQUIRE(alpha < 2.0);
+      }
     }
   }
 
@@ -215,8 +239,8 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
   {
     fmt::print("\nE1-pnc, J=0 -> J=1\n");
     const auto omega = Psi_1e.energy(0) - Psi_0e.energy(0);
-    const auto [A_ket, A_bra] =
-      CI::A_K(1, Psi_1e, 0, Psi_0e, 0, &d, d_me, &hpnc, pnc_me, omega, ints);
+    const auto [A_ket, A_bra] = CI::A_K(1, Psi_1e, 0, Psi_0e, 0, &d, d_me,
+                                        &hpnc, pnc_me, omega, 0.0, ints);
     const auto eps = std::abs(A_ket - A_bra) / std::abs(A_ket);
     fmt::print("A^1: {:.8e} (ket), {:.8e} (bra) [{:.1e}]\n", A_ket, A_bra, eps);
     REQUIRE(eps < 1.0e-10);
@@ -229,7 +253,7 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
     fmt::print("\nE1-E1, transition between two J=0 even states\n");
     const auto omega = Psi_0e.energy(1) - Psi_0e.energy(0);
     const auto [A_ket, A_bra] =
-      CI::A_K(0, Psi_0e, 1, Psi_0e, 0, &d, d_me, &d, d_me, omega, ints);
+      CI::A_K(0, Psi_0e, 1, Psi_0e, 0, &d, d_me, &d, d_me, omega, 0.0, ints);
     const auto eps = std::abs(A_ket - A_bra) / std::abs(A_ket);
     fmt::print("A^0: {:.8e} (ket), {:.8e} (bra) [{:.1e}]\n", A_ket, A_bra, eps);
     REQUIRE(eps < 1.0e-10);
@@ -241,12 +265,13 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
   {
     fmt::print("\nProjecting out intermediate levels\n");
     const auto A_all =
-      CI::A_K(0, Psi_0e, 0, Psi_0e, 0, &d, d_me, &d, d_me, 0.0, ints).first;
+      CI::A_K(0, Psi_0e, 0, Psi_0e, 0, &d, d_me, &d, d_me, 0.0, 0.0, ints)
+        .first;
 
     const std::vector<CI::Level> project{{2, -1, 0}, {2, -1, 2}};
-    const auto A_cut =
-      CI::A_K(0, Psi_0e, 0, Psi_0e, 0, &d, d_me, &d, d_me, 0.0, ints, project)
-        .first;
+    const auto A_cut = CI::A_K(0, Psi_0e, 0, Psi_0e, 0, &d, d_me, &d, d_me, 0.0,
+                               0.0, ints, project)
+                         .first;
 
     // The removed levels, by direct sum-over-states
     CI::PsiJPi Psi_1o(2, -1, ints.ci_basis);
@@ -331,65 +356,76 @@ TEST_CASE("CI: second-order core and core-valence", "[CI][SecondOrder][unit]") {
   }
 
   //----------------------------------------------------------------------------
-  // Core: A^0/sqrt(3[J]) must be the core polarisability
-  {
-    double expected = 0.0;
-    for (const auto &c : wf.core()) {
-      for (const auto &m : excited) {
-        if (d.isZero(c, m))
-          continue;
-        const auto d_cm = d.reducedME(c, m);
-        expected += -2.0 / 3.0 * d_cm * d_cm / (c.en() - m.en());
+  // Core and core-valence: A^0/sqrt(3[J]) must be the core (core-valence)
+  // polarisability. Also at omega != 0, where s carries -omega, and each
+  // reference sum has the two denominators of the dynamic polarisability
+  fmt::print("\n{:<16} {:>14} {:>14} {:>9}\n", "", "expected", "found", "eps");
+
+  for (const auto omega : {0.0, 0.05}) {
+    const auto omega_s = -omega;
+
+    // Core
+    {
+      double expected = 0.0;
+      for (const auto &c : wf.core()) {
+        for (const auto &m : excited) {
+          if (d.isZero(c, m))
+            continue;
+          const auto d_cm = d.reducedME(c, m);
+          const auto de = c.en() - m.en();
+          expected += -1.0 / 3.0 * d_cm * d_cm *
+                      (1.0 / (de + omega) + 1.0 / (de + omega_s));
+        }
       }
+
+      const auto A_core =
+        CI::A_K_core(0, Psi.twoJ(), &d, &d, omega, omega_s, wf.core(), excited);
+      const auto found = A_core / std::sqrt(3.0 * (Psi.twoJ() + 1));
+      const auto eps = std::abs(found - expected) / std::abs(expected);
+
+      fmt::print("{:<16} {:14.8e} {:14.8e} {:9.1e}\n",
+                 fmt::format("alpha_core({:.2f})", omega), expected, found,
+                 eps);
+      REQUIRE(eps < 1.0e-12);
     }
 
-    const auto A_core =
-      CI::A_K_core(0, Psi.twoJ(), &d, &d, 0.0, wf.core(), excited);
-    const auto found = A_core / std::sqrt(3.0 * (Psi.twoJ() + 1));
-    const auto eps = std::abs(found - expected) / std::abs(expected);
+    // Core-valence: the blocking of c -> 3s, with the 3s shell full
+    {
+      double expected = 0.0;
+      for (const auto &c : wf.core()) {
+        if (d.isZero(Fv, c))
+          continue;
+        const auto d_vc = d.reducedME(Fv, c);
+        const auto de = Fv.en() - c.en();
+        // occupation 2 in a shell of [j] = 2: the blocking weight is one
+        expected += -1.0 / 3.0 * d_vc * d_vc *
+                    (1.0 / (de - omega) + 1.0 / (de - omega_s));
+      }
 
-    fmt::print("\n{:<14} {:>14} {:>14} {:>9}\n", "", "expected", "found",
-               "eps");
-    fmt::print("{:<14} {:14.8e} {:14.8e} {:9.1e}\n", "alpha_core", expected,
-               found, eps);
-    REQUIRE(eps < 1.0e-12);
-  }
+      const auto A_cv = CI::A_K_cv(0, Psi, 0, Psi, 0, &d, &d, omega, omega_s,
+                                   wf.core(), ci_basis);
+      const auto found = A_cv / std::sqrt(3.0 * (Psi.twoJ() + 1));
+      const auto eps = std::abs(found - expected) / std::abs(expected);
 
-  //----------------------------------------------------------------------------
-  // Core-valence: the blocking of c -> 3s, with the 3s shell full
-  {
-    double expected = 0.0;
-    for (const auto &c : wf.core()) {
-      if (d.isZero(Fv, c))
-        continue;
-      const auto d_vc = d.reducedME(Fv, c);
-      // occupation 2 in a shell of [j] = 2: the blocking weight is one
-      expected += -2.0 / 3.0 * d_vc * d_vc / (Fv.en() - c.en());
+      fmt::print("{:<16} {:14.8e} {:14.8e} {:9.1e}\n",
+                 fmt::format("alpha_cv({:.2f})", omega), expected, found, eps);
+      REQUIRE(expected < 0.0);
+      REQUIRE(eps < 1.0e-12);
     }
-
-    const auto A_cv =
-      CI::A_K_cv(0, Psi, 0, Psi, 0, &d, &d, 0.0, wf.core(), ci_basis);
-    const auto found = A_cv / std::sqrt(3.0 * (Psi.twoJ() + 1));
-    const auto eps = std::abs(found - expected) / std::abs(expected);
-
-    fmt::print("{:<14} {:14.8e} {:14.8e} {:9.1e}\n", "alpha_cv", expected,
-               found, eps);
-    REQUIRE(expected < 0.0);
-    REQUIRE(eps < 1.0e-12);
   }
 
   //----------------------------------------------------------------------------
   // The core is a J=0 state: only a scalar, even-parity, amplitude survives
   {
     const auto no_K2 =
-      CI::A_K_core(2, Psi.twoJ(), &d, &d, 0.0, wf.core(), excited);
+      CI::A_K_core(2, Psi.twoJ(), &d, &d, 0.0, 0.0, wf.core(), excited);
     fmt::print("\nA^2_core (must vanish): {:.1e}\n", no_K2);
     REQUIRE(no_K2 == 0.0);
 
     // sigma is even parity, so the amplitude is odd overall
     const DiracOperator::s spin{};
     const auto no_parity =
-      CI::A_K_core(0, Psi.twoJ(), &d, &spin, 0.0, wf.core(), excited);
+      CI::A_K_core(0, Psi.twoJ(), &d, &spin, 0.0, 0.0, wf.core(), excited);
     fmt::print("A^0_core (odd parity, must vanish): {:.1e}\n", no_parity);
     REQUIRE(no_parity == 0.0);
   }

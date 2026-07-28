@@ -19,18 +19,25 @@ namespace CI {
   @brief Angular coefficients of the two terms of the second-order amplitude
   \f$ A^K \f$.
   @details
-  For a transition \f$ a \to b \f$ due to two one-body operators, a dynamic
-  \f$ t \f$ (at frequency \f$ \omega \f$) and a static \f$ s \f$, the
+  For a transition \f$ a \to b \f$ due to two one-body operators, \f$ t \f$ at
+  frequency \f$ \omega \f$ and \f$ s \f$ at frequency \f$ \omega_s \f$, the
   second-order amplitude of rank \f$ K \f$ is
 
   \f[
     A^K = \sum_n \left[
       c_1(J_n)\,
-      \frac{\redmatel{b}{t}{n}\redmatel{n}{s}{a}}{E_a - E_n}
+      \frac{\redmatel{b}{t}{n}\redmatel{n}{s}{a}}{E_a + \omega_s - E_n}
     + c_2(J_n)\,
       \frac{\redmatel{b}{s}{n}\redmatel{n}{t}{a}}{E_a + \omega - E_n}
     \right],
   \f]
+
+  where energy conservation fixes \f$ E_b = E_a + \omega + \omega_s \f$. For a
+  real transition the whole frequency is usually carried by \f$ t \f$, so that
+  \f$ \omega = E_b - E_a \f$ and \f$ s \f$ is static. For the dynamic
+  polarisability of a single state, \f$ b = a \f$ and
+  \f$ \omega_s = -\omega \f$, giving the two denominators
+  \f$ E_a \mp \omega - E_n \f$.
 
   where the coefficients returned here are
 
@@ -47,7 +54,7 @@ namespace CI {
   relation to the z-component; see @ref z_component.
 
   @param K      Rank of the amplitude.
-  @param kt,ks  Ranks of the dynamic and static operators.
+  @param kt,ks  Ranks of the \f$ t \f$ and \f$ s \f$ operators.
   @param twoJb  2J of the final state.
   @param twoJn  2J of the intermediate states.
   @param twoJa  2J of the initial state.
@@ -75,7 +82,7 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
   unity for \f$ k_s = 0 \f$ (as for a PNC amplitude), but not in general.
 
   @param K      Rank of the amplitude.
-  @param kt,ks  Ranks of the dynamic and static operators.
+  @param kt,ks  Ranks of the \f$ t \f$ and \f$ s \f$ operators.
   @param twoJb,twoJa 2J of the final and initial states.
   @param two_m  Twice the z-component of the angular momentum.
 */
@@ -155,22 +162,27 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
   returned as the two elements of the pair. They must agree; the difference is
   a check on the numerics.
 
-  Covers, e.g., static and transition polarisabilities (\f$ t = s = E1 \f$) and
-  PNC amplitudes (\f$ s \f$ = PNC operator).
+  Covers, e.g., static, dynamic, and transition polarisabilities
+  (\f$ t = s = E1 \f$) and PNC amplitudes (\f$ s \f$ = PNC operator).
 
   @param K       Rank of the amplitude. It vanishes unless
                  \f$ |k_t-k_s| \le K \le k_t+k_s \f$ and
                  \f$ (J_b, K, J_a) \f$ satisfy the triangle rule.
   @param Psi_b,ib  Final CI state (solution @p ib of @p Psi_b).
   @param Psi_a,ia  Initial CI state.
-  @param t,t_me  Dynamic operator, and its table of single-particle reduced
-                 matrix elements (which may include RPA, structure radiation).
-                 For a frequency-dependent operator or RPA, the table should
-                 have been formed at @p omega.
-  @param s,s_me  Static operator, and its table (formed at zero frequency).
-  @param omega   Frequency of the dynamic operator. For a real transition this
-                 is \f$ E_b - E_a \f$, for which the second denominator above
-                 is just \f$ E_b - E_n \f$.
+  @param t,t_me  The \f$ t \f$ operator, and its table of single-particle
+                 reduced matrix elements (which may include RPA, structure
+                 radiation). For a frequency-dependent operator or RPA, the
+                 table should have been formed at @p omega.
+  @param s,s_me  The \f$ s \f$ operator, and its table (formed at
+                 @p omega_s).
+  @param omega   Frequency of \f$ t \f$. For a real transition carried entirely
+                 by \f$ t \f$ this is \f$ E_b - E_a \f$, for which the second
+                 denominator above is just \f$ E_b - E_n \f$.
+  @param omega_s Frequency of \f$ s \f$. Energy conservation requires
+                 \f$ \omega + \omega_s = E_b - E_a \f$; it is zero for a
+                 transition carried entirely by \f$ t \f$, and
+                 \f$ -\omega \f$ for a dynamic polarisability.
   @param ints    Integral tables, used to construct the CI Hamiltonian of each
                  intermediate (J, parity); e.g., Wavefunction::CI_integrals().
   @param levels_to_remove  CI levels to be removed from the intermediate
@@ -192,7 +204,8 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
         else the amplitude is zero.
 
   @note If a state of an intermediate (J, parity) is degenerate with the
-        denominator (\f$ E_a \f$ or \f$ E_a + \omega \f$), the mixed-states
+        denominator (\f$ E_a + \omega_s \f$ or \f$ E_a + \omega \f$), the
+        mixed-states
         equation is singular, and its term in \f$ A^K \f$ is divergent. This
         cannot happen for operators of odd parity (as for polarisabilities and
         PNC), since then the intermediate states have the opposite parity to
@@ -209,8 +222,8 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     std::size_t ia, const DiracOperator::TensorOperator *t,
     const Coulomb::meTable<double> &t_me,
     const DiracOperator::TensorOperator *s,
-    const Coulomb::meTable<double> &s_me, double omega, const Integrals &ints,
-    const std::vector<Level> &levels_to_remove = {},
+    const Coulomb::meTable<double> &s_me, double omega, double omega_s,
+    const Integrals &ints, const std::vector<Level> &levels_to_remove = {},
     const Coulomb::meTable<double> &f_norm = {},
     std::ostream &outstream = std::cout);
 
@@ -224,7 +237,7 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
 
   \f[
     \redmatel{c}{[t\times s]^0}{c} = \sum_m \left[
-      c_1\,\frac{\redmatel{c}{t}{m}\redmatel{m}{s}{c}}{\en_c - \en_m}
+      c_1\,\frac{\redmatel{c}{t}{m}\redmatel{m}{s}{c}}{\en_c + \omega_s - \en_m}
     + c_2\,\frac{\redmatel{c}{s}{m}\redmatel{m}{t}{c}}{\en_c + \omega - \en_m}
     \right],
   \f]
@@ -244,8 +257,8 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
   @param K       Rank of the amplitude; zero unless \f$ K=0 \f$.
   @param twoJ    2J of the CI state. The diagonal condition is left to the
                  caller: zero unless the final and initial states are the same.
-  @param t,s     Dynamic and static operators.
-  @param omega   Frequency of the dynamic operator.
+  @param t,s     The two operators.
+  @param omega,omega_s  Frequency of each operator; see @ref A_K.
   @param core    Hole states \f$ c \f$; e.g., Wavefunction::core().
   @param excited Particle states \f$ m \f$: basis states above the Fermi
                  level. Not restricted to the CI basis, and states occupied by
@@ -263,7 +276,7 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
 */
 [[nodiscard]] double
 A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
-         const DiracOperator::TensorOperator *s, double omega,
+         const DiracOperator::TensorOperator *s, double omega, double omega_s,
          const std::vector<DiracSpinor> &core,
          const std::vector<DiracSpinor> &excited,
          const ExternalField::CorePolarisation *dVt = nullptr,
@@ -281,7 +294,8 @@ A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
 
   \f[
     \redmatel{v'}{[t\times s]^K_{cv}}{v} = \sum_c \left[
-      c_2\,\frac{\redmatel{v'}{s}{c}\redmatel{c}{t}{v}}{\en_{v'} - \en_c}
+      c_2\,\frac{\redmatel{v'}{s}{c}\redmatel{c}{t}{v}}
+                {\en_{v'} - \omega_s - \en_c}
     + c_1\,\frac{\redmatel{v'}{t}{c}\redmatel{c}{s}{v}}
                 {\en_{v'} - \omega - \en_c}
     \right],
@@ -301,8 +315,8 @@ A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
   @param K       Rank of the amplitude.
   @param Psi_b,ib  Final CI state.
   @param Psi_a,ia  Initial CI state.
-  @param t,s     Dynamic and static operators.
-  @param omega   Frequency of the dynamic operator.
+  @param t,s     The two operators.
+  @param omega,omega_s  Frequency of each operator; see @ref A_K.
   @param core    Hole states \f$ c \f$; e.g., Wavefunction::core().
   @param ci_basis  Single-particle basis of the CI expansion.
   @param dVt,dVs RPA for each operator, solved at the frequency of that
@@ -319,7 +333,7 @@ A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
 [[nodiscard]] double
 A_K_cv(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
        std::size_t ia, const DiracOperator::TensorOperator *t,
-       const DiracOperator::TensorOperator *s, double omega,
+       const DiracOperator::TensorOperator *s, double omega, double omega_s,
        const std::vector<DiracSpinor> &core,
        const std::vector<DiracSpinor> &ci_basis,
        const ExternalField::CorePolarisation *dVt = nullptr,
