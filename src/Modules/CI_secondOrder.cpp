@@ -287,15 +287,23 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (sr) {
     sr->solve_core(ht.get(), rpa_t.get());
   }
+  // The normalisation is applied to the CI states, not to the single-particle
+  // matrix elements: it is a property of the state, so every valence electron
+  // contributes, the spectators included. See CI::norm_factor
   const auto t_me =
     ExternalField::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
-                            sr ? &*sr : nullptr, omega, sr_n_max, sr_norm);
+                            sr ? &*sr : nullptr, omega, sr_n_max, false);
   if (sr) {
     sr->solve_core(hs.get(), rpa_s.get());
   }
   const auto s_me =
     ExternalField::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
-                            sr ? &*sr : nullptr, 0.0, sr_n_max, sr_norm);
+                            sr ? &*sr : nullptr, 0.0, sr_n_max, false);
+
+  // One-body norm defect, for the CI states
+  const auto f_norm = sr && sr_norm ?
+                        CI::f_norm_table(*sr, ints.ci_basis, sr_n_max) :
+                        Coulomb::meTable<double>{};
   std::cout << "done\n" << std::flush;
 
   //----------------------------------------------------------------------------
@@ -303,7 +311,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   fmt::print("\nContributions to A^{}, by intermediate J and parity:\n", K);
   const auto [A_s, A_t] =
     CI::A_K(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me, hs.get(), s_me, omega,
-            ints, levels_to_remove);
+            ints, levels_to_remove, f_norm);
 
   //----------------------------------------------------------------------------
   // Intermediate states carrying a core hole. These lie outside the CI space,
@@ -323,12 +331,24 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto A_cv =
     CI::A_K_cv(K, *Psi_b, ib, *Psi_a, ia, ht.get(), hs.get(), omega, wf.core(),
                ints.ci_basis, rpa_t.get(), rpa_s.get());
-  const auto A_total = A_s + A_core + A_cv;
+
+  // Normalisation of the external legs: A^K(1 + F_a + F_b). The intermediate
+  // states are done inside A_K; the core term has its own normalisation, which
+  // is a core-correlation quantity and is not included
+  const auto F_a = f_norm.empty() ? 0.0 : CI::norm_factor(*Psi_a, ia, f_norm);
+  const auto F_b = f_norm.empty() ? 0.0 : CI::norm_factor(*Psi_b, ib, f_norm);
+  const auto legs = 1.0 + F_a + F_b;
+
+  const auto A_total = legs * (A_s + A_cv) + A_core;
 
   fmt::print("\nA^{}:\n", K);
   fmt::print("valence (CI)  {:16.6e}\n", A_s);
   fmt::print("core          {:16.6e}\n", A_core);
   fmt::print("core-valence  {:16.6e}\n", A_cv);
+  if (!f_norm.empty()) {
+    fmt::print("norm (legs)   {:16.6e}   [F_a = {:.2e}, F_b = {:.2e}]\n",
+               (legs - 1.0) * (A_s + A_cv), F_a, F_b);
+  }
   fmt::print("total         {:16.6e}\n", A_total);
 
   // The z-component of the rank-K amplitude: m_a = m_b = m, and q = 0 for both

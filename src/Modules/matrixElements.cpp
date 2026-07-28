@@ -1255,18 +1255,26 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "Solving RPA at fixed frequency: w=" << omega << "\n";
     rpa->solve_core(omega, 300);
   }
-  if (sr && !eachFreqQ && (rpa || h->freqDependantQ())) {
+  // SR requires solve_core, whether or not there is anything frequency dependent
+  if (sr && (!eachFreqQ || !h->freqDependantQ())) {
     sr->solve_core(h.get(), rpa.get());
   }
   if (eachFreqQ && rpa) {
     std::cout << "Solving RPA at each frequency\n";
   }
 
+  // The normalisation is applied to the CI states, not to the single-particle
+  // matrix elements: it is a property of the state, so every valence electron
+  // contributes, the spectators included. See CI::norm_factor
+  const auto f_norm = sr && sr_norm ?
+                        CI::f_norm_table(*sr, ci_basis, sr_n_max) :
+                        Coulomb::meTable<double>{};
+
   Coulomb::meTable<double> me_tab;
   if (!eachFreqQ || !h->freqDependantQ()) {
     std::cout << "Calculate matrix element table.." << std::flush;
     me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr, omega,
-                                     sr_n_max, sr_norm);
+                                     sr_n_max, false);
     std::cout << "..done\n" << std::flush;
   }
 
@@ -1292,14 +1300,20 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     if (eachFreqQ && h->freqDependantQ()) {
       std::cout << "Re-Calculate matrix element table.." << std::flush;
       me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr,
-                                       t_omega, sr_n_max, sr_norm);
+                                       t_omega, sr_n_max, false);
       std::cout << "..done\n" << std::flush;
     }
 
     const auto factor = h->matel_factor(matel_type, wfA.twoJ(), wfB.twoJ());
 
+    // Normalisation of states: <B||h||A>(1 + F_B + F_A)
+    const auto norm = f_norm.empty() ? 1.0 :
+                                       1.0 + CI::norm_factor(wfA, iA, f_norm) +
+                                         CI::norm_factor(wfB, iB, f_norm);
+
     const auto me =
-      factor * CI::ReducedME(wfA, iA, wfB, iB, me_tab, h->rank(), h->parity());
+      norm * factor *
+      CI::ReducedME(wfA, iA, wfB, iB, me_tab, h->rank(), h->parity());
 
     auto p1 = wfA.parity() == 1 ? '+' : '-';
     auto p2 = wfB.parity() == 1 ? '+' : '-';

@@ -9,6 +9,7 @@
 class DiracDiracSpinor;
 namespace MBPT {
 class CorrelationPotential;
+class StructureRad;
 }
 namespace HF {
 class Breit;
@@ -316,6 +317,60 @@ inline double ReducedME(const PsiJPi &As, std::size_t iA, const PsiJPi &Bs,
   return ReducedME(As.coefs(iA), As.CSFs(), As.twoJ(), Bs.coefs(iB), Bs.CSFs(),
                    Bs.twoJ(), h, K_rank, Parity);
 }
+
+/*!
+  @brief Normalisation factor of a CI state,
+  \f$ F_X = \matel{X}{\sum_i f(i)}{X} \f$.
+  @details
+  The states of the CI are normalised in the model space, while the true
+  states have amplitude in the core-excited configurations that the CI does
+  not span. The physical matrix element is
+
+  \f[
+    \redmatel{B}{h}{A}_{\rm phys} = (1 + F_B + F_A)\,\redmatel{B}{h}{A},
+  \f]
+
+  and the second-order amplitude, which has one such factor per vertex, is
+  \f$ (1 + F_a + F_b + 2F_n) \f$; see @ref A_K.
+
+  \f$ f \f$ is the one-body norm defect, \f$ f_v = -\tfrac12
+  \braket{\chi_v}{\chi_v} \f$ (MBPT::StructureRad::f_norm). It is diagonal in
+  the single-particle basis, so \f$ \sum_i f(i) \f$ is diagonal in the CSFs,
+  with \f$ F_I = f_v + f_w \f$ for \f$ I = \ket{vw} \f$, and
+
+  \f[
+    F_X = \sum_I |c^X_I|^2 \, (f_v + f_w).
+  \f]
+
+  @param Psi,i  CI state (solution @p i of @p Psi).
+  @param f      Table of the one-body norm defect; only the diagonal,
+                @p f.getv(v,v), is used.
+  @return \f$ F_X \f$.
+
+  @note Every valence electron contributes, the spectators included. Adding
+        \f$ f_{v'} + f_v \f$ to each single-particle matrix element instead
+        keeps only the two orbitals the operator connects, and so drops the
+        spectators: that is exact for one valence electron only.
+*/
+[[nodiscard]] double norm_factor(const PsiJPi &Psi, std::size_t i,
+                                 const Coulomb::meTable<double> &f);
+
+/*!
+  @brief Table of the one-body norm defect \f$ f_v \f$, for @ref norm_factor.
+  @details
+  Fills the diagonal with MBPT::StructureRad::f_norm. States with
+  \f$ n > \f$ @p n_max are set to zero: SR+N is meaningful only between
+  physical states, and the high-n states of a CI basis are cavity states. Use
+  the same @p n_max as for the structure radiation itself.
+
+  @param sr     Structure radiation object; only f_norm() is used, so
+                solve_core() need not have been called.
+  @param basis  Orbitals to fill the table for; e.g., the CI basis.
+  @param n_max  Maximum n for which \f$ f_v \f$ is non-zero.
+*/
+[[nodiscard]] Coulomb::meTable<double>
+f_norm_table(const MBPT::StructureRad &sr,
+             const std::vector<DiracSpinor> &basis, int n_max = 999);
 
 /*!
   @brief Reduced matrix element between two two-electron CSFs.
