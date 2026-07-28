@@ -8,8 +8,9 @@ namespace LinAlg {
   @brief Solves the linear system Ax = b for x, given square matrix A and
   vector b.
   @details
-  Uses LU decomposition (GSL). A is taken by value and overwritten during
-  decomposition.
+  Uses LAPACK `dgetrf`/`dgetrs` (real) or `zgetrf`/`zgetrs` (complex): LU
+  decomposition with partial pivoting. A is taken by value and overwritten
+  during decomposition.
 
   @tparam T Element type: `double` or `std::complex<double>` only.
   @param Am Square matrix A (copied; overwritten internally).

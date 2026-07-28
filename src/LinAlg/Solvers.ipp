@@ -22,6 +22,13 @@ void dsyevr_(char *jobz, char *range, char *uplo, int *n, double *a, int *lda,
              double *vl, double *vu, int *il, int *iu, double *abstol, int *m,
              double *w, double *z, int *ldz, int *isuppz, double *work,
              int *lwork, int *iwork, int *liwork, int *info);
+
+void dgetrf_(int *m, int *n, double *a, int *lda, int *ipiv, int *info);
+void dgetrs_(char *trans, int *n, int *nrhs, double *a, int *lda, int *ipiv,
+             double *b, int *ldb, int *info);
+void zgetrf_(int *m, int *n, complex_double *a, int *lda, int *ipiv, int *info);
+void zgetrs_(char *trans, int *n, int *nrhs, complex_double *a, int *lda,
+             int *ipiv, complex_double *b, int *ldb, int *info);
 }
 
 namespace LinAlg {
@@ -36,24 +43,28 @@ Vector<T> solve_Axeqb(Matrix<T> Am, const Vector<T> &b) {
                 "Matrix<complex<double>>");
   assert(Am.rows() == b.size());
 
-  Vector<T> x(Am.cols());
+  // LAPACK solves in place, so start from a copy of b
+  Vector<T> x = b;
 
-  auto Am_gsl = Am.as_gsl_view();
-  const auto b_gsl = b.as_gsl_view();
-  auto x_gsl = x.as_gsl_view();
+  int dim = int(Am.rows());
+  int nrhs = 1;
+  int info = 0;
+  std::vector<int> ipiv(static_cast<std::size_t>(dim));
 
-  int sLU = 0;
-  gsl_permutation *Am_perm =
-    gsl_permutation_alloc(std::max(Am.rows(), Am.cols()));
+  // Matrix is row-major, so LAPACK sees the transpose of Am. Factorise that,
+  // then solve with trans='T', which gives Am*x=b
+  char trans = 'T';
+
   if constexpr (std::is_same_v<T, double>) {
-    gsl_linalg_LU_decomp(&Am_gsl.matrix, Am_perm, &sLU);
-    gsl_linalg_LU_solve(&Am_gsl.matrix, Am_perm, &b_gsl.vector, &x_gsl.vector);
+    dgetrf_(&dim, &dim, Am.data(), &dim, ipiv.data(), &info);
+    dgetrs_(&trans, &dim, &nrhs, Am.data(), &dim, ipiv.data(), x.data(), &dim,
+            &info);
   } else if constexpr (std::is_same_v<T, std::complex<double>>) {
-    gsl_linalg_complex_LU_decomp(&Am_gsl.matrix, Am_perm, &sLU);
-    gsl_linalg_complex_LU_solve(&Am_gsl.matrix, Am_perm, &b_gsl.vector,
-                                &x_gsl.vector);
+    complex_double *Am_ptr = reinterpret_cast<complex_double *>(Am.data());
+    complex_double *x_ptr = reinterpret_cast<complex_double *>(x.data());
+    zgetrf_(&dim, &dim, Am_ptr, &dim, ipiv.data(), &info);
+    zgetrs_(&trans, &dim, &nrhs, Am_ptr, &dim, ipiv.data(), x_ptr, &dim, &info);
   }
-  gsl_permutation_free(Am_perm);
 
   return x;
 }
