@@ -143,6 +143,289 @@ double L4(int k, const DiracSpinor &m, const DiracSpinor &n,
           const Coulomb::LkTable *const Lk = nullptr,
           std::optional<double> e_m = {});
 
+// my (Doni's) functions for including the loops also into the ladder diagrams
+//==============================================================================
+//==============================================================================
+double Lkmnij_loop(int k, const DiracSpinor &m, const DiracSpinor &n,
+                   const DiracSpinor &i, const DiracSpinor &j,
+                   const Coulomb::QkTable &qk,
+                   const std::vector<DiracSpinor> &core,
+                   const std::vector<DiracSpinor> &excited, bool include_L4,
+                   const Angular::SixJTable &SixJ,
+                   const Coulomb::LkTable *const Lk = nullptr,
+                   const Coulomb::LkTable *const Sk = nullptr,
+                   std::optional<double> e_i = {},
+                   std::optional<double> e_m = {});
+
+double L1_loop(int k, const DiracSpinor &m, const DiracSpinor &n,
+               const DiracSpinor &i, const DiracSpinor &j,
+               const Coulomb::QkTable &qk,
+               const std::vector<DiracSpinor> &excited,
+               const Angular::SixJTable &SixJ,
+               const Coulomb::LkTable *const Lk = nullptr,
+               const Coulomb::LkTable *const Sk = nullptr,
+               std::optional<double> e_i = {});
+
+double L2_loop(int k, const DiracSpinor &m, const DiracSpinor &n,
+               const DiracSpinor &i, const DiracSpinor &j,
+               const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
+               const std::vector<DiracSpinor> &excited,
+               const Angular::SixJTable &SixJ,
+               const Coulomb::LkTable *const Lk = nullptr,
+               const Coulomb::LkTable *const Sk = nullptr,
+               std::optional<double> e_j = {}, std::optional<double> e_m = {});
+
+inline double L3_loop(
+  int k, const DiracSpinor &m, const DiracSpinor &n, const DiracSpinor &i,
+  const DiracSpinor &j, const Coulomb::QkTable &qk,
+  const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
+  const Angular::SixJTable &SixJ, const Coulomb::LkTable *const Lk = nullptr,
+  const Coulomb::LkTable *const Sk = nullptr, std::optional<double> e_i = {}) {
+  return L2_loop(k, n, m, j, i, qk, core, excited, SixJ, Lk, Sk, e_i);
+}
+
+double L4_loop(int k, const DiracSpinor &m, const DiracSpinor &n,
+               const DiracSpinor &i, const DiracSpinor &j,
+               const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
+               const Angular::SixJTable &SixJ,
+               const Coulomb::LkTable *const Lk = nullptr,
+               const Coulomb::LkTable *const Sk = nullptr,
+               std::optional<double> e_m = {});
+
+/*!
+  @brief "Loop" ladder diagram S1.
+  @details
+  \f[
+    S^k_{mnij} = \sum_{rc,k} (-1)^{k}/(2k + 1) 
+      \frac{Q^k_{cnrj}\,(Q+S)^l_{mric}}{\epsilon_{ci} - \epsilon_{mr}}
+  \f]
+  Intermediate states: \f$ r \f$ runs over excited, \f$ c \f$ over core.
+  The diagram \f$ S2 \f$ is the exchange partner \f$ S2^k_{mnij} = S1^k_{nmji} \f$.
+  
+  Should _only_ be used to update the loop coefficients. The function SL1 should be used in updating the ladder coefficients, _not_ this function.
+
+  @param k       Multipole rank
+  @param m,n     Excited (particle) orbitals
+  @param i,j     Core (hole) or valence orbitals
+  @param qk      Coulomb \f$ Q^k \f$ integral table
+  @param core    Core orbitals
+  @param excited Excited orbitals
+  @param SJ      6j symbol table
+  @param Sk      Loop integral table from previous iteration (nullptr on first)
+  @param e_i     Optional: used in place of i.en() in energy denominator
+  @param e_m     Optional: used in place of m.en() in energy denominator
+  @return \f$ S1^k_{mnij} \f$
+*/
+double SQS1(int k, const DiracSpinor &m, const DiracSpinor &n,
+            const DiracSpinor &i, const DiracSpinor &j,
+            const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
+            const std::vector<DiracSpinor> &excited,
+            const Coulomb::LkTable *const Sk = nullptr,
+            std::optional<double> e_i = {}, std::optional<double> e_m = {});
+
+/*!
+  @brief "Loop" ladder diagram S2.
+  @details
+  \f[
+    S^k_{mnij} = \sum_{rc,k} (-1)^{k}/(2k + 1) 
+      \frac{Q^k_{cmri}\,(Q+S)^l_{nrjc}}{\epsilon_{cj} - \epsilon_{nr}}
+  \f]
+  Intermediate states: \f$ r \f$ runs over excited, \f$ c \f$ over core.
+  The diagram \f$ S1 \f$ is the exchange partner \f$ S1^k_{mnij} = S2^k_{nmji} \f$.
+
+  @param k       Multipole rank
+  @param m,n     Excited (particle) orbitals
+  @param i,j     Core (hole) or valence orbitals
+  @param qk      Coulomb \f$ Q^k \f$ integral table
+  @param core    Core orbitals
+  @param excited Excited orbitals
+  @param SJ      6j symbol table
+  @param Sk      Loop integral table from previous iteration (nullptr on first)
+  @param e_j     Optional: used in place of j.en() in energy denominator
+  @param e_n     Optional: used in place of n.en() in energy denominator
+  @return \f$ S2^k_{mnij} \f$
+*/
+inline double SQS2(int k, const DiracSpinor &m, const DiracSpinor &n,
+                   const DiracSpinor &i, const DiracSpinor &j,
+                   const Coulomb::QkTable &qk,
+                   const std::vector<DiracSpinor> &core,
+                   const std::vector<DiracSpinor> &excited,
+                   const Coulomb::LkTable *const Sk = nullptr,
+                   std::optional<double> e_j = {},
+                   std::optional<double> e_n = {}) {
+  return SQS1(k, n, m, j, i, qk, core, excited, Sk, e_j, e_n);
+}
+
+// not sure if I should keep the e_i and e_m
+inline double Skmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
+                     const DiracSpinor &i, const DiracSpinor &j,
+                     const Coulomb::QkTable &qk,
+                     const std::vector<DiracSpinor> &core,
+                     const std::vector<DiracSpinor> &excited,
+                     const Coulomb::LkTable *const Sk = nullptr,
+                     std::optional<double> e_i = {},
+                     std::optional<double> e_m = {}) {
+  return SQS1(k, m, n, i, j, qk, core, excited, Sk, e_i, e_m) +
+         SQS2(k, m, n, i, j, qk, core, excited, Sk, e_i, e_m);
+};
+
+/*!
+  @brief Version of "loop" ladder diagram S1 used for updating the Lk coefficients.
+  @details
+  \f[
+    L^k_{mnij} = ... + \sum_{rc,k} (-1)^{k}/(2k + 1) 
+      \frac{Q^k_{cnrj}\,L^l_{mric}}{\epsilon_{ci} - \epsilon_{mr}}
+  \f]
+  Intermediate states: \f$ r \f$ runs over excited, \f$ c \f$ over core.
+  The diagram \f$ SQS2 \f$ is the exchange partner \f$ SQS2^k_{mnij} = SQS1^k_{nmji} \f$.
+  
+  Should _only_ be used to update the ladder coefficients. The function SQS1 should be used in updating the loop coefficients, _not_ this function.
+
+  @param k       Multipole rank
+  @param m,n     Excited (particle) orbitals
+  @param i,j     Core (hole) or valence orbitals
+  @param qk      Coulomb \f$ Q^k \f$ integral table
+  @param core    Core orbitals
+  @param excited Excited orbitals
+  @param SJ      6j symbol table
+  @param Sk      Loop integral table from previous iteration (nullptr on first)
+  @param e_i     Optional: used in place of i.en() in energy denominator
+  @param e_m     Optional: used in place of m.en() in energy denominator
+  @return \f$ S1^k_{mnij} \f$
+*/
+double SL1(int k, const DiracSpinor &m, const DiracSpinor &n,
+           const DiracSpinor &i, const DiracSpinor &j,
+           const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
+           const std::vector<DiracSpinor> &excited,
+           const Coulomb::LkTable *const Lk = nullptr,
+           std::optional<double> e_i = {}, std::optional<double> e_m = {});
+
+/*!
+  @brief Version of the "loop" ladder diagram S2 used for updating the ladder coefficients.
+  @details
+  \f[
+    S^k_{mnij} = \sum_{rc,k} (-1)^{k}/(2k + 1) 
+      \frac{Q^k_{cmri}\,L^l_{nrjc}}{\epsilon_{cj} - \epsilon_{nr}}
+  \f]
+  Intermediate states: \f$ r \f$ runs over excited, \f$ c \f$ over core.
+  The diagram \f$ S1 \f$ is the exchange partner \f$ S1^k_{mnij} = S2^k_{nmji} \f$.
+
+  @param k       Multipole rank
+  @param m,n     Excited (particle) orbitals
+  @param i,j     Core (hole) or valence orbitals
+  @param qk      Coulomb \f$ Q^k \f$ integral table
+  @param core    Core orbitals
+  @param excited Excited orbitals
+  @param SJ      6j symbol table
+  @param Sk      Loop integral table from previous iteration (nullptr on first)
+  @param e_j     Optional: used in place of j.en() in energy denominator
+  @param e_n     Optional: used in place of n.en() in energy denominator
+  @return \f$ S2^k_{mnij} \f$
+*/
+inline double SL2(int k, const DiracSpinor &m, const DiracSpinor &n,
+                  const DiracSpinor &i, const DiracSpinor &j,
+                  const Coulomb::QkTable &qk,
+                  const std::vector<DiracSpinor> &core,
+                  const std::vector<DiracSpinor> &excited,
+                  const Coulomb::LkTable *const Lk = nullptr,
+                  std::optional<double> e_j = {},
+                  std::optional<double> e_n = {}) {
+  return SL1(k, n, m, j, i, qk, core, excited, Lk, e_j, e_n);
+}
+
+/*!
+  @brief Fills the loop/screening integral table for all _new_ index combinations.
+  @details
+  Iterates over all combinations of excited pairs \f$ (m,n) \f$ and
+  orbitals in @p i_orbs, computing \f$ S^k_{mnib} \f$ and storing results
+  in @p lk.
+  Only calculates new integrals. Only lowest-order.
+
+  @param sk          Output loop table (written in place)
+  @param qk          Coulomb \f$ Q^k \f$ integral table
+  @param excited     Excited orbitals
+  @param core        Core orbitals
+  @param i_orbs      Orbitals for the \f$ i \f$ index
+  @param sjt         6j symbol table
+  @param max_k       Maximum multipolarity; -1 uses qk.max_k()
+  @param print       Print Qk info to screen
+*/
+void fill_Sk_mnib(Coulomb::LkTable *sk, const Coulomb::QkTable &qk,
+                  const std::vector<DiracSpinor> &excited,
+                  const std::vector<DiracSpinor> &core,
+                  const std::vector<DiracSpinor> &i_orbs, int max_k = -1,
+                  bool print = true);
+
+/*!
+  @brief Updates the ladder integral table with L(Q,Q) -> L(Q,Q+L+S) (with loops included)
+  @details
+  Iterates over all combinations of excited pairs \f$ (m,n) \f$ and
+  orbitals in @p i_orbs, computing \f$ L^k_{mnib} \f$ and storing results
+  in @p lk. Designed for iterative refinement: pass the previous iteration's
+  table as @p lk_prev.
+
+  @note Does not calculate any new integrals - assumes all already present.
+  Just updates them (based on iterative rule: L(Q,Q) -> L(Q,Q+L))
+
+  @param lk          Output ladder table (written in place)
+  @param sk          Screening \f$ S^k \f$ integral table (gets updated separately)
+  @param qk          Coulomb \f$ Q^k \f$ integral table
+  @param excited     Excited orbitals
+  @param core        Core orbitals
+  @param update_i    Restrict re-iteration to entries whose i index is in this
+                     set (b is always core). Empty => update all. Used to
+                     converge core (update_i=core) before valence
+                     (update_i=valence).
+  @param include_L4  Include core--core diagram L4
+  @param sjt         6j symbol table
+  @param lk_prev     Ladder table from previous iteration
+  @param a_damp      Damping factor [0,1) : 0 means no damping
+  @param print       Print Qk info to screen
+*/
+void update_Lk_mnib_loops(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
+                          const Coulomb::LkTable &sk,
+                          const std::vector<DiracSpinor> &excited,
+                          const std::vector<DiracSpinor> &core,
+                          const std::vector<DiracSpinor> &update_i,
+                          bool include_L4, const Angular::SixJTable &sjt,
+                          const Coulomb::LkTable *const lk_prev, double a_damp,
+                          bool print);
+
+/*!
+  @brief Updates the loop integral table with S(Q,Q) -> S(Q,Q+S) (with loops included)
+  @details
+  Iterates over all combinations of excited pairs \f$ (m,n) \f$ and
+  orbitals in @p i_orbs, computing \f$ S^k_{mnib} \f$ and storing results
+  in @p sk. Designed for iterative refinement: pass the previous iteration's
+  table as @p sk_prev.
+
+  @note Does not calculate any new integrals - assumes all already present.
+  Just updates them (based on iterative rule: L(Q,Q) -> L(Q,Q+L))
+
+  @param sk          Output loop table (written in place)
+  @param sk          Screening \f$ S^k \f$ integral table (gets updated separately)
+  @param qk          Coulomb \f$ Q^k \f$ integral table
+  @param excited     Excited orbitals
+  @param core        Core orbitals
+  @param update_i    Restrict re-iteration to entries whose i index is in this
+                     set (b is always core). Empty => update all. Used to
+                     converge core (update_i=core) before valence
+                     (update_i=valence).
+  @param sjt         6j symbol table
+  @param sk_prev     Loop table from previous iteration
+  @param a_damp      Damping factor [0,1) : 0 means no damping
+  @param print       Print Qk info to screen
+*/
+void update_Sk_mnib(Coulomb::LkTable *sk, const Coulomb::QkTable &qk,
+                    const std::vector<DiracSpinor> &excited,
+                    const std::vector<DiracSpinor> &core,
+                    const std::vector<DiracSpinor> &update_i,
+                    const Coulomb::LkTable *const sk_prev, double a_damp,
+                    bool print);
+
+//==============================================================================
+//==============================================================================
+
 /*!
   @brief Fills the ladder integral table for all _new_ index combinations.
   @details
@@ -153,7 +436,7 @@ double L4(int k, const DiracSpinor &m, const DiracSpinor &n,
 
   @param lk          Output ladder table (written in place)
   @param qk          Coulomb \f$ Q^k \f$ integral table
-  @param excited      Excited orbitals
+  @param excited     Excited orbitals
   @param core        Core orbitals
   @param i_orbs      Orbitals for the \f$ i \f$ index
   @param include_L4  Include core-core diagram L4

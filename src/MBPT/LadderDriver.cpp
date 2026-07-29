@@ -59,6 +59,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
                  "<Identity>.qk. If 'false' will not read or write."},
      {"Lk_file", "Filename for storing Lk ladder integrals. By default, is "
                  "<Identity>.lk. If 'false' will not read or write."},
+     {"Sk_file", "Filename for storing Sk loop integrals. By default, is "
+                 "<Identity>.lk. If 'false' will not read or write."},
      {"sl_file", "Filename for storing the ladder correlation potential, "
                  "Sigma_L. By default, is <Identity>.sl. If 'false' will not "
                  "write. Read in via Correlations{ladder_file=...;}"},
@@ -76,7 +78,10 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"include_G", "Inlcude lower g-part into Sigma_L [false]"},
      {"check_symmetry",
       "Run the (slow) numerical symmetry test of the ladder integrals at the "
-      "end [false]"}});
+      "end [false]"},
+     {"include_loops", "Include the loop diagrams into the ladder diagram "
+                       "iterations. Does so without overcounting diagrams "
+                       "already in the correlation potential method [false]"}});
   // If we are just requesting 'help', don't run:
   if (input.has_option("help")) {
     return;
@@ -92,6 +97,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto basis_str = input.get<std::string>("basis", "");
   const auto max_k = input.get("max_k", 8);
   const auto include_L4 = input.get("include_L4", false);
+  const auto include_loops = input.get("include_loops", false);
 
   // Method for Sigma_L: projection (single |v>, ladder basis, full basis),
   // Dzuba (no projection: rescale Sigma(2) terms by L/Q), or direct (no
@@ -151,6 +157,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "min_n (core) = " << min_n_core << "\n";
   std::cout << std::boolalpha;
   std::cout << "include_L4   = " << include_L4 << "\n";
+  std::cout << "include_loops= " << include_loops << "\n";
   std::cout << "projection   = " << parseSigmaLMethod(method) << "\n";
   std::cout << "each_valence = " << each_valence << "\n";
   std::cout << "include_G    = " << include_G << "\n";
@@ -163,10 +170,13 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto ident = wf.identity();
   const auto Qk_file = input.get("Qk_file", ident + ".qk.abf"s);
   const auto lk4 = include_L4 ? "_l4" : ""s;
+  const auto scr = include_loops ? "_s" : ""s;
   const auto Lk_file =
-    input.get<std::string>("Lk_file", ident + lk4 + ".lk.abf"s);
-  const auto sl_ext =
-    ".sl"s + (include_L4 ? "4" : "") + (include_G ? "g" : "") + ".abf"s;
+    input.get<std::string>("Lk_file", ident + lk4 + scr + ".lk.abf"s);
+  const auto Sk_file = input.get<std::string>("Sk_file", ident + ".slk.abf"s);
+  const auto sl_ext = ".sl"s + (include_L4 ? "4" : "") +
+                      (include_loops ? "s" : "") + (include_G ? "g" : "") +
+                      ".abf"s;
   const auto sl_file = input.get<std::string>("sl_file", ident + sl_ext);
   const auto from_scratch = input.get("from_scratch", false);
 
@@ -220,10 +230,20 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // Fill Lk table:
   Coulomb::LkTable lk;
   Coulomb::LkTable lk_next;
+  // fill Sk table if we we have included loops:
+  Coulomb::LkTable sk;
+  Coulomb::LkTable sk_next;
   // Each run will continue from where last left off
   const bool did_read_Lk = !from_scratch ? lk.read(Lk_file) : false;
+  const bool did_read_Sk = include_loops ? lk.read(Sk_file) : false;
   std::cout << (did_read_Lk ? "\nRe-starting using existing ladder diagrams\n" :
                               "\nCalculating ladder diagrams from scratch\n");
+
+  // only print information about loops if the option was specified
+  if (include_loops) {
+    std::cout << (did_read_Sk ? "\nUsing existing loop diagrams\n" :
+                                "\nCalculating loop diagrams from scratch\n");
+  }
 
   //----------------------------------------------------------------------------
   // Iterate Lk equations
@@ -231,10 +251,18 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // "First iteration": fill_Lk_mnib keeps existing (read) entries and adds only
   // newly-required diagrams (or fills from scratch if not read). Subsequent
   // iterations below re-iterate the existing table.
-  std::cout << "\nInitial fill of Lk table: core + valence\n" << std::flush;
+  std::cout << "\nInitial fill of Lk table";
+  // i don't know if there's a better way of getting it to print this
+  std::cout << (include_loops ? " + Sk table" : "");
+  std::cout << +": core + valence\n" << std::flush;
+
   const auto n_lk_initial = lk.count();
   MBPT::fill_Lk_mnib(&lk, qk, excited, holes, core_and_val, include_L4, sjt,
                      max_k, true);
+  if (include_loops) {
+    MBPT::fill_Sk_mnib(&sk, qk, excited, holes, core_and_val, max_k, false);
+  }
+  // could probably have some information about the loop integrals here too
   const auto n_lk_after = lk.count();
   if (n_lk_initial != n_lk_after) {
     fmt::print("Calculated {} new Lk integrals\n", n_lk_after - n_lk_initial);
@@ -264,11 +292,23 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // Iterate for core states:
   for (int it = 1; it <= max_it; ++it) {
     std::cout << "\ncore it:" << it << "\n";
-    MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, holes, include_L4, sjt,
-                         &lk, a_damp, true);
+    if (!include_loops) {
+      MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, holes, include_L4, sjt,
+                           &lk, a_damp, true);
+    } else {
+      MBPT::update_Lk_mnib_loops(&lk_next, qk, sk, excited, holes, holes,
+                                 include_L4, sjt, &lk, a_damp, true);
+      std::cout << "\nUpdating loop integrals for core states:\n";
+      MBPT::update_Sk_mnib(&sk_next, qk, excited, holes, holes, &sk, a_damp,
+                           true);
+    }
     // for the damping, don't swap; lk and lk_prev must match before next iter
     lk = lk_next;
     lk.write(Lk_file);
+    if (include_loops) {
+      sk = sk_next;
+      sk.write(Sk_file);
+    }
     const auto de_c = MBPT::de_core(qk, lk, holes, excited);
     const auto eps_c = std::abs(2.0 * (de_c - de_c0) / (de_c + de_c0));
     de_c0 = de_c;
@@ -295,10 +335,24 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   std::vector<DiracSpinor> unconverged_valence = valence;
   for (int it = 1; it <= max_it; ++it) {
     std::cout << "\nvalence it:" << it << "\n";
-    MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, unconverged_valence,
-                         include_L4, sjt, &lk, a_damp, true);
+    if (!include_loops) {
+      MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, unconverged_valence,
+                           include_L4, sjt, &lk, a_damp, true);
+    } else {
+      MBPT::update_Lk_mnib_loops(&lk_next, qk, sk, excited, holes,
+                                 unconverged_valence, include_L4, sjt, &lk,
+                                 a_damp, true);
+      std::cout << "\nUpdating loop integrals for valence states:\n";
+      MBPT::update_Sk_mnib(&sk_next, qk, excited, holes, unconverged_valence,
+                           &sk, a_damp, true);
+    }
     lk = lk_next;
     lk.write(Lk_file);
+    if (include_loops) {
+      sk = sk_next;
+      sk.write(Sk_file);
+    }
+
     for (std::size_t i = 0; i < valence.size(); ++i) {
       const auto &v = valence[i];
       const auto de_v = MBPT::de_valence(v, qk, lk, holes, excited);
