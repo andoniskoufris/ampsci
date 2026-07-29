@@ -20,6 +20,11 @@ echo "Running clang-format (changed files only)"
 # --force rewrites files even if they have unstaged changes
 git clang-format --binary "$CLANG_FORMAT" --force HEAD || true
 
+# git clang-format misses untracked (new) files: format those directly
+git ls-files --others --exclude-standard \
+  | grep -E '\.(cpp|hpp|ipp)$' \
+  | xargs -r "$CLANG_FORMAT" -i
+
 # Apply the same sed normalisations as clang_format_all.sh (see that script for rationale).
 # Scope is limited to files changed since HEAD (same set git clang-format just touched).
 git diff --name-only --diff-filter=d HEAD \

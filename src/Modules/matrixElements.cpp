@@ -1,3 +1,4 @@
+#include "Amplitudes/MatrixElements.hpp"
 #include "CI/include.hpp"
 #include "DiracOperator/include.hpp"
 #include "ExternalField/DiagramRPA.hpp"
@@ -18,10 +19,12 @@
 #include "fmt/color.hpp"
 #include "fmt/ostream.hpp"
 #include "qip/String.hpp"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -41,8 +44,14 @@ namespace Module {
   - Includes RPA corrections (TDHF, diagram, or basis method).
   - Includes core-state matrix elements.
   - Uses the spectrum instead of HF valence states.
-  - Solves RPA at a fixed frequency or at each transition frequency
-    (for frequency-dependent operators or 'each').
+  - Solves RPA at a fixed frequency, or at each transition frequency ('each').
+
+  Frequency-dependent operators are evaluated at each pair's transition
+  frequency (their physical frequency); omega_operator pins them at a fixed
+  frequency instead (rarely meaningful).
+
+  Calculations are performed by Amplitudes::matrix_elements; this module
+  only parses input and prints.
 
   @note For hyperfine operators (hfs, MLVP), the default output is HFS
         constants rather than reduced matrix elements.
@@ -139,6 +148,8 @@ const Register r_normalisation{
 } // namespace
 
 //==============================================================================
+// As Module::matrixElements, but all calculations done by
+// Amplitudes::matrix_elements; this module only parses input and prints.
 void matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
   input.check({
     {"", "Matrix elements of any operator for HF/Brueckner valence states. "
@@ -150,8 +161,13 @@ void matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
      "Method used for RPA: true(=TDHF), false, TDHF, basis, diagram [true]"},
     {"rpa_options{}", "Block: some further options for RPA"},
     {"omega",
-     "Text or number. Freq. for RPA (and freq. dependent operators). Put "
-     "'each' to solve at correct frequency for each transition. [0.0]"},
+     "Text or number. Frequency RPA is solved at. Put 'each' to solve at "
+     "correct frequency for each transition. [0.0]"},
+    {"omega_operator",
+     "Frequency-dependent operators are evaluated at the transition "
+     "frequency for each element, which is the physical frequency. Set this "
+     "to pin the operator at a fixed frequency instead (rarely meaningful; "
+     "mainly for comparison to older calculations)."},
     {"printBoth", "print <a|h|b> and <b|h|a> [false]"},
     {"include_core", "If true, includes core states in calculation. Will "
                      "use HF core, unless use_spectrum is true [false]"},
@@ -201,9 +217,6 @@ void matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
   // treat hyperfine operator differently: constants instead of RME
   const bool is_hyperfine =
     qip::ci_compare(oper, "hfs") || qip::ci_compare(oper, "MLVP");
-
-  const bool diagonal = input.get("diagonal", true);
-  const bool off_diagonal = input.get("off-diagonal", true);
 
   std::cout << "\n"
             << "Matrix Elements - Operator: " << h->name() << "\n";
@@ -257,21 +270,26 @@ void matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     rpa->eps_target() = rpa_eps;
   }
 
-  const auto rpaQ = rpa != nullptr;
-
   const auto str_om = input.get<std::string>("omega", "_");
   const bool eachFreqQ = qip::ci_compare(str_om, "each");
   const auto omega = eachFreqQ ? 0.0 : input.get("omega", 0.0);
 
+  const auto omega_operator = input.get<double>("omega_operator");
+
   if (h->freqDependantQ()) {
     std::cout << "Frequency-dependent operator; at omega = ";
+    if (omega_operator)
+      std::cout << *omega_operator << " (pinned)\n";
+    else
+      std::cout << "each transition frequency\n";
+  }
+  if (rpa) {
+    std::cout << "RPA solved at omega = ";
     if (eachFreqQ)
       std::cout << "each transition frequency\n";
     else
       std::cout << omega << "\n";
   }
-
-  const auto pi = h->parity();
 
   // ability to use spectrum instead of valence, and optionally include core
   std::vector<DiracSpinor> orbs;
@@ -302,123 +320,34 @@ void matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     orbs.insert(orbs.end(), wf.valence().begin(), wf.valence().end());
   }
 
-  if (h->freqDependantQ() && !eachFreqQ) {
-    h->updateFrequency(std::abs(omega));
-    if (h_minus)
-      h_minus->updateFrequency(-std::abs(omega));
-  }
+  // All calculations (frequency updates, RPA solves, matrix elements):
+  Amplitudes::MEoptions options;
+  options.omega = omega;
+  options.each_omega = eachFreqQ;
+  options.operator_omega = omega_operator;
+  options.diagonal = input.get("diagonal", true);
+  options.off_diagonal = input.get("off-diagonal", true);
+  options.calculate_both = print_both;
+  options.type = matel_type;
+  options.rpa_iterations = rpa_its;
 
-  if (rpa && !eachFreqQ) {
-    rpa->solve_core(omega, rpa_its);
-  }
+  const auto mes = Amplitudes::matrix_elements(orbs, h.get(), h_minus.get(),
+                                               rpa.get(), options);
 
-  std::stringstream os;
-
-  //----------------------------------------------------
-  // First, diagonal:
-  if (diagonal && h->parity() == 1) {
-
-    if (eachFreqQ && h->freqDependantQ()) {
-      h->updateFrequency(0.0);
-      if (h_minus)
-        h_minus->updateFrequency(0.0);
-    }
-    if (eachFreqQ && rpa) {
-      if (rpa_its == 1) {
-        rpa->clear();
-      }
-      rpa->solve_core(0.0, rpa_its);
-    }
-
-    for (const auto &a : orbs) {
-
-      if (h->isZero(a.kappa(), a.kappa()))
-        continue;
-
-      const auto factor = h->matel_factor(matel_type, a, a);
-
-      const auto hab = h->reducedME(a, a);
-      const auto dv = rpa ? rpa->dV(a, a) : 0.0;
-      // const auto sub_tot = factor * (hab + dv);
-
-      const auto ww = 0.0;
-
-      fmt::print(os, " {:4s} {:4s}  {:10.7f}  {:13.6e}", a.shortSymbol(),
-                 a.shortSymbol(), ww, factor * hab);
-      if (dv != 0.0) {
-        fmt::print(os, "  {:13.6e}", factor * (hab + dv));
-      }
-
-      fmt::print(os, "\n");
-    }
-  }
-
-  //----------------------------------------------------
-  // Then, off-diagonal:
-  if (off_diagonal) {
-    if (eachFreqQ && rpa)
-      std::cout << "\n";
-    for (std::size_t ib = 0; ib < orbs.size(); ib++) {
-      const auto &b = orbs.at(ib);
-      for (std::size_t ia = 0; ia < orbs.size(); ia++) {
-        const auto &a = orbs.at(ia);
-
-        if (a == b)
-          continue;
-        if (h->isZero(a.kappa(), b.kappa()))
-          continue;
-
-        // Ensure even-parity state on right for odd-parity operators
-        if (pi == -1) {
-          if (!print_both && b.parity() == -1)
-            continue;
-        } else {
-          if (!print_both && ib > ia)
-            continue;
-        }
-
-        const auto ww_s = a.en() - b.en();
-
-        if (eachFreqQ && rpa)
-          fmt::print("<{}||t||{}> : w = {:.8f}\n", a.shortSymbol(),
-                     b.shortSymbol(), ww_s);
-
-        if (eachFreqQ && h->freqDependantQ()) {
-          h->updateFrequency(std::abs(ww_s));
-          if (h_minus)
-            h_minus->updateFrequency(-std::abs(ww_s));
-        }
-        if (eachFreqQ && rpa) {
-          if (rpa->last_eps() > 1.0e-5 || rpa_its == 1 ||
-              std::isnan(rpa->last_eps()))
-            rpa->clear();
-          std::cout << " RPA(w) : ";
-          rpa->solve_core(ww_s, rpa_its);
-        }
-
-        const auto factor = h->matel_factor(matel_type, a, b);
-
-        const auto *h_me = (ww_s < 0.0 && h_minus) ? h_minus.get() : h.get();
-        const auto hab = h_me->reducedME(a, b);
-        const auto dv = rpa ? rpa->dV(a, b) : 0.0;
-        // const auto sub_tot = factor * (hab + dv);
-
-        fmt::print(os, " {:4s} {:4s}  {:10.7f}  {:13.6e}", a.shortSymbol(),
-                   b.shortSymbol(), ww_s, factor * hab);
-        if (dv != 0.0) {
-          fmt::print(os, "  {:13.6e}", factor * (hab + dv));
-        }
-        fmt::print(os, "\n");
-      }
-    }
-  }
-
+  // Print:
   std::cout << "\n" << h->name() << "\n";
   std::cout << "\n   a    b    w_ab        t0_ab";
-  if (rpaQ)
+  if (rpa)
     std::cout << "          +RPA ";
   std::cout << "\n";
-  std::cout << os.str();
+  for (const auto &m : mes) {
+    fmt::print(" {:4s} {:4s}  {:10.7f}  {:13.6e}", m.a, m.b, m.omega,
+               m.value0());
+    if (m.dv != 0.0) {
+      fmt::print("  {:13.6e}", m.value());
+    }
+    fmt::print("\n");
+  }
   std::cout << "\n";
 }
 

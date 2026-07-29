@@ -1,5 +1,6 @@
 // Auto-generated ampsci include file
 #pragma once
+#include "Amplitudes/include.hpp"
 #include "Angular/include.hpp"
 #include "CI/include.hpp"
 #include "Coulomb/include.hpp"
