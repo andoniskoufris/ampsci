@@ -64,12 +64,21 @@ StructureRad::StructureRad(const std::vector<DiracSpinor> &basis,
       std::cout << "\nUsing Qk Coulomb table for Struc. Rad.\n";
     }
     mQ = Coulomb::QkTable{};
-    const auto read_ok = mQ->read(Qk_fname, verbose);
-    if (!read_ok) {
-      std::cout << "Fill Qk table:\n" << std::flush;
-      mY.calculate(mBasis);
-      mQ->fill(mBasis, mY, k_cut, verbose);
-      // mQ->fill_if(mBasis, mY, select_Q_SR, k_cut, verbose);
+    mQ->read(Qk_fname, verbose);
+    const auto existing = mQ->count();
+    // Always fill: an existing file may not hold every required integral
+    // (e.g., written with a different basis). fill() only calculates the
+    // integrals missing from the table
+    if (verbose) {
+      std::cout << "Fill/Check Qk table:\n" << std::flush;
+    }
+    mY.calculate(mBasis);
+    mQ->fill(mBasis, mY, k_cut, verbose);
+    const auto new_integrals = int(mQ->count()) - int(existing);
+    if (verbose) {
+      std::cout << "Calculated " << new_integrals << " new Qk integrals\n";
+    }
+    if (new_integrals != 0) {
       mQ->write(Qk_fname, verbose);
     }
   } else {
