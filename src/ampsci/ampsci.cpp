@@ -307,8 +307,6 @@ Wavefunction ampsci(const IO::InputBlock &input) {
 
   // Ladder diagrams: calculates ladder integrals, Lk, and writes the ladder
   // correlation potential, Sigma_L, to file. Runs before Correlations; the
-  // Sigma_L file is read in via Correlations{ladder_file=...;}
-  // (Options parsed inside the driver, incl. for help mode)
   const auto ladder_in = input.getBlock("Ladder");
   if (ladder_in) {
     IO::ChronoTimer time("Ladder");

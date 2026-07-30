@@ -19,9 +19,38 @@ namespace CI {
   @brief Angular coefficients of the two terms of the second-order amplitude
   \f$ A^K \f$.
   @details
-  For a transition \f$ a \to b \f$ due to two one-body operators, \f$ t \f$ at
-  frequency \f$ \omega \f$ and \f$ s \f$ at frequency \f$ \omega_s \f$, the
-  second-order amplitude of rank \f$ K \f$ is
+  For a transition \f$ a \to b \f$ due to two one-body operators, \f$ t \f$
+  (rank \f$ k_t \f$, frequency \f$ \omega \f$) and \f$ s \f$ (rank
+  \f$ k_s \f$, frequency \f$ \omega_s \f$), the amplitude with definite
+  projections \f$ q_1, q_2 \f$ of the two operators is
+
+  \f[
+    A^{k_tk_s}_{q_1q_2} = \sum_n \left[
+      \frac{\matel{b}{t_{q_1}}{n}\matel{n}{s_{q_2}}{a}}{E_a + \omega_s - E_n}
+    + \frac{\matel{b}{s_{q_2}}{n}\matel{n}{t_{q_1}}{a}}{E_a + \omega - E_n}
+    \right],
+  \f]
+
+  the sum over \f$ n \f$ running over the magnetic quantum numbers too, and
+  \f$ E_b = E_a + \omega + \omega_s \f$. The operators are coupled to rank
+  \f$ K \f$, with \f$ Q = q_1 + q_2 = m_b - m_a \f$ and
+  \f$ [K] \equiv 2K+1 \f$:
+
+  \f[
+    A^K_Q = \sum_{q_1q_2}\braket{k_tq_1\,k_sq_2}{KQ}\,A^{k_tk_s}_{q_1q_2}
+          = (-1)^{k_t-k_s+Q}\sqrt{[K]}\sum_{q_1q_2}
+            \threej{k_t}{k_s}{K}{q_1}{q_2}{-Q}\,A^{k_tk_s}_{q_1q_2},
+  \f]
+
+  and the reduced amplitude follows from the Wigner-Eckart theorem (the
+  convention of DiracOperator::TensorOperator::rme3js):
+
+  \f[
+    A^K_Q = (-1)^{J_b-m_b}\threej{J_b}{K}{J_a}{-m_b}{Q}{m_a}\,A^K .
+  \f]
+
+  \f$ A^K \f$ is the reduced matrix element of \f$ [t \times s]^{K} \f$ (both
+  terms). In terms of reduced matrix elements of the two operators,
 
   \f[
     A^K = \sum_n \left[
@@ -32,26 +61,60 @@ namespace CI {
     \right],
   \f]
 
-  where energy conservation fixes \f$ E_b = E_a + \omega + \omega_s \f$. For a
-  real transition the whole frequency is usually carried by \f$ t \f$, so that
-  \f$ \omega = E_b - E_a \f$ and \f$ s \f$ is static. For the dynamic
+  with the coefficients returned here
+
+  \f[
+    c_1 = (-1)^{K}\sqrt{[K]}\,(-1)^{J_b+J_a}
+      \sixj{K}{k_s}{k_t}{J_n}{J_b}{J_a},
+    \qquad
+    c_2 = (-1)^{k_t+k_s}\sqrt{[K]}\,(-1)^{J_b+J_a}
+      \sixj{K}{k_t}{k_s}{J_n}{J_b}{J_a}.
+  \f]
+
+  For a real transition the whole frequency is usually carried by \f$ t \f$, so
+  that \f$ \omega = E_b - E_a \f$ and \f$ s \f$ is static. For the dynamic
   polarisability of a single state, \f$ b = a \f$ and
   \f$ \omega_s = -\omega \f$, giving the two denominators
   \f$ E_a \mp \omega - E_n \f$.
 
-  where the coefficients returned here are
+  ## Sign convention
+
+  The coupling above is the standard Clebsch-Gordan one, \f$ t \f$ first. The
+  alternative definition
 
   \f[
-    c_1 = (-1)^{K}\sqrt{[K]}\,(-1)^{J_b+J_a}
-      \begin{Bmatrix} K & k_s & k_t \\ J_n & J_b & J_a \end{Bmatrix},
-    \qquad
-    c_2 = (-1)^{k_t+k_s}\sqrt{[K]}\,(-1)^{J_b+J_a}
-      \begin{Bmatrix} K & k_t & k_s \\ J_n & J_b & J_a \end{Bmatrix}.
+    \tilde A^K_Q = (-1)^{Q}\sqrt{[K]}\sum_{q_1q_2}
+      \threej{k_t}{k_s}{K}{-q_1}{-q_2}{Q}\,A^{k_tk_s}_{q_1q_2}
+    = (-1)^K A^K_Q
   \f]
 
-  With this convention \f$ A^K \f$ is the reduced matrix element of the
-  composite operator \f$ [t \times s]^{K} \f$ (both terms), which fixes the
-  relation to the z-component; see @ref z_component.
+  differs by \f$ (-1)^K \f$. It cancels in anything rebuilt from
+  \f$ A^K_Q \f$ (@ref z_component), so only affects quantities taken directly
+  from \f$ A^K \f$ at odd \f$ K \f$: the sign of \f$ \beta \f$.
+
+  ## Specific cases
+
+  With \f$ t = s = d \f$ (E1) and \f$ [J] \equiv 2J+1 \f$:
+
+  \f[
+    \alpha_0 = \frac{A^0}{\sqrt{3[J_a]}}
+      \quad (K=0,\ b=a),
+    \qquad
+    \alpha_2 = -\sqrt{\frac{2J(2J-1)}{3(J+1)(2J+1)(2J+3)}}\;A^2
+      \quad (K=2,\ J_b=J_a=J\ge1),
+  \f]
+  \f[
+    \beta = \frac{A^1}{\sqrt{2}\,\redmatel{b}{\bm\sigma}{a}}
+      \quad (K=1),
+  \f]
+
+  see @ref sigma_rme. With \f$ t = d \f$ and \f$ s = h_W \f$ (PNC,
+  \f$ k_s = 0 \f$, so \f$ K = 1 \f$), at \f$ m_a = m_b = m \f$:
+
+  \f[
+    E_{\rm PNC} = A^1_0
+      = (-1)^{J_b-m}\threej{J_b}{1}{J_a}{-m}{0}{m}\,A^1 .
+  \f]
 
   @param K      Rank of the amplitude.
   @param kt,ks  Ranks of the \f$ t \f$ and \f$ s \f$ operators.
@@ -67,19 +130,26 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
   @brief Converts the reduced amplitude \f$ A^K \f$ to its contribution to the
   z-component of the amplitude.
   @details
-  The z-component (\f$ m_a = m_b = m \f$, and \f$ q = 0 \f$ for both operators)
-  is the sum over ranks
+  Undoing the coupling of @ref A_K_coefs,
 
   \f[
-    A_{zz} = \sum_K \braket{k_t 0, k_s 0}{K 0} \,
-      (-1)^{J_b-m}\begin{pmatrix} J_b & K & J_a \\ -m & 0 & m \end{pmatrix}
-      A^K,
+    A^{k_tk_s}_{q_1q_2}
+      = \sum_{KQ}\braket{k_tq_1\,k_sq_2}{KQ}\,A^K_Q ,
+  \f]
+
+  so the z-component (\f$ m_a = m_b = m \f$, and \f$ q_1 = q_2 = 0 \f$, hence
+  \f$ Q = 0 \f$) is the sum over ranks
+
+  \f[
+    A_{zz} \equiv A^{k_tk_s}_{00}
+      = \sum_K \braket{k_t 0\,,\,k_s 0}{K 0} \,
+        (-1)^{J_b-m}\threej{J_b}{K}{J_a}{-m}{0}{m}
+        A^K,
   \f]
 
   the factor returned here being that of the \f$ K \f$ term. The
-  Clebsch-Gordan coefficient comes from
-  \f$ t_0 s_0 = \sum_K \braket{k_t 0, k_s 0}{K 0} [t\times s]^K_0 \f$; it is
-  unity for \f$ k_s = 0 \f$ (as for a PNC amplitude), but not in general.
+  Clebsch-Gordan coefficient is unity for \f$ k_s = 0 \f$ (as for a PNC
+  amplitude), but not in general.
 
   @param K      Rank of the amplitude.
   @param kt,ks  Ranks of the \f$ t \f$ and \f$ s \f$ operators.

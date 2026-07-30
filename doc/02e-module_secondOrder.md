@@ -41,6 +41,102 @@ matrix elements of the sum via the `StructureRadiation{}` block
 
 This is the single-valence analogue of the CI_secondOrder module.
 
+## Definitions
+
+Same definitions in the CI_secondOrder module, with \f$ j \to J \f$.
+\f$ t \f$ has rank \f$ k_t \f$, \f$ s \f$ has rank \f$ k_s \f$, and
+\f$ [K] \equiv 2K+1 \f$.
+
+Uncoupled (definite projections \f$ q_1 \f$ of \f$ t \f$, \f$ q_2 \f$ of
+\f$ s \f$; the sum over \f$ n \f$ includes magnetic quantum numbers):
+
+\f[
+  A^{k_tk_s}_{q_1q_2} = \sum_n \left[
+    \frac{\langle B|t_{q_1}|n\rangle\langle n|s_{q_2}|A\rangle}
+         {E_A+\omega_s-E_n}
+  + \frac{\langle B|s_{q_2}|n\rangle\langle n|t_{q_1}|A\rangle}
+         {E_A+\omega-E_n}
+  \right].
+\f]
+
+Coupled to rank \f$ K \f$, with \f$ Q = q_1+q_2 = m_B-m_A \f$:
+
+\f[
+  A^K_Q = \sum_{q_1q_2}\langle k_tq_1\,k_sq_2|KQ\rangle\,A^{k_tk_s}_{q_1q_2}
+        = (-1)^{k_t-k_s+Q}\sqrt{[K]}\sum_{q_1q_2}
+          \begin{pmatrix} k_t & k_s & K \\ q_1 & q_2 & -Q \end{pmatrix}
+          A^{k_tk_s}_{q_1q_2}.
+\f]
+
+Reduced, via the Wigner-Eckart theorem:
+
+\f[
+  A^K_Q = (-1)^{j_B-m_B}
+    \begin{pmatrix} j_B & K & j_A \\ -m_B & Q & m_A \end{pmatrix}
+    A^K ,
+\f]
+
+\f$ A^K \f$ being the quantity the module reports: the reduced matrix element
+of \f$ [t\times s]^K \f$ (both time orderings), with
+
+\f[
+  c_1 = (-1)^{K}\sqrt{[K]}\,(-1)^{j_B+j_A}
+    \begin{Bmatrix} K & k_s & k_t \\ j_n & j_B & j_A \end{Bmatrix},
+  \qquad
+  c_2 = (-1)^{k_t+k_s}\sqrt{[K]}\,(-1)^{j_B+j_A}
+    \begin{Bmatrix} K & k_t & k_s \\ j_n & j_B & j_A \end{Bmatrix}.
+\f]
+
+Uncoupling again gives the z-component (\f$ m_A = m_B = m \f$,
+\f$ q_1 = q_2 = 0 \f$), also printed:
+
+\f[
+  A_{zz} = \sum_K \langle k_t0\,k_s0|K0\rangle\,(-1)^{j_B-m}
+      \begin{pmatrix} j_B & K & j_A \\ -m & 0 & m \end{pmatrix} A^K .
+\f]
+
+**Sign convention.** The coupling above is the standard Clebsch-Gordan one,
+\f$ t \f$ first. The alternative definition
+
+\f[
+  \tilde A^K_Q = (-1)^{Q}\sqrt{[K]}\sum_{q_1q_2}
+    \begin{pmatrix} k_t & k_s & K \\ -q_1 & -q_2 & Q \end{pmatrix}
+    A^{k_tk_s}_{q_1q_2}
+  = (-1)^K A^K_Q
+\f]
+
+differs by \f$ (-1)^K \f$. It cancels in \f$ A_{zz} \f$ (so in
+\f$ E_{\rm PNC} \f$) and for even \f$ K \f$; it affects only the sign of
+\f$ \beta \f$.
+
+## Specific cases
+
+With \f$ t = s = d \f$ (E1) and \f$ [j] \equiv 2j+1 \f$:
+
+\f[
+  \alpha_0 = \frac{A^0}{\sqrt{3[j_A]}}
+    \quad (K=0,\ B=A),
+  \qquad
+  \alpha_2 = -\sqrt{\frac{2j(2j-1)}{3(j+1)(2j+1)(2j+3)}}\;A^2
+    \quad (K=2,\ j_B=j_A=j\ge1),
+\f]
+\f[
+  \beta = \frac{A^1}{\sqrt{2}\,\langle B||\boldsymbol\sigma||A\rangle}
+    \quad (K=1),
+\f]
+
+with \f$ \langle B||\boldsymbol\sigma||A\rangle = 2S_{\kappa\kappa'} \f$ for a
+single valence electron (radial overlap dropped by convention); for CI states
+see \ref CI::sigma_rme "CI::sigma_rme()".
+
+With \f$ t = d \f$ and \f$ s = h_W \f$ (PNC, \f$ k_s = 0 \f$, so \f$ K = 1 \f$
+and \f$ \langle 1\,0\,0\,0|1\,0\rangle = 1 \f$), at \f$ m_A = m_B = m \f$:
+
+\f[
+  E_{\rm PNC} = A^1_0 = (-1)^{j_B-m}
+    \begin{pmatrix} j_B & 1 & j_A \\ -m & 0 & m \end{pmatrix} A^1 .
+\f]
+
 Examples -- static polarisability of Cs 6s, and the 6s-7s PNC amplitude:
 
 ```java

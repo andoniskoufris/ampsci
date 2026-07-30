@@ -621,6 +621,34 @@ they are complete (no sum over individual CI solutions, and no truncation
 of the spectrum); each sum is formed two independent ways as an internal
 check.
 
+For two one-body operators \f$ t \f$ (rank \f$ k_t \f$, frequency
+\f$ \omega \f$) and \f$ s \f$ (rank \f$ k_s \f$, frequency \f$ \omega_s \f$),
+the module reports the reduced amplitude of rank \f$ K \f$,
+
+\f[
+  A^K = \sum_n \left[
+    c_1 \frac{\langle B||t||n\rangle\langle n||s||A\rangle}{E_A+\omega_s-E_n}
+  + c_2 \frac{\langle B||s||n\rangle\langle n||t||A\rangle}{E_A+\omega-E_n}
+  \right],
+\f]
+
+and the specific cases (\f$ [J]\equiv 2J+1 \f$):
+
+\f[
+  \alpha_0 = \frac{A^0}{\sqrt{3[J_A]}},
+  \qquad
+  \alpha_2 = -\sqrt{\frac{2J(2J-1)}{3(J+1)(2J+1)(2J+3)}}\;A^2,
+  \qquad
+  \beta = \frac{A^1}{\sqrt{2}\,\langle B||\boldsymbol\sigma||A\rangle},
+\f]
+
+for \f$ t=s=E1 \f$ and \f$ K = 0, 2, 1 \f$, and
+\f$ E_{\rm PNC} = A^1_0 \f$ for \f$ t=E1 \f$, \f$ s=h_W \f$.
+The definitions of \f$ A^{k_tk_s}_{q_1q_2} \f$, \f$ A^K_Q \f$ and
+\f$ A^K \f$, and the sign convention of the coupling, are on the
+\ref module_secondorder page (identical, with \f$ j \to J \f$) and in
+\ref CI::A_K_coefs "CI::A_K_coefs()".
+
 For example, the static scalar polarisability of the ground state:
 
 ```java

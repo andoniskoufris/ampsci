@@ -36,8 +36,9 @@ namespace Hypergeometric {
 // to double precision. When false, do a single fixed-precision call at
 // double-ish precision ("call normally"). Escalation exists to handle the
 // large cancellations for continuum (large imaginary) args.
-constexpr bool use_arb = true;
-constexpr long fixed_prec = 64; // used only when use_arb == false
+[[maybe_unused]] constexpr bool use_arb = true;
+// used only when use_arb == false
+[[maybe_unused]] constexpr long fixed_prec = 64;
 
 // Testing toggle (cpp-only). When true, complex H1f1 first attempts a fast
 // double-precision evaluation (Maclaurin series or asymptotic expansion,

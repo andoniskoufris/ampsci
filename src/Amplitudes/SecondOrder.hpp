@@ -20,11 +20,33 @@ namespace Amplitudes {
 /*!
  Second-order (in the external field) amplitudes for a single-valence atom.
 
- For a transition \f$ a \to b \f$ due to two one-body operators, \f$ t \f$ at
- frequency \f$ \omega \f$ and \f$ s \f$ at frequency \f$ \omega_s \f$, the
- second-order amplitude of rank \f$ K \f$ is
+ For a transition \f$ a \to b \f$ due to two one-body operators, \f$ t \f$
+ (rank \f$ k_t \f$, frequency \f$ \omega \f$) and \f$ s \f$ (rank
+ \f$ k_s \f$, frequency \f$ \omega_s \f$), the amplitude with definite
+ projections \f$ q_1, q_2 \f$ of the two operators is
 
  \f[
+   A^{k_tk_s}_{q_1q_2} = \sum_n \left[
+     \frac{\matel{b}{t_{q_1}}{n}\matel{n}{s_{q_2}}{a}}{\en_a + \omega_s - \en_n}
+   + \frac{\matel{b}{s_{q_2}}{n}\matel{n}{t_{q_1}}{a}}{\en_a + \omega - \en_n}
+   \right],
+ \f]
+
+ the sum over \f$ n \f$ running over the magnetic quantum numbers too, and
+ \f$ \en_b = \en_a + \omega + \omega_s \f$. The operators are coupled to rank
+ \f$ K \f$, with \f$ Q = q_1+q_2 = m_b-m_a \f$ and \f$ [K] \equiv 2K+1 \f$,
+
+ \f[
+   A^K_Q = \sum_{q_1q_2}\braket{k_tq_1\,k_sq_2}{KQ}\,A^{k_tk_s}_{q_1q_2}
+         = (-1)^{k_t-k_s+Q}\sqrt{[K]}\sum_{q_1q_2}
+           \threej{k_t}{k_s}{K}{q_1}{q_2}{-Q}\,A^{k_tk_s}_{q_1q_2},
+ \f]
+
+ and \f$ A^K \f$ follows from the Wigner-Eckart theorem,
+
+ \f[
+   A^K_Q = (-1)^{j_b-m_b}\threej{j_b}{K}{j_a}{-m_b}{Q}{m_a}\,A^K
+   \qquad {\rm with} \qquad
    A^K = \sum_n \left[
      c_1(j_n)\,
      \frac{\redmatel{b}{t}{n}\redmatel{n}{s}{a}}{\en_a + \omega_s - \en_n}
@@ -33,12 +55,31 @@ namespace Amplitudes {
    \right],
  \f]
 
- with the angular coefficients of CI::A_K_coefs (evaluated with the
- single-particle j in place of J), and energy conservation
- \f$ \en_b = \en_a + \omega + \omega_s \f$. This is the single-valence
- analogue of CI::A_K; it covers static, dynamic, and transition
- polarisabilities (\f$ t = s = E1 \f$), and PNC amplitudes (\f$ s \f$ = PNC
- operator).
+ the coefficients being those of CI::A_K_coefs (evaluated with the
+ single-particle j in place of J), which also gives the sign convention of the
+ coupling and the specific cases; CI::z_component converts \f$ A^K \f$ to the
+ z-component. With \f$ t = s = d \f$ (E1) and \f$ [j] \equiv 2j+1 \f$:
+
+ \f[
+   \alpha_0 = \frac{A^0}{\sqrt{3[j_a]}},
+   \qquad
+   \alpha_2 = -\sqrt{\frac{2j(2j-1)}{3(j+1)(2j+1)(2j+3)}}\;A^2,
+   \qquad
+   \beta = \frac{A^1}{\sqrt{2}\,\redmatel{b}{\bm\sigma}{a}},
+ \f]
+
+ for \f$ K = 0, 2, 1 \f$ (\f$ \alpha_2 \f$ requires
+ \f$ j_b = j_a = j \ge 1 \f$), and with \f$ t = d \f$, \f$ s = h_W \f$ (PNC,
+ \f$ k_s = 0 \f$, so \f$ K = 1 \f$),
+
+ \f[
+   E_{\rm PNC} = A^1_0
+     = (-1)^{j_b-m}\threej{j_b}{1}{j_a}{-m}{0}{m}\,A^1 .
+ \f]
+
+ This is the single-valence analogue of CI::A_K; it covers static, dynamic,
+ and transition polarisabilities (\f$ t = s = E1 \f$), and PNC amplitudes
+ (\f$ s \f$ = PNC operator).
 
  Two methods are provided for the valence sum: sum-over-states (SOS) over a
  given spectrum, and mixed states (MS, solving the inhomogeneous equation via
