@@ -500,16 +500,18 @@ double Lkmnij_loop(int k, const DiracSpinor &m, const DiracSpinor &n,
                    std::optional<double> e_m) {
 
   // nb: i energy enters only L1 and L3; m energy only L2 and L4
-  const auto L123 =
+  const auto L123SL12 =
     L1_loop(k, m, n, i, j, qk, excited, SixJ, Lk, Sk, e_i) +
     L2_loop(k, m, n, i, j, qk, core, excited, SixJ, Lk, Sk, {}, e_m) +
-    L3_loop(k, m, n, i, j, qk, core, excited, SixJ, Lk, Sk, e_i);
+    L3_loop(k, m, n, i, j, qk, core, excited, SixJ, Lk, Sk, e_i) +
+    SL1(k, m, n, i, j, qk, core, excited, Lk, e_i, e_m) +
+    SL2(k, m, n, i, j, qk, core, excited, Lk, e_i, e_m);
   // Optionally include "4th" ladder diagram
   // nb: L4 not fully checked!
   if (include_L4)
-    return L123 + L4_loop(k, m, n, i, j, qk, core, SixJ, Lk, Sk, e_m);
+    return L123SL12 + L4_loop(k, m, n, i, j, qk, core, SixJ, Lk, Sk, e_m);
   else
-    return L123;
+    return L123SL12;
 }
 
 //------------------------------------------------------------------------------
