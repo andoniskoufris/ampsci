@@ -1,6 +1,10 @@
-\page modules Modules and Operators
+\page modules Modules
 
-\brief Descpription of modules system: available modules, operators, and ascociated options
+\brief Descpription of modules system: available modules and ascociated options
+
+# ampsci Module system
+
+\brief The modules system: listing the available modules and their options.
 
 The modules system is how you interact with ampsci after the wavefunction has been calculated.
 Any number of modules can be run in the same job to compute matrix elements, polarisabilities,
@@ -9,10 +13,7 @@ QED corrections, structure radiation, and more.
 * See \ref tutorial_modules for a hands-on introduction to using modules.
 * The modules system allows the easy calculation of any atomic properties after the wavefunction has been calculated.
 * Any number of _modules_ can be run by adding `Module::moduleName{}` blocks.
-* The code is designed so that you can easily create your own modules -- see \subpage modules_custom.
-* You can also write your own operators -- see \subpage modules_custom_operator.
-
-## Getting started with modules
+* The operators the modules act with (E1, hfs, pnc, ...) are described at \ref using_operators.
 
 Get a list of available modules: `./ampsci -m`
 
@@ -32,8 +33,8 @@ Available modules:
      Calculates dynamic polarisabilities
  * transitionPolarisability
      Calculates transition polarisabilities
- * structureRad
-     Calculates Struct. Rad + Normalisation corrections to MEs
+ * StructureRadiation
+     Structure radiation + normalisation corrections to matrix elements
  * fieldShift
      Calculates field-shift constants (isotope shift)
  * QED
@@ -54,45 +55,39 @@ You can also get most of this information directly from the command-line:
   * Note the output is in the same format as required by the input file - you can copy+paste this into your input file.
 
 ```sh
-./ampsci -m MatrixElements
+./ampsci -m matrixElements
 ```
 
 ```java
-// Available Module::MatrixElements options/blocks
-Module::MatrixElements{
-  // e.g., E1, hfs (see ampsci -o for available operators)
+// Available Module::matrixElements options/blocks
+Module::matrixElements{
+  // Matrix elements of any operator for HF/Brueckner
+  // valence states. Supports RPA, diagonal and off-diagonal
+  // elements, core states, and optional use of the spectrum
+  // instead of valence states.
   operator;
-  // options specific to operator (see ampsci -o 'operator')
+    // e.g., E1, hfs (see ampsci -o for available operators)
   options{}
-  // Method used for RPA: true(=TDHF), false, TDHF, basis, diagram [true]
+    // options specific to operator (see ampsci -o
+    // 'operator')
   rpa;
-  // Text or number. Freq. for RPA (and freq. dependent operators). Put 'each'
-  // to solve at correct frequency for each transition. [0.0]
-  omega;
-  // print <a|h|b> and <b|h|a> [false]
-  printBoth;
-  // If true (and spectrum available), will use spectrum for valence states
-  // [false]
-  use_spectrum;
-  // Calculate diagonal matrix elements (if non-zero) [true]
-  diagonal;
-  // Calculate off-diagonal matrix elements (if non-zero) [true]
-  off-diagonal;
-  // Options for Structure Radiation and normalisation (details below)
-  StructureRadiation{}
-}
-
-
-// Available StructureRadiation options/blocks
-StructureRadiation{
-  // If this block is included, SR + Normalisation corrections will be included
-
-  // true/false/filename - SR: filename for QkTable file. If blank will not use
-  // QkTable; if exists, will read it in; if doesn't exist, will create it and
-  // write to disk. If 'true' will use default filename. Save time (10x) at cost
-  // of memory. Note: Using QkTable implies splines used for diagram legs
-  Qk_file;
-  // list; min,max n for core/excited: [1,inf]
-  n_minmax;
+    // Method used for RPA: true(=TDHF), false, TDHF, basis,
+    // diagram [true]
+  // ... etc.
 }
 ```
+
+See \ref module_matrixelements for the full list of options.
+
+## See also
+
+Basic documentation for the most commonly-used modules:
+
+* \subpage module_matrixelements - \copybrief module_matrixelements
+* \subpage module_structurerad - \copybrief module_structurerad
+* \subpage module_secondorder - \copybrief module_secondorder
+* \subpage module_dynamicpol - \copybrief module_dynamicpol
+
+And writing your own custom modules:
+
+* \subpage modules_custom - \copybrief modules_custom

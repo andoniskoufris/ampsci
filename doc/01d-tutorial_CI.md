@@ -611,6 +611,31 @@ The output is something like:
 
 This implies the lifetime of the first \f${}^1P^o_1\f$ level is 2.12 ns, in excellent agreement with experiment.
 
+## Second-order amplitudes: CI_secondOrder
+
+Second-order (in the external field) amplitudes between CI states --
+polarisabilities (scalar, tensor, vector/transition) and PNC amplitudes --
+are calculated with the `CI_secondOrder` module.
+The sums over intermediate states are evaluated with CI mixed states, so
+they are complete (no sum over individual CI solutions, and no truncation
+of the spectrum); each sum is formed two independent ways as an internal
+check.
+
+For example, the static scalar polarisability of the ground state:
+
+```java
+Module::CI_secondOrder{
+  A = 0+;
+  K = 0;
+}
+```
+
+States are given as `J{+,-}:index` (so `0+` is the lowest even J=0 level,
+and `1-:1` the second-lowest odd J=1 level). Run `./ampsci -m
+CI_secondOrder` for the full list of options; see \ref CI::A_K "CI::A_K()"
+for the formulas and conventions. The single-valence analogue is the
+\ref module_secondorder module.
+
 -----
 
 * See physics documentation: [ampsci.pdf](https://ampsci.dev/ampsci.pdf) for full physics description of the employed methods
