@@ -8,6 +8,9 @@ class DiracSpinor;
 namespace ExternalField {
 class CorePolarisation;
 }
+namespace MBPT {
+class StructureRad;
+}
 
 //! Physical amplitudes and observables (matrix elements, second-order
 //! amplitudes); testable functions, callable from any module.
@@ -152,5 +155,111 @@ matrix_element(const DiracSpinor &a, const DiracSpinor &b,
   DiracOperator::TensorOperator *h_minus = nullptr,
   ExternalField::CorePolarisation *dV = nullptr, const MEoptions &options = {},
   std::ostream &outstream = std::cout);
+
+//==============================================================================
+
+/*!
+  @brief Result of a matrix element calculation with second-order MBPT
+  corrections: structure radiation, normalisation, Brueckner orbital.
+  @details
+  Everything is stored unscaled; the accessors apply the MatrixElementType
+  factor. The total corrected matrix element is
+  \f[
+    t^{\rm tot}_{ab} = t^{(0)}_{ab} + \delta V_{ab} + \delta t^{\rm SR}_{ab}
+      + \delta t^{\rm Norm}_{ab} + \delta t^{\rm BO}_{ab}.
+  \f]
+*/
+struct SRNdata {
+  //! State labels (shortSymbol); a is the bra: <a||h||b>
+  std::string a{}, b{};
+  //! Frequency the corrections were evaluated at
+  double omega{0.0};
+  //! Factor converting reduced ME to requested MatrixElementType
+  double factor{1.0};
+  //! Lowest-order reduced matrix element <a||h||b>
+  double t0{0.0};
+  //! RPA correction (0 if no RPA)
+  double dv{0.0};
+  //! Structure radiation (top + bottom + centre diagrams)
+  double sr{0.0};
+  //! Normalisation of states: (f_norm_a + f_norm_b) * (t0 + dv)
+  double norm{0.0};
+  //! Brueckner orbital correction (0 if legs are already Brueckner);
+  //! includes the frequency-derivative term for freq-dependent operators
+  double bo{0.0};
+  //! True if an RPA correction was calculated
+  bool has_rpa{false};
+
+  //! Lowest-order + RPA: factor * (t0 + dv)
+  double value0() const { return factor * (t0 + dv); }
+  //! Full corrected value: factor * (t0 + dv + sr + norm + bo)
+  double total() const { return factor * (t0 + dv + sr + norm + bo); }
+};
+
+//! Options for sr_matrix_elements()
+struct SRNoptions {
+  //! Frequency of the RPA and the SR tables/denominators (unless each_omega).
+  //! Their frequency dependence is usually weak; the operator itself is
+  //! always at each pair's transition frequency (see operator_omega)
+  double omega{0.0};
+  //! If true, re-solve RPA and SR tables at each transition frequency
+  //! (slow: the SR matrix element table is re-built each time)
+  bool each_omega{false};
+  //! Override: pin frequency-dependent operator at this fixed frequency
+  //! (everywhere, including the SR tables). Default (empty): the operator
+  //! is at each pair's transition frequency w_ab, where its frequency
+  //! dependence matters; the SR tables stay at omega
+  std::optional<double> operator_omega{};
+  //! Calculate diagonal matrix elements (only for even-parity operators)
+  bool diagonal{true};
+  //! Calculate off-diagonal matrix elements
+  bool off_diagonal{true};
+  //! Calculate both <a||h||b> and <b||h||a>
+  bool calculate_both{false};
+  //! Form of matrix element: Reduced, Stretched, or HFConstant
+  DiracOperator::MatrixElementType type{
+    DiracOperator::MatrixElementType::Reduced};
+  //! Include the Brueckner orbital correction (set false when the external
+  //! legs are already Brueckner orbitals)
+  bool include_bo{true};
+  //! Print per-element progress (SR is slow)
+  bool print{true};
+};
+
+/*!
+  @brief Matrix elements with structure radiation, normalisation, and
+  Brueckner orbital corrections, for all pairs from a list of orbitals.
+  @details
+  For each pair allowed by the selection rules (as @ref matrix_elements),
+  evaluates the lowest-order matrix element, RPA, and the second-order MBPT
+  corrections via MBPT::StructureRad: SR (top+bottom+centre diagrams),
+  normalisation of states, and (optionally) the Brueckner orbital
+  correction.
+
+  Frequency handling (see SRNoptions): a frequency-dependent operator is
+  evaluated at each pair's transition frequency (unless pinned by
+  operator_omega), where its frequency dependence is important; its BO term
+  then includes the frequency-derivative correction
+  \f$ ({\rm d}t/{\rm d}\omega)\,\delta\omega^{(2)} \f$ for off-diagonal
+  elements. The RPA and the SR tables/denominators, whose frequency
+  dependence is usually weak, stay at the fixed frequency omega (or follow
+  each transition if each_omega).
+
+  The caller constructs (and owns) the MBPT::StructureRad object, which
+  holds the basis, Qk integrals, and screening options; solve_core is called
+  here (and re-called at each frequency if each_omega).
+
+  @param orbs      Orbitals for the external legs; all pairs considered.
+  @param h         The tensor operator; frequency updated internally.
+  @param sr        StructureRad object (mutated: solve_core is called).
+  @param dV        RPA; solved internally. nullptr for no RPA.
+  @param options   See SRNoptions.
+  @param outstream Stream for per-element progress output.
+  @return Vector of SRNdata, one per calculated matrix element.
+*/
+[[nodiscard]] std::vector<SRNdata> sr_matrix_elements(
+  const std::vector<DiracSpinor> &orbs, DiracOperator::TensorOperator *h,
+  MBPT::StructureRad *sr, ExternalField::CorePolarisation *dV = nullptr,
+  const SRNoptions &options = {}, std::ostream &outstream = std::cout);
 
 } // namespace Amplitudes

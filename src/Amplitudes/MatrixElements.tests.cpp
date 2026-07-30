@@ -3,6 +3,7 @@
 #include "ExternalField/TDHF.hpp"
 #include "ExternalField/calcMatrixElements.hpp"
 #include "IO/InputBlock.hpp"
+#include "MBPT/StructureRad.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "catch2/catch.hpp"
@@ -203,5 +204,46 @@ TEST_CASE("Amplitudes: matrix elements with RPA",
       // driver may iterate from previous solution: small differences allowed
       REQUIRE(found == Approx(expected).epsilon(1.0e-5));
     }
+  }
+}
+
+//==============================================================================
+//! sr_matrix_elements against direct evaluation with MBPT::StructureRad
+TEST_CASE("Amplitudes: SR matrix elements",
+          "[Amplitudes][StrucRad][MBPT][unit]") {
+
+  Wavefunction wf({400, 1.0e-4, 50.0, 33.0, "loglinear"}, {"Na", -1, "Fermi"},
+                  1.0);
+  wf.solve_core("HartreeFock", "[Ne]", std::nullopt, 1.0e-5);
+  wf.solve_valence("3sp");
+  wf.formBasis({"20spd", 20, 6, 1.0e-4, 1.0e-4, 30.0});
+
+  auto hE1 = DiracOperator::E1(wf.grid());
+
+  MBPT::StructureRad sr(wf.basis(), wf.FermiLevel(), {2, 10}, "", 99, {}, {},
+                        false);
+  Amplitudes::SRNoptions options;
+  options.print = false;
+  const auto mes =
+    Amplitudes::sr_matrix_elements(wf.valence(), &hE1, &sr, nullptr, options);
+
+  // Direct evaluation, separate StructureRad object:
+  MBPT::StructureRad sr0(wf.basis(), wf.FermiLevel(), {2, 10}, "", 99, {}, {},
+                         false);
+  sr0.solve_core(&hE1, nullptr);
+
+  REQUIRE(!mes.empty());
+  for (const auto &m : mes) {
+    const auto *Fa = wf.getState(m.a);
+    const auto *Fb = wf.getState(m.b);
+    REQUIRE(Fa != nullptr);
+    REQUIRE(Fb != nullptr);
+    REQUIRE(m.t0 == Approx(hE1.reducedME(*Fa, *Fb)));
+    // fixed-omega mode: SR denominators at options.omega (= 0), not w_ab
+    REQUIRE(m.sr == Approx(sr0.SR(*Fa, *Fb, 0.0)));
+    REQUIRE(m.norm == Approx((sr0.f_norm(*Fa) + sr0.f_norm(*Fb)) * m.t0));
+    REQUIRE(m.bo == Approx(sr0.BO(*Fa, *Fb)));
+    REQUIRE(m.total() ==
+            Approx(m.factor * (m.t0 + m.dv + m.sr + m.norm + m.bo)));
   }
 }
