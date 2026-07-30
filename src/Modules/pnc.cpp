@@ -54,7 +54,9 @@ using namespace Pnc;
 void pnc(const IO::InputBlock &input, const Wavefunction &wf) {
   const std::string ThisModule = "Module::PNC";
 
-  input.check({{"t", ""},
+  input.check({{"", "Deprecated: will be removed. Prefer the secondOrder "
+                    "module"},
+               {"t", ""},
                {"c", ""},
                {"transition", ""},
                {"nmain", ""},

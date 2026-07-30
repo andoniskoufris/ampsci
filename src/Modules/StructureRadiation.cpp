@@ -18,19 +18,24 @@
 
 namespace Module {
 
-void structureRad2(const IO::InputBlock &input, const Wavefunction &wf);
+void structureRadiation(const IO::InputBlock &input, const Wavefunction &wf);
 
 namespace {
-const Register r_structureRad2{
-  "structureRad2",
+const Register r_structureRadiation{
+  "StructureRadiation",
   "Structure radiation + normalisation corrections to matrix elements",
-  &structureRad2};
+  &structureRadiation};
+// Aliases for the same module:
+const Register r_alias_StructureRad{
+  "StructureRad", "Alias for StructureRadiation", &structureRadiation};
+const Register r_alias_StrucRad{"StrucRad", "Alias for StructureRadiation",
+                                &structureRadiation};
 } // namespace
 
 //==============================================================================
-// As Module::structureRad, but the calculations are done by
-// Amplitudes::sr_matrix_elements; this module only parses input and prints.
-void structureRad2(const IO::InputBlock &input, const Wavefunction &wf) {
+// The calculations are done by Amplitudes::sr_matrix_elements; this module
+// only parses input and prints.
+void structureRadiation(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
     {{"", "Calculates structure radiation, normalisation of states, and "
@@ -77,7 +82,7 @@ void structureRad2(const IO::InputBlock &input, const Wavefunction &wf) {
     return;
   }
 
-  IO::ChronoTimer timerSR("structureRad2");
+  IO::ChronoTimer timerSR("StructureRadiation");
 
   // Get input options:
   const auto oper = input.get<std::string>("operator", "E1");

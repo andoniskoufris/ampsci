@@ -1,5 +1,5 @@
-#include "Amplitudes/MatrixElements.hpp"
 #include "Amplitudes/Normalisation.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "DiracOperator/GenerateOperator.hpp"
 #include "ExternalField/calcMatrixElements.hpp"
 #include "IO/ChronoTimer.hpp"
@@ -19,20 +19,20 @@
 
 namespace Module {
 
-void normalisation2(const IO::InputBlock &input, const Wavefunction &wf);
+void normalisation(const IO::InputBlock &input, const Wavefunction &wf);
 
 namespace {
-const Register r_normalisation2{
-  "normalisation2",
+const Register r_normalisation{
+  "normalisation",
   "Normalisation correction to matrix elements, via derivative of Sigma",
-  &normalisation2};
+  &normalisation};
 } // namespace
 
 //==============================================================================
-// As Module::normalisation, but the matrix elements are calculated by
-// Amplitudes::matrix_elements and the Sigma derivative by
-// Amplitudes::dSigma_dE; this module only parses input and prints.
-void normalisation2(const IO::InputBlock &input, const Wavefunction &wf) {
+// The matrix elements are calculated by Amplitudes::matrix_elements and the
+// Sigma derivative by Amplitudes::dSigma_dE; this module only parses input
+// and prints.
+void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
   input.check(
     {{"", "Calculates normalisation correction, via derivative of "
           "Correlation potential. Uses correlation potential from main "
@@ -61,7 +61,7 @@ void normalisation2(const IO::InputBlock &input, const Wavefunction &wf) {
     return;
   }
 
-  IO::ChronoTimer timer("normalisation2");
+  IO::ChronoTimer timer("normalisation");
 
   const auto delta = input.get("delta", 1.0e-4);
 
