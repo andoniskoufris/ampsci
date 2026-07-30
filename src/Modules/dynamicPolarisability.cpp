@@ -1,3 +1,4 @@
+#include "Amplitudes/SecondOrder.hpp"
 #include "Coulomb/meTable.hpp"
 #include "DiracOperator/include.hpp"
 #include "ExternalField/TDHF.hpp"
@@ -8,6 +9,7 @@
 #include "Physics/AtomData.hpp"
 #include "Physics/PhysConst_constants.hpp"
 #include "Wavefunction/Wavefunction.hpp"
+#include "fmt/format.hpp"
 #include "qip/Vector.hpp"
 #include <algorithm>
 #include <fstream>
@@ -27,36 +29,6 @@ const Register r_dynamicPolarisability{"dynamicPolarisability",
                                        "Calculates dynamic polarisabilities",
                                        &dynamicPolarisability};
 } // namespace
-
-// Shared helpers, defined in polarisability.cpp (to be tidied later)
-namespace alphaD {
-double core_sos(const std::vector<DiracSpinor> &core,
-                const std::vector<DiracSpinor> &spectrum,
-                const DiracOperator::E1 &he1,
-                const ExternalField::CorePolarisation *dVE1, double omega,
-                const Coulomb::meTable<double> *dtab = nullptr);
-
-double valence_sos(const DiracSpinor &Fv,
-                   const std::vector<DiracSpinor> &spectrum,
-                   const DiracOperator::E1 &he1,
-                   const ExternalField::CorePolarisation *dVE1, double omega,
-                   const Coulomb::meTable<double> *d_nv = nullptr);
-
-double tensor2_sos(const DiracSpinor &Fv,
-                   const std::vector<DiracSpinor> &spectrum,
-                   const DiracOperator::E1 &he1,
-                   const ExternalField::CorePolarisation *dVE1, double omega,
-                   const Coulomb::meTable<double> *dtab = nullptr);
-
-double core_tdhf(const std::vector<DiracSpinor> &core,
-                 const DiracOperator::E1 &he1, const ExternalField::TDHF &dVE1,
-                 double omega, const MBPT::CorrelationPotential *const Sigma);
-
-double valence_tdhf(const DiracSpinor &Fv, const DiracOperator::E1 &he1,
-                    const ExternalField::TDHF &dVE1, double omega,
-                    const MBPT::CorrelationPotential *const Sigma,
-                    const std::vector<DiracSpinor> &force_orthog = {});
-} // namespace alphaD
 
 //==============================================================================
 void dynamicPolarisability(const IO::InputBlock &input,
@@ -95,17 +67,35 @@ void dynamicPolarisability(const IO::InputBlock &input,
      {"filename", "output filename for dynamic polarisability (a0_ and/or "
                   "a2_ will be appended to start of filename) [identity.txt "
                   "(e.g., CsI.txt)]"},
-     {"SRN", "SR: include SR+Norm correction [false]"},
-     {"n_min_core", "SR: Minimum n to include in SR+N [1]"},
-     {"max_n_SR",
-      "SR: Maximum n to include in the sum-over-states for SR+N [9]"},
-     {"RPA_in_SR", "SR: Include RPA in Struc Rad + Norm [false]"},
-     {"Qk_file",
-      "true/false/filename - SR: filename for QkTable file. If blank will "
-      "not use QkTable; if exists, will read it in; if doesn't exist, will "
-      "create it and write to disk. If 'true' will use default filename. "
-      "Save time (10x) at cost of memory. Note: Using QkTable "
-      "implies splines used for diagram legs"}});
+     {"StructureRadiation{}",
+      "Options for structure radiation and normalisation. If this block is "
+      "included, SR+N is added to the single-particle matrix elements of the "
+      "sum-over-states (evaluated at w = 0). Sum-over-states method only"}});
+
+  // Check for Structure Radiation
+  const auto t_SR_input = input.getBlock("StructureRadiation");
+  auto SR_input =
+    t_SR_input ? *t_SR_input : IO::InputBlock{"StructureRadiation"};
+  if (input.has_option("help")) {
+    SR_input.add("help;");
+  }
+  SR_input.check(
+    {{"", "If this block is included, SR + Normalisation corrections will be "
+          "included (sum-over-states method only)"},
+     {"Qk_file", "true/false/filename - SR: filename for QkTable file. If "
+                 "blank will not use QkTable; if exists, will read it in; if "
+                 "doesn't exist, will create it and write to disk. If 'true' "
+                 "will use default filename"},
+     {"n_minmax", "list; min,max n for core/excited (internal): [1,inf]"},
+     {"n_max_legs",
+      "SR+N is applied to matrix elements whose states both have n <= this "
+      "(the valence legs, and the low-n intermediate states). SR+N is only "
+      "meaningful between physical states: the high-n basis states are "
+      "cavity states [default: max_n_core + 3]"},
+     {"norm", "Include the normalisation of states? If false, only the "
+              "structure radiation is included [true]"},
+     {"RPA_in_SR", "Include RPA in the SR+N diagrams [false]"}});
+
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
     return;
@@ -134,7 +124,9 @@ void dynamicPolarisability(const IO::InputBlock &input,
       << "Replacing spectrum states with corresponding valence states\n";
     for (const auto &Fv : wf.valence()) {
       auto it = std::find(spectrum.begin(), spectrum.end(), Fv);
-      *it = Fv;
+      if (it != spectrum.end()) {
+        *it = Fv;
+      }
     }
   }
   if (drop_continuum) {
@@ -221,79 +213,97 @@ void dynamicPolarisability(const IO::InputBlock &input,
     const auto w_initial = rpa_omegaQ ? w_list.front() : 0.0;
     dVE1.solve_core(w_initial);
   }
-  // if not rpa_omegaQ, then dV included in meTable
-  auto *const dVptr = rpa_omegaQ ? &dVE1 : nullptr;
+  // dV evaluated live from dVE1: if not rpa_omegaQ, it stays at w = 0
+  auto *const dVptr = rpaQ ? &dVE1 : nullptr;
+
+  // Mixed-states polarisabilities: alpha = A^0 / sqrt(3(2J+1)), with A^0 the
+  // K = 0 second-order amplitude for t = s = E1 at (w, -w). The core part is
+  // independent of the valence J (the sqrt cancels): use 2J = 1
+  const auto alpha_ms_valence = [&](const DiracSpinor &Fv, double w) {
+    return Amplitudes::ms_valence(0, Fv, Fv, &he1, &he1, w, -w, &dVE1, &dVE1,
+                                  wf.Sigma())
+             .first /
+           std::sqrt(3.0 * (Fv.twoj() + 1));
+  };
+  const auto alpha_ms_core = [&](double w) {
+    return Amplitudes::ms_core(0, 1, &he1, &he1, w, -w, wf.core(), &dVE1, &dVE1,
+                               wf.Sigma()) /
+           std::sqrt(6.0);
+  };
 
   // static (w=0) core part.
-  const auto ac0 = core_omegaQ ?
-                     0.0 :
-                     alphaD::core_tdhf(wf.core(), he1, dVE1, 0.0, wf.Sigma());
-
-  const auto StrucRadQ = input.get("SRN", false);
+  const auto ac0 = core_omegaQ ? 0.0 : alpha_ms_core(0.0);
 
   std::optional<MBPT::StructureRad> sr{std::nullopt};
-  const auto max_n_SR = input.get("max_n_SR", 9);
-  const auto rpa_in_SR = rpaQ && input.get("RPA_in_SR", false);
-  if (StrucRadQ) {
-    const auto n_min_core = input.get("n_min_core", 1);
-    const auto Qk_file_t = input.get("Qk_file", std::string{"false"});
-    std::string Qk_file =
+  const auto sr_n_max =
+    SR_input.get("n_max_legs", DiracSpinor::max_n(wf.core()) + 3);
+  const auto sr_norm = SR_input.get("norm", true);
+  const auto rpa_in_SR = rpaQ && SR_input.get("RPA_in_SR", false);
+  if (t_SR_input) {
+    const auto n_minmax = SR_input.get("n_minmax", std::vector{1});
+    const auto n_min = n_minmax.size() > 0 ? n_minmax[0] : 1;
+    const auto n_max = n_minmax.size() > 1 ? n_minmax[1] : 999;
+    const auto Qk_file_t = SR_input.get("Qk_file", std::string{"false"});
+    const std::string Qk_file =
       Qk_file_t != "false" ?
         Qk_file_t == "true" ? wf.identity() + ".qk.abf" : Qk_file_t :
         "";
-    sr = MBPT::StructureRad(wf.basis(), wf.FermiLevel(), {n_min_core, 99},
-                            Qk_file);
-    std::cout << "Including core states from n>=" << n_min_core
-              << " in diagrams\n";
-    std::cout << "Calculating SR+N for terms up to n=" << max_n_SR
-              << " in the sum-over-states\n";
+    std::cout << "\nIncluding structure radiation"
+              << (sr_norm ? " and normalisation:\n" : " (no normalisation):\n");
+    fmt::print("Applied to matrix elements with n <= {}\n", sr_n_max);
     if (rpa_in_SR) {
       std::cout << "Including RPA in SR+N\n";
     } else {
       std::cout << "Not including RPA in SR+N\n";
     }
     std::cout << std::flush;
+    sr =
+      MBPT::StructureRad(wf.basis(), wf.FermiLevel(), {n_min, n_max}, Qk_file);
     sr->solve_core(&he1, rpa_in_SR ? &dVE1 : nullptr);
   }
 
-  // build tables of matrix elements;
-  // Calculate these once, saves much time for calculation
-  // *note: relies on assumption that alphaD::..._sos always calls (n,v) or
-  // (n,c) and never (v,n) or (c,n)
-  Coulomb::meTable metab{};
-  if (method != "MS") {
-    IO::ChronoTimer t("Build meTable");
-    std::cout << "Building table of matrix elements.." << std::flush;
-    for (const auto &Fn : spectrum) {
-      // core part:
-      for (const auto &Fc : wf.core()) {
-        if (he1.isZero(Fn, Fc))
+  // SR (+Norm) corrections: expensive, so calculated once (at w = 0,
+  // ignoring their frequency dependence) and cached in a table. Only between
+  // physical (low-n) states, as ExternalField::me_table
+  Coulomb::meTable<double> sr_tab{};
+  if (sr) {
+    IO::ChronoTimer t("Build SR table");
+    std::cout << "Building table of SR matrix elements.." << std::flush;
+    for (const auto &Fv : states) {
+      if (Fv.n() > sr_n_max)
+        continue;
+      for (const auto &Fn : spectrum) {
+        if (Fn.n() > sr_n_max || he1.isZero(Fn, Fv))
           continue;
-        auto me = he1.reducedME(Fn, Fc);
-        if (rpaQ && !rpa_omegaQ) {
-          me += dVE1.dV(Fn, Fc);
-        }
-        metab.add(Fn, Fc, me); // *
-      }
-      // valence part:
-      for (const auto &Fv : states) {
-        if (he1.isZero(Fn, Fv))
-          continue;
-        auto me = he1.reducedME(Fn, Fv);
-        if (rpaQ && !rpa_omegaQ) {
-          me += dVE1.dV(Fn, Fv);
-        }
-        // Adds SR+Norm! (ignores freq. dependence)
-        if (sr && Fn.n() <= max_n_SR) {
-          const auto del_sr =
-            sr->srn(Fn, Fv, &he1, rpa_in_SR ? &dVE1 : nullptr, 0.0);
-          me += del_sr;
-        }
-        metab.add(Fn, Fv, me); // *
+        const auto *sr_dV = rpa_in_SR ? &dVE1 : nullptr;
+        sr_tab.add(Fn, Fv,
+                   sr_norm ? sr->srn(Fn, Fv, &he1, sr_dV, 0.0) :
+                             sr->SR(Fn, Fv, 0.0));
       }
     }
     std::cout << " Done.\n" << std::flush;
   }
+
+  // Full single-particle ME table at frequency w: t0 + dV(w) + SR. Cheap to
+  // rebuild each frequency: only the dV part varies (and the SR is cached)
+  const auto build_me_table = [&](double) {
+    Coulomb::meTable<double> t_me{};
+    for (const auto &Fv : states) {
+      for (const auto &Fn : spectrum) {
+        if (he1.isZero(Fn, Fv))
+          continue;
+        const auto me = he1.reducedME(Fn, Fv) +
+                        (dVptr ? dVptr->dV(Fn, Fv) : 0.0) + sr_tab.getv(Fn, Fv);
+        t_me.add(Fn, Fv, me);
+        t_me.add(Fv, Fn, he1.symm_sign(Fn, Fv) * me);
+      }
+    }
+    return t_me;
+  };
+
+  // Excited (above-Fermi) part of the spectrum, for the core sum
+  const auto excited =
+    DiracSpinor::split_by_energy(spectrum, wf.FermiLevel()).second;
 
   // Setup output optional file
   const auto of_name = input.get("filename", wf.identity() + ".txt");
@@ -343,14 +353,20 @@ void dynamicPolarisability(const IO::InputBlock &input,
         dVE1.solve_core(ww, 5, false);
       }
     }
+    // Full ME table at this frequency (SOS paths only)
+    const auto t_me = (method != "MS" || do_tensor) ?
+                        build_me_table(ww) :
+                        Coulomb::meTable<double>{};
+
     // MS method is fine for the core, and _much_ faster, and core contributes
     // negligably..so fine.
     const auto ac =
-      !core_omegaQ ?
-        ac0 :
-        (method == "MS" ?
-           alphaD::core_tdhf(wf.core(), he1, dVE1, ww, wf.Sigma()) :
-           alphaD::core_sos(wf.core(), spectrum, he1, dVptr, ww, &metab));
+      !core_omegaQ ? ac0 :
+                     (method == "MS" ?
+                        alpha_ms_core(ww) :
+                        Amplitudes::sos_core(0, 1, &he1, &he1, ww, -ww,
+                                             wf.core(), excited, dVptr, dVptr) /
+                          std::sqrt(6.0));
 
     if (print)
       printf("%9.2e %9.2e %9.2e ", ww, lambda, ac);
@@ -362,15 +378,25 @@ void dynamicPolarisability(const IO::InputBlock &input,
 #pragma omp parallel for if (method == "MS")
     for (auto iv = 0ul; iv < states.size(); ++iv) {
       const auto &Fv = states.at(iv);
+      // alpha = A^0 / sqrt(3(2j+1)); the table already holds dV and SR
       const auto av =
         method == "MS" ?
-          ac + alphaD::valence_tdhf(Fv, he1, dVE1, ww, wf.Sigma()) :
-          ac + alphaD::valence_sos(Fv, spectrum, he1, dVptr, ww, &metab);
+          ac + alpha_ms_valence(Fv, ww) :
+          ac + Amplitudes::sos_valence(0, Fv, Fv, &he1, &he1, ww, -ww, spectrum,
+                                       nullptr, nullptr, t_me, t_me) /
+                 std::sqrt(3.0 * (Fv.twoj() + 1));
       avs.at(iv) = av;
       if (do_tensor) {
-        const auto a2 =
-          alphaD::tensor2_sos(Fv, spectrum, he1, dVptr, ww, &metab);
-        a2s.at(iv) = a2;
+        // alpha_2 = factor * A^2 (zero automatically for j < 1)
+        const auto twoJ = double(Fv.twoj());
+        const auto factor2 =
+          twoJ < 2.0 ?
+            0.0 :
+            -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
+                       (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
+        a2s.at(iv) = factor2 * Amplitudes::sos_valence(
+                                 2, Fv, Fv, &he1, &he1, ww, -ww, spectrum,
+                                 nullptr, nullptr, t_me, t_me);
       }
     }
     for (auto &av : avs) {

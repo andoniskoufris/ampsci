@@ -440,7 +440,9 @@ void transitionPolarisability(const IO::InputBlock &input,
       << "Replacing spectrum states with corresponding valence states\n";
     for (const auto &tFv : wf.valence()) {
       auto it = std::find(spectrum.begin(), spectrum.end(), tFv);
-      *it = tFv;
+      if (it != spectrum.end()) {
+        *it = tFv;
+      }
     }
 
     const auto orthogonalise = input.get("orthogonalise", false);
