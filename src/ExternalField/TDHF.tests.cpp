@@ -92,6 +92,9 @@ TEST_CASE("External Field: TDHF basic unit tests",
 }
 
 //==============================================================================
+// Test data for TDHF
+namespace UnitTest::TDHF_test_data {
+
 struct TestData {
   std::string a, b;
   double h, rpa;
@@ -171,6 +174,10 @@ const std::vector<TestData> dzuba_hfs{{"6s+", "6s+", 1943.394, 2342.449},
                                       {"5d+", "5d+", 10.1202, -33.08472},
                                       {"4f-", "4f-", 0.05106033, 0.04225674},
                                       {"4f+", "4f+", 0.02838632, -0.01949691}};
+
+} // namespace UnitTest::TDHF_test_data
+
+using namespace UnitTest::TDHF_test_data;
 
 //-/-/----------------------------------------------------------------/////-----
 void test_RPA(const Wavefunction &wf, DiracOperator::TensorOperator &h,

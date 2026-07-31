@@ -222,6 +222,8 @@ TEST_CASE("DiracContinuum: large-r asymptotics", "[DiracContinuum][unit]") {
 // Bound * continuum radial integral test data, computed independently
 // in Mathematica; used by "bound-continuum integrals" test.
 // The data itself is listed at the bottom of this file:
+namespace UnitTest::Continuum_test_data {
+
 struct TestData {
   double z;
   double en;
@@ -235,6 +237,10 @@ struct TestData {
   double I_nr;
 };
 const std::vector<TestData> &integral_data();
+
+} // namespace UnitTest::Continuum_test_data
+
+using namespace UnitTest::Continuum_test_data;
 
 //==============================================================================
 TEST_CASE("DiracContinuum: bound-continuum integrals",
@@ -308,6 +314,7 @@ TEST_CASE("DiracContinuum: bound-continuum integrals",
 // {z, en, n, kappa, pow, I_rel, I_nr}
 // nb: It is actually Mathematica that appears to be the bottleneck here!
 // Numerics seem quite bad for
+namespace UnitTest::Continuum_test_data {
 const std::vector<TestData> &integral_data() {
   static const std::vector<TestData> data{
     {1, 0.1, 4, -1, -1, 0.10787864442207, 0.10787327289014},
@@ -480,3 +487,4 @@ const std::vector<TestData> &integral_data() {
     {10, 100., 4, -4, 1, -0.000023639463330421, -0.000023887816866755}};
   return data;
 }
+} // namespace UnitTest::Continuum_test_data

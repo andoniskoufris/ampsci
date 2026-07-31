@@ -4,6 +4,7 @@
 #include "MBPT/Feynman.hpp"
 #include "MBPT/Goldstone.hpp"
 #include "MBPT/Ladder.hpp"
+#include "MBPT/LadderDriver.hpp"
 #include "MBPT/RadialMatrix.hpp"
 #include "MBPT/Sigma2.hpp"
 #include "MBPT/SpinorMatrix.hpp"
