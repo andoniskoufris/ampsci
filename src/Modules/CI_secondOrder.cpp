@@ -93,9 +93,11 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       "states - e.g., '1-:0, 1-:1' removes the two lowest J=1 odd solutions "
       "from the sums [none]"},
      {"StructureRadiation{}",
-      "Options for structure radiation and normalisation. If this block is "
-      "included, SR+N is added to every single-particle matrix element used in "
-      "the amplitude: use with care"}});
+      "Options for structure radiation. If this block is included, SR is "
+      "added to every single-particle matrix element used in the amplitude: "
+      "use with care. The normalisation of states is NOT included: it cannot "
+      "be done with mixed states, which never resolve the individual "
+      "intermediate states. Use the CI_Pol module for that"}});
 
   // Check for Structure Radiation
   const auto t_SR_input = input.getBlock("StructureRadiation");
@@ -105,19 +107,17 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     SR_input.add("help;");
   }
   SR_input.check(
-    {{"", "If this block is included, SR + Normalisation corrections will be "
-          "included"},
+    {{"", "If this block is included, structure radiation will be included. "
+          "The normalisation of states is not available in this module"},
      {"Qk_file", "true/false/filename - SR: filename for QkTable file. If "
                  "blank will not use QkTable; if exists, will read it in; if "
                  "doesn't exist, will create it and write to disk. If 'true' "
                  "will use default filename"},
      {"n_minmax", "list; min,max n for core/excited (internal): [1,inf]"},
      {"n_max_legs",
-      "Max n of the CI basis states that SR+N is applied to. SR+N is only "
+      "Max n of the CI basis states that SR is applied to. SR is only "
       "meaningful between physical states, and the high-n states of the CI "
-      "basis are cavity states [default: max_n_core + 3]"},
-     {"norm", "Include the normalisation of states? If false, only the "
-              "structure radiation is included [true]"}});
+      "basis are cavity states [default: max_n_core + 3]"}});
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
@@ -277,7 +277,6 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // it is applied only to the low-n part of the CI basis
   const auto sr_n_max =
     SR_input.get("n_max_legs", DiracSpinor::max_n(wf.core()) + 3);
-  const auto sr_norm = SR_input.get("norm", true);
 
   std::optional<MBPT::StructureRad> sr;
   if (t_SR_input) {
@@ -289,8 +288,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       Qk_file_t != "false" ?
         (Qk_file_t == "true" ? wf.identity() + ".qk.abf" : Qk_file_t) :
         "";
-    std::cout << "\nIncluding structure radiation";
-    std::cout << (sr_norm ? " and normalisation:\n" : " (no normalisation):\n");
+    std::cout << "\nIncluding structure radiation (no normalisation):\n";
     std::cout << "Added to the single-particle matrix elements used in the "
                  "amplitude, including the internal lines\n";
     fmt::print("Applied to CI basis states with n <= {}\n", sr_n_max);
@@ -304,9 +302,10 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (sr) {
     sr->solve_core(ht.get(), rpa_t.get());
   }
-  // The normalisation is applied to the CI states, not to the single-particle
-  // matrix elements: it is a property of the state, so every valence electron
-  // contributes, the spectators included. See CI::norm_factor
+  // sr_norm is false: the normalisation of states must not go onto the
+  // single-particle matrix elements, which drops the spectator electrons. It
+  // is a property of the CI state; see CI::ReducedME_norm. It is not included
+  // in this module at all
   const auto t_me =
     ExternalField::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
                             sr ? &*sr : nullptr, omega, sr_n_max, false);
@@ -317,10 +316,6 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     ExternalField::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
                             sr ? &*sr : nullptr, omega_s, sr_n_max, false);
 
-  // One-body norm defect, for the CI states
-  const auto f_norm = sr && sr_norm ?
-                        CI::f_norm_table(*sr, ints.ci_basis, sr_n_max) :
-                        Coulomb::meTable<double>{};
   std::cout << "done\n" << std::flush;
 
   //----------------------------------------------------------------------------
@@ -328,7 +323,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   fmt::print("\nContributions to A^{}, by intermediate J and parity:\n", K);
   const auto [A_s, A_t] =
     CI::A_K(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me, hs.get(), s_me, omega,
-            omega_s, ints, levels_to_remove, f_norm);
+            omega_s, ints, levels_to_remove);
 
   //----------------------------------------------------------------------------
   // Intermediate states carrying a core hole. These lie outside the CI space,
@@ -349,36 +344,14 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     CI::A_K_cv(K, *Psi_b, ib, *Psi_a, ia, ht.get(), hs.get(), omega, omega_s,
                wf.core(), ints.ci_basis, rpa_t.get(), rpa_s.get());
 
-  // Normalisation of the external legs: A^K(1 + F_a + F_b). The intermediate
-  // states are done inside A_K; the core term has its own normalisation, which
-  // is a core-correlation quantity and is not included
-  const auto F_a = f_norm.empty() ? 0.0 : CI::norm_factor(*Psi_a, ia, f_norm);
-  const auto F_b = f_norm.empty() ? 0.0 : CI::norm_factor(*Psi_b, ib, f_norm);
-  const auto legs = 1.0 + F_a + F_b;
-
-  const auto A_total = legs * (A_s + A_cv) + A_core;
-
-  fmt::print("\nA^{}:\n", K);
-  fmt::print("valence (CI)  {:16.6e}\n", A_s);
-  fmt::print("core          {:16.6e}\n", A_core);
-  fmt::print("core-valence  {:16.6e}\n", A_cv);
-  if (!f_norm.empty()) {
-    fmt::print("norm (legs)   {:16.6e}   [F_a = {:.2e}, F_b = {:.2e}]\n",
-               (legs - 1.0) * (A_s + A_cv), F_a, F_b);
-  }
-  fmt::print("total         {:16.6e}\n", A_total);
-
-  // The z-component of the rank-K amplitude: m_a = m_b = m, and q = 0 for both
-  // operators
-  const auto two_m = std::min(Psi_a->twoJ(), Psi_b->twoJ());
-  const auto A_K0 =
-    A_total * CI::z_component(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ(), two_m);
-
-  fmt::print("\nA^{}_0 = {:.6e}   (z-component, m = {})\n", K, A_K0, two_m / 2);
+  // No normalisation of states anywhere: see the note on the SR block
+  const auto A_total = A_s + A_cv + A_core;
 
   //----------------------------------------------------------------------------
-  // Specific quantities, as in the dcp module. Only s is tested: t is E1 in
-  // all of these cases
+  // The second column of the table is the quantity that was asked for. For the
+  // specific cases below (as in the dcp module) that is alpha/beta/E_pnc;
+  // otherwise it is the z-component, A^K_0. Only s is tested: t is E1 in all
+  // of these cases
   const auto E1_s = hs->name() == "E1";
   const auto diagonal = Psi_a == Psi_b && ia == ib;
   // e.g., "Scalar polarisability", "Scalar dynamic polarisability",
@@ -386,12 +359,19 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto kind =
     " "s + (dynamic ? "dynamic "s : ""s) + (diagonal ? ""s : "transition "s);
 
+  // The z-component of the rank-K amplitude: m_a = m_b = m, and q = 0 for both
+  // operators
+  const auto two_m = std::min(Psi_a->twoJ(), Psi_b->twoJ());
+  auto title = fmt::format("z-component, m = {}", two_m / 2);
+  auto name = fmt::format("A^{}_0", K);
+  auto factor = CI::z_component(K, kt, ks, Psi_b->twoJ(), Psi_a->twoJ(), two_m);
+
   // Scalar polarisability
   if (K == 0 && E1_s) {
     // alpha_0 = (2/3)[J]^-1 sum_n |<a||d||n>|^2/(E_n-E_a), for a = b
-    const auto alpha = A_total / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
-    fmt::print("\nScalar{}polarisability:\n", kind);
-    fmt::print("alpha = {:.6e} au\n", alpha);
+    title = fmt::format("Scalar{}polarisability", kind);
+    name = "alpha (au)";
+    factor = 1.0 / std::sqrt(3.0 * (Psi_b->twoJ() + 1));
   }
 
   // Tensor polarisability. The normalisation comes from the m-dependence of
@@ -399,11 +379,10 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // there K=0 already implies it), and J >= 1
   if (K == 2 && E1_s && Psi_a->twoJ() == Psi_b->twoJ() && Psi_b->twoJ() >= 2) {
     const auto twoJ = double(Psi_b->twoJ());
-    const auto factor =
-      -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
-                 (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
-    fmt::print("\nTensor{}polarisability:\n", kind);
-    fmt::print("alpha_2 = {:.6e} au\n", factor * A_total);
+    title = fmt::format("Tensor{}polarisability", kind);
+    name = "alpha_2 (au)";
+    factor = -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
+                        (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
   }
 
   // Vector transition polarisability, beta = A^1/(sqrt(2) <b||sigma||a>).
@@ -417,15 +396,25 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       std::cout << "beta: not defined - the states have no spin-angular "
                    "structure in common\n";
     } else {
-      fmt::print("beta = {:.6e} au\n", A_total / (std::sqrt(2.0) * sigma));
+      title = fmt::format("Vector{}polarisability", kind);
+      name = "beta (au)";
+      factor = 1.0 / (std::sqrt(2.0) * sigma);
     }
   }
 
   // PNC amplitude: the static operator is the PNC interaction
   if (hs->name().substr(0, 3) == "pnc") {
-    fmt::print("\nPNC amplitude:\n");
-    fmt::print("E_pnc = A^{}_0 = {:.6e} {}\n", K, A_K0, hs->units());
+    title = "PNC amplitude";
+    name = fmt::format("E_pnc ({})", hs->units());
   }
+
+  //----------------------------------------------------------------------------
+  fmt::print("\n{}:\n", title);
+  fmt::print("{:<14} {:>16} {:>16}\n", "", fmt::format("A^{}", K), name);
+  fmt::print("{:<14} {:16.6e} {:16.6e}\n", "valence (CI)", A_s, factor * A_s);
+  fmt::print("{:<14} {:16.6e} {:16.6e}\n", "core", A_core, factor * A_core);
+  fmt::print("{:<14} {:16.6e} {:16.6e}\n", "core-valence", A_cv, factor * A_cv);
+  fmt::print("{:<14} {:16.6e} {:16.6e}\n", "total", A_total, factor * A_total);
 }
 
 } // namespace Module

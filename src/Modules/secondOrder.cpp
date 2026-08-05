@@ -408,50 +408,36 @@ void secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto A_total = A_v + A_core;
 
-  fmt::print("\nA^{}:\n", K);
-  fmt::print("{:<18}{:16.6e}\n", "valence", A_v);
-  fmt::print("    {:<14}{:16.6e}   [included in valence]\n", "core-valence",
-             A_cv);
-  if (have_main) {
-    fmt::print("    {:<14}{:16.6e}   [included in valence]\n",
-               fmt::format("main (n<={})", n_main), A_main);
-    fmt::print("    {:<14}{:16.6e}   [included in valence]\n", "tail",
-               A_v - A_cv - A_main);
-  }
-  if (diagonal && K == 0) {
-    fmt::print("{:<18}{:16.6e}\n", "core", A_core);
-  }
-  fmt::print("{:<18}{:16.6e}\n", "total", A_total);
-
-  // The z-component of the rank-K amplitude: m_a = m_b = m, and q = 0 for
-  // both operators
-  const auto two_m = std::min(Fa.twoj(), Fb.twoj());
-  const auto A_K0 =
-    A_total * CI::z_component(K, kt, ks, Fb.twoj(), Fa.twoj(), two_m);
-  fmt::print("\nA^{}_0 = {:.6e}   (z-component, m = {}/2)\n", K, A_K0, two_m);
-
   //----------------------------------------------------------------------------
-  // Specific quantities, as in the polarisability/pnc/dcp modules. Only s is
+  // The second column of the table is the quantity that was asked for. For the
+  // specific cases below (as in the polarisability/pnc/dcp modules) that is
+  // alpha/beta/E_pnc; otherwise it is the z-component, A^K_0. Only s is
   // tested: t is E1 in all of these cases
   const auto E1_s = hs->name() == "E1";
   const auto kind =
     " "s + (dynamic ? "dynamic "s : ""s) + (diagonal ? ""s : "transition "s);
 
+  // The z-component of the rank-K amplitude: m_a = m_b = m, and q = 0 for
+  // both operators
+  const auto two_m = std::min(Fa.twoj(), Fb.twoj());
+  auto title = fmt::format("z-component, m = {}/2", two_m);
+  auto name = fmt::format("A^{}_0", K);
+  auto factor = CI::z_component(K, kt, ks, Fb.twoj(), Fa.twoj(), two_m);
+
   // Scalar polarisability
   if (K == 0 && E1_s) {
-    const auto alpha = A_total / std::sqrt(3.0 * (Fb.twoj() + 1));
-    fmt::print("\nScalar{}polarisability:\n", kind);
-    fmt::print("alpha = {:.6e} au\n", alpha);
+    title = fmt::format("Scalar{}polarisability", kind);
+    name = "alpha (au)";
+    factor = 1.0 / std::sqrt(3.0 * (Fb.twoj() + 1));
   }
 
   // Tensor polarisability; requires j_a = j_b >= 1
   if (K == 2 && E1_s && Fa.twoj() == Fb.twoj() && Fb.twoj() >= 2) {
     const auto twoJ = double(Fb.twoj());
-    const auto factor =
-      -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
-                 (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
-    fmt::print("\nTensor{}polarisability:\n", kind);
-    fmt::print("alpha_2 = {:.6e} au\n", factor * A_total);
+    title = fmt::format("Tensor{}polarisability", kind);
+    name = "alpha_2 (au)";
+    factor = -std::sqrt(2.0 * twoJ * (twoJ - 1.0) /
+                        (3.0 * (twoJ + 1.0) * (twoJ + 2.0) * (twoJ + 3.0)));
   }
 
   // Vector transition polarisability, beta = A^1/(sqrt(2) <b||sigma||a>).
@@ -464,15 +450,35 @@ void secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     if (std::abs(sigma) < 1.0e-12) {
       std::cout << "beta: not defined - no spin-angular structure in common\n";
     } else {
-      fmt::print("beta = {:.6e} au\n", A_total / (std::sqrt(2.0) * sigma));
+      title = fmt::format("Vector{}polarisability", kind);
+      name = "beta (au)";
+      factor = 1.0 / (std::sqrt(2.0) * sigma);
     }
   }
 
   // PNC amplitude: the static operator is the PNC interaction
   if (hs->name().substr(0, 3) == "pnc") {
-    fmt::print("\nPNC amplitude:\n");
-    fmt::print("E_pnc = A^{}_0 = {:.6e} {}\n", K, A_K0, hs->units());
+    title = "PNC amplitude";
+    name = fmt::format("E_pnc ({})", hs->units());
   }
+
+  //----------------------------------------------------------------------------
+  fmt::print("\n{}:\n", title);
+  fmt::print("{:<18}{:>16} {:>16}\n", "", fmt::format("A^{}", K), name);
+  fmt::print("{:<18}{:16.6e} {:16.6e}\n", "valence", A_v, factor * A_v);
+  fmt::print("    {:<14}{:16.6e} {:16.6e}   [included in valence]\n",
+             "core-valence", A_cv, factor * A_cv);
+  if (have_main) {
+    fmt::print("    {:<14}{:16.6e} {:16.6e}   [included in valence]\n",
+               fmt::format("main (n<={})", n_main), A_main, factor * A_main);
+    const auto A_tail = A_v - A_cv - A_main;
+    fmt::print("    {:<14}{:16.6e} {:16.6e}   [included in valence]\n", "tail",
+               A_tail, factor * A_tail);
+  }
+  if (diagonal && K == 0) {
+    fmt::print("{:<18}{:16.6e} {:16.6e}\n", "core", A_core, factor * A_core);
+  }
+  fmt::print("{:<18}{:16.6e} {:16.6e}\n", "total", A_total, factor * A_total);
 }
 
 } // namespace Module

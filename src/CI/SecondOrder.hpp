@@ -260,12 +260,6 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
                  separately - e.g., with experimental energies. See @ref Level;
                  the CI problem for those (J, parity) is solved here, as far as
                  required.
-  @param f_norm  Table of the one-body norm defect (see @ref norm_factor). If
-                 given, the normalisation of the intermediate states is
-                 included: the \f$ 2F_n \f$ of
-                 \f$ (1+F_b+F_n)(1+F_n+F_a) \f$. The external legs are not
-                 touched - multiply the result by \f$ (1+F_a+F_b) \f$. Pass an
-                 empty table (the default) to leave it out.
   @param outstream  Stream for progress and the intermediate sums.
   @return The two evaluations of \f$ A^K \f$: with the mixed states of
           \f$ s \f$, and with those of \f$ t \f$.
@@ -281,11 +275,11 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
         PNC), since then the intermediate states have the opposite parity to
         \f$ a \f$ and \f$ b \f$.
 
-  @note The mixed states do not resolve the individual \f$ n \f$, so the
-        \f$ 2F_n \f$ is included as the operator \f$ \sum_i f(i) \f$, which is
-        diagonal in the CSFs. That differs from the per-eigenstate factor by
-        the off-diagonal \f$ F_{nn'} = \sum_I c^n_I c^{n'}_I F_I \f$, which
-        vanishes when \f$ F_I \f$ is the same for every CSF.
+  @note The normalisation of the intermediate states, the \f$ 2F_n \f$ of
+        \f$ (1+F_b+F_n)(1+F_n+F_a) \f$, is NOT included. It cannot be had from
+        a mixed state, which never resolves the individual \f$ n \f$; see the
+        discussion in Methods. Only the external legs can be applied, by
+        multiplying the result by \f$ (1+F_a+F_b) \f$.
 */
 [[nodiscard]] std::pair<double, double>
 A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
@@ -294,7 +288,6 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     const DiracOperator::TensorOperator *s,
     const Coulomb::meTable<double> &s_me, double omega, double omega_s,
     const Integrals &ints, const std::vector<Level> &levels_to_remove = {},
-    const Coulomb::meTable<double> &f_norm = {},
     std::ostream &outstream = std::cout);
 
 //==============================================================================

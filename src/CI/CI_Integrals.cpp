@@ -433,6 +433,18 @@ double ReducedME(const LinAlg::View<const double> &cA,
 }
 
 //==============================================================================
+double ReducedME_norm(const PsiJPi &As, std::size_t iA, const PsiJPi &Bs,
+                      std::size_t iB, const Coulomb::meTable<double> &h,
+                      const Coulomb::meTable<double> &f_norm, int K_rank,
+                      int Parity) {
+  if (f_norm.empty()) {
+    return 0.0;
+  }
+  const auto F = norm_factor(As, iA, f_norm) + norm_factor(Bs, iB, f_norm);
+  return F * ReducedME(As, iA, Bs, iB, h, K_rank, Parity);
+}
+
+//==============================================================================
 double norm_factor(const PsiJPi &Psi, std::size_t i,
                    const Coulomb::meTable<double> &f) {
 

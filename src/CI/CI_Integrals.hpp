@@ -321,6 +321,47 @@ inline double ReducedME(const PsiJPi &As, std::size_t iA, const PsiJPi &Bs,
 }
 
 /*!
+  @brief Normalisation-of-states correction to the reduced ME between two CI
+  states.
+  @details
+  The CI states are normalised in the model space, while the true states have
+  amplitude in the core-excited configurations that the CI does not span. The
+  physical matrix element is
+
+  \f[
+    \redmatel{A}{h}{B}_{\rm phys} = \redmatel{A}{h}{B}
+      + \redmatel{A}{h}{B}_{\rm norm},
+    \qquad
+    \redmatel{A}{h}{B}_{\rm norm} = (F_A + F_B)\,\redmatel{A}{h}{B},
+  \f]
+
+  where \f$ F_X \f$ is the norm defect of the CI state; see @ref norm_factor.
+
+  The correction belongs to the CI states, not to the single-particle matrix
+  elements: the norm defect \f$ \sum_i f(i) \f$ is a one-body operator summed
+  over every valence electron, so the spectators contribute. Adding
+  \f$ f_{v'} + f_v \f$ to each single-particle matrix element instead keeps
+  only the two orbitals the operator connects, which is exact for one valence
+  electron only.
+
+  @param As,Bs   CI solution containers for the two states.
+  @param iA,iB   Solution indices within @p As and @p Bs.
+  @param h       Lookup table of single-particle reduced matrix elements. It
+                 must not already include the normalisation; build it with
+                 `sr_norm = false` (see ExternalField::me_table).
+  @param f_norm  Table of the one-body norm defect; see @ref f_norm_table. If
+                 empty, the correction is zero.
+  @param K_rank  Rank of the tensor operator.
+  @param Parity  Parity of the operator (+1 or -1).
+  @return The correction \f$ \redmatel{A}{h}{B}_{\rm norm} \f$.
+*/
+[[nodiscard]] double ReducedME_norm(const PsiJPi &As, std::size_t iA,
+                                    const PsiJPi &Bs, std::size_t iB,
+                                    const Coulomb::meTable<double> &h,
+                                    const Coulomb::meTable<double> &f_norm,
+                                    int K_rank, int Parity);
+
+/*!
   @brief Normalisation factor of a CI state,
   \f$ F_X = \matel{X}{\sum_i f(i)}{X} \f$.
   @details

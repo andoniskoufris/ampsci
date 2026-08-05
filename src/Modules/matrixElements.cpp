@@ -520,14 +520,12 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
 
     const auto factor = h->matel_factor(matel_type, wfA.twoJ(), wfB.twoJ());
 
-    // Normalisation of states: <B||h||A>(1 + F_B + F_A)
-    const auto norm = f_norm.empty() ? 1.0 :
-                                       1.0 + CI::norm_factor(wfA, iA, f_norm) +
-                                         CI::norm_factor(wfB, iB, f_norm);
-
+    // Normalisation of states: <A||h||B>(1 + F_A + F_B)
     const auto me =
-      norm * factor *
-      CI::ReducedME(wfA, iA, wfB, iB, me_tab, h->rank(), h->parity());
+      factor *
+      (CI::ReducedME(wfA, iA, wfB, iB, me_tab, h->rank(), h->parity()) +
+       CI::ReducedME_norm(wfA, iA, wfB, iB, me_tab, f_norm, h->rank(),
+                          h->parity()));
 
     auto p1 = wfA.parity() == 1 ? '+' : '-';
     auto p2 = wfB.parity() == 1 ? '+' : '-';

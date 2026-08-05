@@ -51,24 +51,6 @@ double sigma_rme(const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
 }
 
 //==============================================================================
-// Multiplies the CSF coefficients of a mixed state by the normalisation factor
-// F_I of each CSF; the one-body operator sum_i f(i) is diagonal in the CSFs
-static PsiJPi scale_by_norm(PsiJPi dPsi, const Coulomb::meTable<double> &f) {
-
-  const auto &CSFs = dPsi.CSFs();
-  const auto energy = dPsi.energy(0);
-
-  LinAlg::Vector<double> cF(CSFs.size());
-  for (std::size_t I = 0; I < CSFs.size(); ++I) {
-    const auto [v, w] = CSFs.at(I).states;
-    cF[I] = dPsi.coef(0, I) * (f.getv(v, v) + f.getv(w, w));
-  }
-
-  dPsi.set_solution(energy, cF);
-  return dPsi;
-}
-
-//==============================================================================
 std::pair<double, double>
 A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     std::size_t ia, const DiracOperator::TensorOperator *t,
@@ -76,10 +58,11 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     const DiracOperator::TensorOperator *s,
     const Coulomb::meTable<double> &s_me, double omega, double omega_s,
     const Integrals &ints, const std::vector<Level> &levels_to_remove,
-    const Coulomb::meTable<double> &f_norm, std::ostream &outstream) {
+    std::ostream &outstream) {
 
-  // Normalisation of the intermediate states: the 2F_n of the two vertices
-  const auto do_norm = !f_norm.empty();
+  // The normalisation of the intermediate states is not included: it cannot be
+  // had from a mixed state, which never resolves the individual solutions. The
+  // external legs, (1 + F_a + F_b), are applied by the caller
 
   // The amplitude, evaluated with the mixed states of s, and of t
   double A_s{0.0};
@@ -154,14 +137,6 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
                       target, indices);
         ts_t = symm_sign(t, twoJb, twoJn) *
                ReducedME(Db, 0, Psi_a, ia, s_me, ks, s->parity());
-
-        if (do_norm) {
-          ts_s += 2.0 * ReducedME(Psi_b, ib, scale_by_norm(da, f_norm), 0, t_me,
-                                  kt, t->parity());
-          ts_t += 2.0 * symm_sign(t, twoJb, twoJn) *
-                  ReducedME(scale_by_norm(Db, f_norm), 0, Psi_a, ia, s_me, ks,
-                            s->parity());
-        }
       }
 
       if (do_st) {
@@ -176,14 +151,6 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
           target, indices);
         st_s = symm_sign(s, twoJb, twoJn) *
                ReducedME(db, 0, Psi_a, ia, t_me, kt, t->parity());
-
-        if (do_norm) {
-          st_t += 2.0 * ReducedME(Psi_b, ib, scale_by_norm(Da, f_norm), 0, s_me,
-                                  ks, s->parity());
-          st_s += 2.0 * symm_sign(s, twoJb, twoJn) *
-                  ReducedME(scale_by_norm(db, f_norm), 0, Psi_a, ia, t_me, kt,
-                            t->parity());
-        }
       }
 
       // Contributions to A^K. With the mixed states of s, the 'ts' term is
