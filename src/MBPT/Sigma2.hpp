@@ -102,6 +102,8 @@ split_basis(const std::vector<DiracSpinor> &basis, double E_Fermi,
   @param excited      Excited (particle) states (internal lines).
   @param SixJ         Precomputed 6-j symbol table.
   @param denominators Energy denominator convention: see \ref MBPT::Denominators.
+  @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
+                      Missing (or empty) implies 1.0 (no screening).
 
   @return \f$ S^k_{vwxy} \f$.
 */
@@ -110,7 +112,8 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
                const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
                const std::vector<DiracSpinor> &excited,
                const Angular::SixJTable &SixJ,
-               Denominators denominators = Denominators::Fermi0);
+               Denominators denominators = Denominators::Fermi0,
+               const std::vector<double> &fk = {});
 
 /*!
   @brief Selection rule for \f$ S^k_{vwxy} \f$.
@@ -199,6 +202,7 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   @param exclude_wrong_parity_box If true, excludes box diagrams with "wrong" parity.
   @param denominators             RS, Fermi, Fermi0: see \ref MBPT::Denominators
   @param no_new_integrals         If true, only reads existing intergals; no new computation.
+  @param fk                       Screening factors; fk[k] scales the k-th Coulomb line.
 
   @note no_new_integrals - if we _know_ all required integrals are already in the 
   file to be read in, saves time.
@@ -211,7 +215,8 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   const std::string &filename, const std::vector<DiracSpinor> &external,
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
-  Denominators denominators, bool no_new_integrals = false);
+  Denominators denominators, bool no_new_integrals = false,
+  const std::vector<double> &fk = {});
 
 //==============================================================================
 //==============================================================================
@@ -232,6 +237,7 @@ namespace Sigma2 {
   @param excited      Excited states.
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
+  @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
 
   @return Diagrams a+b contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -240,7 +246,8 @@ double S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const Coulomb::QkTable &qk,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
-                   const Angular::SixJTable &SixJ, Denominators denominators);
+                   const Angular::SixJTable &SixJ, Denominators denominators,
+                   const std::vector<double> &fk = {});
 
 /*!
   @brief Diagram c1 contribution to the reduced two-body Sigma.
@@ -254,6 +261,7 @@ double S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
   @param excited      Excited states.
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
+  @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
 
   @return Diagram c1 contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -262,7 +270,8 @@ double S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const Coulomb::QkTable &qk,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
-                   const Angular::SixJTable &SixJ, Denominators denominators);
+                   const Angular::SixJTable &SixJ, Denominators denominators,
+                   const std::vector<double> &fk = {});
 
 /*!
   @brief Diagram c2 contribution to the reduced two-body Sigma.
@@ -276,6 +285,7 @@ double S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
   @param excited      Excited states.
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
+  @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
 
   @return Diagram c2 contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -284,7 +294,8 @@ double S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const Coulomb::QkTable &qk,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
-                   const Angular::SixJTable &SixJ, Denominators denominators);
+                   const Angular::SixJTable &SixJ, Denominators denominators,
+                   const std::vector<double> &fk = {});
 
 /*!
   @brief Diagram d contribution to the reduced two-body Sigma.
@@ -298,6 +309,7 @@ double S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
   @param excited      Excited states.
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
+  @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
 
   @return Diagram d contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -306,7 +318,8 @@ double S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
                   const Coulomb::QkTable &qk,
                   const std::vector<DiracSpinor> &core,
                   const std::vector<DiracSpinor> &excited,
-                  const Angular::SixJTable &SixJ, Denominators denominators);
+                  const Angular::SixJTable &SixJ, Denominators denominators,
+                  const std::vector<double> &fk = {});
 
 } // namespace Sigma2
 
