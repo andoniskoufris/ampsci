@@ -18,6 +18,7 @@
 #include <array>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <vector>
 
 namespace CI {
@@ -80,15 +81,19 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "energies. RS uses actual energies for all external legs, Fermi uses the "
      "lowest excited state for each kappa (both legs), Fermi0 uses lowest "
      "excited state for all kappas (and thus cancels in all except diagram "
-     "'d'). [DFK]"},
+     "'d'). Applies to Sigma_2 only. [DFK]"},
     {"qk_file",
      "Filename for storing two-body Coulomb integrals. By default, is "
      "~ At.qk, where At is atomic symbol + 'identity'. Set to 'false' to "
      "disable read/write."},
     {"sk_file",
      "Filename for storing two-body Sigma_2 integrals. By default, is "
-     "At_n_b_k.sk, where At is atomic symbol, n is n_min_core, b is "
-     "cis2_basis, k is max_k. Set to 'false' to disable read/write."},
+     "At_n_b_k_d[_fk].sk, where At is atomic symbol, n is n_min_core, b is "
+     "s2 (internal) basis, k is max_k, d is the denominators mode, and _fk "
+     "is appended if screening factors are set. Set to 'false' to disable "
+     "read/write. Note: convenience cache only. Stored integrals are re-used "
+     "as-is; the fk _values_ and other settings are not check - it is the "
+     "user's responsibility to delete the file when changing those."},
     {"bk_file", "Filename for storing two-body Breit integrals. By default, is "
                 "~ At.bk, where At is atomic symbol + 'identity'. Set to "
                 "'false' to disable read/write."},
@@ -231,6 +236,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
   const auto denominators_str = input.get("denominators", "DFK"s);
   const auto denominators = MBPT::parse_Denominators(denominators_str);
+
+  // Screening factors for Sigma_2 (fk[k] scales k-th Coulomb line)
+  const auto fk = input.get("fk", std::vector<double>{});
 
   //----------------------------------------------------------------------------
 
@@ -411,15 +419,18 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   if (include_Sigma2) {
 
     // Here, write basis info into filename, since these are _internal_ lines!
+    // Also encode denominators mode and fk (settings that change the values).
+    // nb: fk _values_ and exclude_wrong_parity_box are not encoded: it is the
+    // user's responsibility to delete the file when changing those.
     const auto Sk_filename =
       input.get("sk_file", wf.identity() + "_" + std::to_string(n_min_core) +
                              "_" + DiracSpinor::state_config(excited_s2) +
                              (max_k_Coulomb >= 0 && max_k_Coulomb < 50 ?
                                 "_" + std::to_string(max_k_Coulomb) :
                                 "") +
-                             br_string + ".sk.abf");
+                             "_" + MBPT::parse_Denominators(denominators) +
+                             (fk.empty() ? "" : "_fk") + br_string + ".sk.abf");
 
-    const auto fk = input.get("fk", std::vector<double>{});
     // output screening factors to check
     for (std::size_t i = 0; i < fk.size(); ++i) {
       std::cout << "Element number " << i
@@ -456,6 +467,34 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   if (!ci_fname.empty()) {
     std::cout << "CI solutions file: " << ci_fname << "\n";
   }
+
+  // Settings key for the ci solutions file: settings that change the CI
+  // Hamiltonian, but are not encoded in the (default) filename. If the key
+  // stored in an existing file does not match, the file is not read, and is
+  // discarded (started fresh) on the next write.
+  std::string ci_settings_key = "max_k=" + std::to_string(max_k_Coulomb);
+  if (include_Sigma1 && !Brueckner) {
+    ci_settings_key += "; s1_basis=" + DiracSpinor::state_config(s1_basis) +
+                       "; n_min_core=" + std::to_string(n_min_core);
+  }
+  if (include_Sigma2) {
+    std::ostringstream fk_stream;
+    for (std::size_t i = 0; i < fk.size(); ++i) {
+      fk_stream << (i == 0 ? "" : ",") << fk[i];
+    }
+    ci_settings_key +=
+      "; s2_basis=" + DiracSpinor::state_config(s2_basis) +
+      "; cis2_basis=" + DiracSpinor::state_config(cis2_basis) +
+      "; n_min_core=" + std::to_string(n_min_core) +
+      "; denominators=" + MBPT::parse_Denominators(denominators) +
+      "; wrong_parity_box=" + (exclude_wrong_parity_box ? "no" : "yes") +
+      "; fk=" + (fk.empty() ? "none" : fk_stream.str());
+  }
+  if (!Bk.emptyQ()) {
+    ci_settings_key +=
+      "; Breit_basis=" +
+      input.get("Breit_basis", std::to_string(N_max_core + 6) + "spdf");
+  }
   const auto sort_output = input.get("sort_output", false);
   const auto print_details = input.get("print_details", true);
 
@@ -476,7 +515,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
       levels.at(i) = run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm,
                             h1, qk, Bk, Sk, include_Sigma2, print_details,
-                            read_only, std::cout, ci_fname);
+                            read_only, std::cout, ci_fname, ci_settings_key);
     }
   }
 
@@ -559,7 +598,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only,
-              std::ostream &outstream, const std::string &ci_fname) {
+              std::ostream &outstream, const std::string &ci_fname,
+              const std::string &ci_settings_key) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -586,7 +626,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
 
   // Try to read existing solutions from file
   bool read_ok =
-    !ci_fname.empty() && psi.read_write(ci_fname, IO::FRW::read, outstream);
+    !ci_fname.empty() &&
+    psi.read_write(ci_fname, IO::FRW::read, outstream, ci_settings_key);
   const auto num_read_solutions = (int)psi.num_solutions();
 
   // Solve only if we don't have enough solutions already
@@ -626,7 +667,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     }
 
     if (!ci_fname.empty()) {
-      psi.read_write(ci_fname, IO::FRW::write, outstream);
+      psi.read_write(ci_fname, IO::FRW::write, outstream, ci_settings_key);
     }
   } else {
     outstream << "Using " << psi.num_solutions()

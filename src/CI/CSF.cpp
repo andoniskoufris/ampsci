@@ -7,6 +7,7 @@
 #include <array>
 #include <cassert>
 #include <cctype>
+#include <cstring>
 #include <iostream>
 
 namespace CI {
@@ -287,7 +288,8 @@ const ConfigInfo &PsiJPi::info(std::size_t i) const {
 
 //==============================================================================
 bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
-                        std::ostream &outstream) {
+                        std::ostream &outstream,
+                        const std::string &settings_key) {
   using IO::FRW::rw_binary;
   const bool readQ = (rw == IO::FRW::read);
 
@@ -299,6 +301,9 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
   };
   // Bytes of one sector's prefix: twoJ + pi + num_csfs
   constexpr std::size_t prefix_bytes = 2 * sizeof(int) + sizeof(std::size_t);
+  // Bytes of the file header: magic + key string (length + characters)
+  const auto header_bytes = static_cast<std::streamoff>(
+    8 + sizeof(std::size_t) + settings_key.length());
 
   // Write this sector's payload (num_solutions, E, M) to an open stream
   const auto write_payload = [&](std::fstream &f) {
@@ -325,12 +330,45 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
     return false;
   }
 
-  // Scan file for matching (twoJ, pi) sector; record its offset if found
-  std::streamoff match_offset = -1;
-  std::size_t match_num_csfs = 0;
+  // The file always begins with a settings-key header (magic bytes + key
+  // string); sector data follows. The file is only used if the stored key
+  // matches the given one (a file with no header is an old format: refused).
+  constexpr char magic[8] = {'a', 'm', 'p', 's', 'c', 'i', 'K', '1'};
+  std::string file_key;
   if (IO::FRW::file_exists(fname)) {
     std::fstream f;
     IO::FRW::open_binary(f, fname, IO::FRW::read);
+    char buff[sizeof(magic)];
+    f.read(buff, sizeof(magic));
+    // nb: magic check required before reading the key string (a file without
+    // the header would give a garbage string length)
+    if (f.good() && std::memcmp(buff, magic, sizeof(magic)) == 0) {
+      rw_binary(f, IO::FRW::read, file_key);
+    }
+  }
+
+  const bool key_mismatch =
+    IO::FRW::file_exists(fname) && file_key != settings_key;
+  if (key_mismatch) {
+    outstream << "\nNote: CI settings differ from those in file: " << fname
+              << "\n"
+              << "  stored : " << file_key << "\n"
+              << "  current: " << settings_key << "\n";
+    if (readQ) {
+      outstream << "Not reading CI solutions from this file; they will be "
+                   "re-calculated\n(and the file overwritten).\n";
+      return false;
+    }
+    outstream << "Discarding existing file: overwriting with new settings.\n";
+  }
+
+  // Scan file for matching (twoJ, pi) sector; record its offset if found
+  std::streamoff match_offset = -1;
+  std::size_t match_num_csfs = 0;
+  if (!key_mismatch && IO::FRW::file_exists(fname)) {
+    std::fstream f;
+    IO::FRW::open_binary(f, fname, IO::FRW::read);
+    f.seekg(header_bytes);
     while (f) {
       const auto pos = f.tellg();
       int twoj = 0, pi = 0;
@@ -383,6 +421,11 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
            static_cast<std::streamsize>(nc * sizeof(double)));
     f.read(reinterpret_cast<char *>(M.data()),
            static_cast<std::streamsize>(nc * nc * sizeof(double)));
+    if (!f) {
+      // corrupt file: sector prefix was valid, but payload incomplete
+      outstream << "\nCannot read from " << fname << ": file truncated?\n";
+      return false;
+    }
     m_Solution.first = LinAlg::Vector<double>(std::move(E));
     m_Solution.second = LinAlg::Matrix<double>(nc, nc, std::move(M));
     m_Info.resize(m_num_solutions);
@@ -397,7 +440,22 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
               << " (" << m_num_solutions << " solutions) to " << fname << "\n";
   }
 
-  if (match_offset >= 0) {
+  // Writes the settings-key header (magic + key) to an open stream
+  const auto write_header = [&](std::fstream &f) {
+    f.write(magic, sizeof(magic));
+    auto key_copy = settings_key;
+    rw_binary(f, IO::FRW::write, key_copy);
+  };
+
+  if (key_mismatch) {
+    // Settings changed: discard entire file, start fresh with the new key.
+    // (Must not mix sectors calculated with different settings)
+    std::fstream f;
+    IO::FRW::open_binary(f, fname, IO::FRW::write);
+    write_header(f);
+    rw_binary(f, IO::FRW::write, m_twoj, m_pi, nc);
+    write_payload(f);
+  } else if (match_offset >= 0) {
     // Sector exists: overwrite in-place (payload size fixed by num_csfs)
     if (match_num_csfs != nc) {
       outstream << "\nCannot write to " << fname << ": CSF count mismatch "
@@ -414,7 +472,9 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
     std::fstream f;
     IO::FRW::open_binary(f, fname, IO::FRW::update);
     if (!f) {
+      // New file: starts with the settings-key header
       IO::FRW::open_binary(f, fname, IO::FRW::write);
+      write_header(f);
     }
     f.seekp(0, std::ios::end);
     rw_binary(f, IO::FRW::write, m_twoj, m_pi, nc);

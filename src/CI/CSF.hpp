@@ -287,14 +287,26 @@ public:
     in-place using @ref IO::FRW::update. If it is a new sector, appends it to
     the end of the file -- no rewrite of existing data.
 
+    The file always begins with a settings-key header (magic bytes + key
+    string). On read, a key mismatch (or an old-format file with no header)
+    means nothing is read, and a note is printed; the stale file is kept. On
+    write, a mismatch means the entire file is discarded (truncated) and
+    re-started with the new key -- this prevents mixing sectors calculated
+    with different settings.
+
     @param fname  Path to the binary file.
     @param rw     @ref IO::FRW::read to read; @ref IO::FRW::write to write.
+    @param outstream    Output stream for progress/notes.
+    @param settings_key Key describing settings that affect solutions; stored
+                        in the file header and checked on read/write.
 
     @return True on success; false if the file does not exist (read), the sector
-            is not found (read), or num_csfs mismatches.
+            is not found (read), num_csfs mismatches, or the settings key
+            mismatches (read).
   */
   bool read_write(const std::string &fname, IO::FRW::RoW rw,
-                  std::ostream &outstream = std::cout);
+                  std::ostream &outstream = std::cout,
+                  const std::string &settings_key = "");
 };
 
 } // namespace CI

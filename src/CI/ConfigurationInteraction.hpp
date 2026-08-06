@@ -110,16 +110,29 @@ namespace CI {
       // uses actual energies for all external legs, Fermi uses
       // the lowest excited state for each kappa (both legs),
       // Fermi0 uses lowest excited state for all kappas (and
-      // thus cancels in all except diagram 'd'). [DFK]
+      // thus cancels in all except diagram 'd'). Applies to
+      // Sigma_2 only: Sigma_1 is always evaluated at a fixed
+      // energy per kappa (the lowest valence state, or the
+      // energy the correlation potential was formed at), which
+      // coincides with the DFK/Fermi convention. Applies to
+      // *new* integrals only: existing sk file integrals are
+      // re-used as-is (the default sk_file name encodes this
+      // setting). [DFK]
     qk_file;
       // Filename for storing two-body Coulomb integrals. By
       // default, is ~ At.qk, where At is atomic symbol +
       // 'identity'. Set to 'false' to disable read/write.
     sk_file;
       // Filename for storing two-body Sigma_2 integrals. By
-      // default, is At_n_b_k.sk, where At is atomic symbol, n
-      // is n_min_core, b is cis2_basis, k is max_k. Set to
-      // 'false' to disable read/write.
+      // default, is At_n_b_k_d[_fk].sk, where At is atomic
+      // symbol, n is n_min_core, b is s2 (internal) basis, k is
+      // max_k, d is the denominators mode, and _fk is appended
+      // if screening factors are set. Set to 'false' to disable
+      // read/write. Note: convenience cache only. Stored
+      // integrals are re-used as-is; the fk _values_ and
+      // exclude_wrong_parity_box are not encoded in the
+      // filename - it is the user's responsibility to delete
+      // the file when changing those.
     bk_file;
       // Filename for storing two-body Breit integrals. By
       // default, is ~ At.bk, where At is atomic symbol +
@@ -203,7 +216,12 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                       the eigenvalue problem is not solved, and nothing is
                       written [default: false].
   @param outstream    Output stream for progress and results [default: stdout].
-  @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion 
+  @param ci_fname     Filename for reading/writing CI solutions ("" disables).
+  @param ci_settings_key Settings key stored in the solutions file header:
+                      if it does not match the key in an existing file, the
+                      file is not read, and is discarded on the next write
+                      (see @ref PsiJPi::read_write).
+  @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion
   coefficients for the requested solutions.
 */
 PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
@@ -212,6 +230,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only = false,
               std::ostream &outstream = std::cout,
-              const std::string &ci_fname = "");
+              const std::string &ci_fname = "",
+              const std::string &ci_settings_key = "");
 
 } // namespace CI

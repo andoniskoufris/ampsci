@@ -148,6 +148,33 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
   }
 
   //-----------------------------------------------------------------------
+  // Settings-key header in the ci solutions file
+
+  {
+    std::string key_fname = "deleteme_" + qip::random_string(3) + ".ci.abf";
+    const auto key_basis = CI::basis_subset(wf.basis(), "4sp");
+    CI::PsiJPi psi{0, +1, key_basis};
+    psi.set_solution(-1.0, LinAlg::Vector<double>(psi.CSFs().size()));
+    // write with key A; read back ok with key A, refused with key B
+    REQUIRE(psi.read_write(key_fname, IO::FRW::write, std::cout, "key_A"));
+    CI::PsiJPi psi2{0, +1, key_basis};
+    REQUIRE(psi2.read_write(key_fname, IO::FRW::read, std::cout, "key_A"));
+    CI::PsiJPi psi3{0, +1, key_basis};
+    REQUIRE(!psi3.read_write(key_fname, IO::FRW::read, std::cout, "key_B"));
+    // write with key B: discards old file, starts fresh; then read with B ok
+    CI::PsiJPi psi4{2, +1, key_basis};
+    psi4.set_solution(-0.5, LinAlg::Vector<double>(psi4.CSFs().size()));
+    REQUIRE(psi4.read_write(key_fname, IO::FRW::write, std::cout, "key_B"));
+    // old (key A) sector was discarded:
+    CI::PsiJPi psi5{0, +1, key_basis};
+    REQUIRE(!psi5.read_write(key_fname, IO::FRW::read, std::cout, "key_B"));
+    // new (key B) sector present:
+    CI::PsiJPi psi6{2, +1, key_basis};
+    REQUIRE(psi6.read_write(key_fname, IO::FRW::read, std::cout, "key_B"));
+    REQUIRE(psi6.energy(0) == Approx(-0.5));
+  }
+
+  //-----------------------------------------------------------------------
   // basic/Misc tests
 
   // Term(int two_J, int L, int two_S, int parity)
