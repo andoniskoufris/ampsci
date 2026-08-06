@@ -74,6 +74,8 @@ split_basis(const std::vector<DiracSpinor> &basis, double E_Fermi,
 
 //==============================================================================
 double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited) {
+  // Assumes excited is sorted by energy, so first match of each kappa is the
+  // lowest (true in practice).
   const auto v_bar = std::find_if(
     excited.cbegin(), excited.cend(),
     [kappa_v](const DiracSpinor &n) { return n.kappa() == kappa_v; });
@@ -486,6 +488,73 @@ Coulomb::LkTable calculate_Sk(const std::string &filename,
   }
   std::cout << "\n" << std::flush;
   return Sk;
+}
+
+//==============================================================================
+std::vector<double> average_hk(const Coulomb::LkTable &Sk,
+                               const Coulomb::QkTable &qk,
+                               const std::vector<DiracSpinor> &external,
+                               int max_k) {
+  // Only integrals with |Q^k| above this contribute to the average:
+  const double q_cut = 1.0e-3;
+
+  const auto tj_max = DiracSpinor::max_tj(external);
+  const auto k_max = max_k < 0 ? tj_max : std::min(max_k, tj_max);
+
+  std::vector<double> hk(std::size_t(k_max + 1), 0.0);
+  std::vector<double> sum(std::size_t(k_max + 1), 0.0);
+  std::vector<long> num(std::size_t(k_max + 1), 0);
+
+  // Parallel over k: each k accumulates independently
+#pragma omp parallel for
+  for (int k = 0; k <= k_max; ++k) {
+    for (const auto &v : external) {
+      for (const auto &w : external) {
+        for (const auto &x : external) {
+          for (const auto &y : external) {
+            const auto [k0, k1] = Coulomb::k_minmax_Q(v, w, x, y);
+            if (k < k0 || k > k1 || (k - k0) % 2 != 0)
+              continue;
+            const auto s = Sk.Q(k, v, w, x, y);
+            if (s == 0.0)
+              continue;
+            const auto q = qk.Q(k, v, w, x, y);
+            if (std::abs(q) < q_cut)
+              continue;
+            sum[std::size_t(k)] += s / q;
+            ++num[std::size_t(k)];
+          }
+        }
+      }
+    }
+  }
+  for (std::size_t k = 0; k < hk.size(); ++k) {
+    if (num[k] > 0) {
+      hk[k] = sum[k] / double(num[k]);
+    }
+  }
+  return hk;
+}
+
+//==============================================================================
+void extrapolate_Sk(Coulomb::LkTable &Sk, const Coulomb::QkTable &qk,
+                    const std::vector<double> &hk,
+                    const std::vector<DiracSpinor> &external, int max_k) {
+
+  const auto extrap = [&qk, &hk](int k, const DiracSpinor &v,
+                                 const DiracSpinor &w, const DiracSpinor &x,
+                                 const DiracSpinor &y) {
+    const auto h = k < (int)hk.size() ? hk[std::size_t(k)] : 0.0;
+    return h * qk.Q(k, v, w, x, y);
+  };
+  const auto Qk_SR = [](int k, const DiracSpinor &v, const DiracSpinor &w,
+                        const DiracSpinor &x, const DiracSpinor &y) {
+    return Coulomb::Qk_abcd_SR(k, v, w, x, y);
+  };
+
+  // fill() only computes entries not already in the table, so the
+  // calculated integrals are untouched
+  Sk.fill(external, extrap, Qk_SR, max_k);
 }
 
 } // namespace MBPT

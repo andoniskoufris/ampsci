@@ -1,6 +1,8 @@
 #include "CI_Integrals.hpp"
 #include "ConfigurationInteraction.hpp"
+#include "Coulomb/include.hpp"
 #include "IO/InputBlock.hpp"
+#include "MBPT/Sigma2.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "catch2/catch.hpp"
 #include "qip/Random.hpp"
@@ -143,6 +145,58 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
       REQUIRE(ac.size() == bc.size());
       for (std::size_t k = 0; k < ac.size(); ++k) {
         REQUIRE(ac[k] == Approx(bc[k]));
+      }
+    }
+  }
+
+  //-----------------------------------------------------------------------
+  // Sigma_2 extrapolation
+
+  {
+    const auto &ints = solution_2.integrals;
+
+    // Table with S^k = Q^k for a small subset: ratio S/Q = 1 exactly
+    Coulomb::LkTable Sk_test;
+    const auto S_eq_Q = [&ints](int k, const DiracSpinor &a,
+                                const DiracSpinor &b, const DiracSpinor &c,
+                                const DiracSpinor &d) {
+      return ints.qk.Q(k, a, b, c, d);
+    };
+    const auto Qk_SR = [](int k, const DiracSpinor &a, const DiracSpinor &b,
+                          const DiracSpinor &c, const DiracSpinor &d) {
+      return Coulomb::Qk_abcd_SR(k, a, b, c, d);
+    };
+    const auto sub_basis = CI::basis_subset(ints.ci_basis, "3sp");
+    Sk_test.fill(sub_basis, S_eq_Q, Qk_SR, 8, false);
+
+    // Average correction ratios: exactly 1 for every k with data
+    const auto hk = MBPT::average_hk(Sk_test, ints.qk, sub_basis, 8);
+    bool any_data = false;
+    for (const auto &h : hk) {
+      if (h != 0.0) {
+        any_data = true;
+        REQUIRE(h == Approx(1.0));
+      }
+    }
+    REQUIRE(any_data);
+
+    // Extrapolate with hk = 1 for all k: then S^k = Q^k everywhere, and
+    // Sigma2_AB must equal the Coulomb part for every CSF pair
+    const std::vector<double> hk_1(10, 1.0);
+    MBPT::extrapolate_Sk(Sk_test, ints.qk, hk_1, ints.ci_basis, 8);
+    for (const auto &psi0 : CIWFs) {
+      const auto twoJ = psi0.twoJ();
+      const auto n_csf = std::min(psi0.CSFs().size(), std::size_t(6));
+      for (std::size_t i = 0; i < n_csf; ++i) {
+        for (std::size_t j = 0; j <= i; ++j) {
+          const auto &A = psi0.CSF(i);
+          const auto &B = psi0.CSF(j);
+          const auto s2_x = CI::Sigma2_AB(A, B, twoJ, Sk_test);
+          const auto [v, w] = A.states;
+          const auto [x, y] = B.states;
+          const auto coulomb = CI::CSF2_Coulomb(ints.qk, v, w, x, y, twoJ);
+          REQUIRE(s2_x == Approx(coulomb).margin(1.0e-12));
+        }
       }
     }
   }

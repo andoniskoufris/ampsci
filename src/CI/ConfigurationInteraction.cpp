@@ -105,22 +105,27 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "If true, will *only* read in the existing CI solutions, and will not "
      "calculate anything new, even if new states are requested. You must set "
      "the ci_basis (not read in) and the J/pi solutions you want; only these "
-     "will be read in. Use if you "
-     "know CI has already been completed. [false]"},
+     "will be read in. Use if you know CI has already been completed. [false]"},
     {"no_new_integrals",
      "Usually false. If set to true, ampsci will not calculate any new "
      "Coulomb or Sigma_2 integrals, even if they are implied by the above "
      "settings. This saves time when we know all required integrals already "
      "exist, since the code doesn't need to check. [false]"},
-    {"exclude_wrong_parity_box",
-     "Excludes the Sigma_2 box corrections that "
-     "have 'wrong' parity when calculating Sigma2 matrix elements. Note: If "
-     "existing sk file already has these, they will be included [false]"},
     {"sort_output", "Sort output by energy? Default is to sort by J and Pi "
                     "first. [false]"},
     {"print_details", "Condition to print details of each CI solution "
                       "(otherwise just prints summary) [true]"},
-    {"fk", "vector of screening factors for Sigma 2"},
+    {"fk", "List of effective QPQ ~ fk Q screening factors; used for for Sigma "
+           "2 only. To screen Sigma1, using Feynman correlation potential"},
+    {"extrapolate_sigma2",
+     "Extrapolate Sigma_2 to diagrams outside cis2_basis, using average "
+     "correction ratios: S^k ~ h_k*Q^k, where h_k = <S^k/Q^k> is averaged over "
+     "the calculated Sigma_2 integrals. Note: These are stored in the Sk "
+     "table, but NOT written to disk [true]"},
+    {"exclude_wrong_parity_box",
+     "Excludes the Sigma_2 box corrections that "
+     "have 'wrong' parity when calculating Sigma2 matrix elements. Note: If "
+     "existing sk file already has these, they will be included [false]"},
   });
 
   // construct first, for RVO
@@ -239,6 +244,10 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
   // Screening factors for Sigma_2 (fk[k] scales k-th Coulomb line)
   const auto fk = input.get("fk", std::vector<double>{});
+
+  // Extrapolate Sigma_2 (via average screening) for diagrams outside
+  // cis2_basis
+  const auto extrapolate_sigma2 = input.get("extrapolate_sigma2", true);
 
   //----------------------------------------------------------------------------
 
@@ -447,6 +456,21 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     Sk = MBPT::calculate_Sk(Sk_filename, cis2_basis, core_s2, excited_s2, qk,
                             max_k_Coulomb, exclude_wrong_parity_box,
                             denominators, no_new_integralsQ, fk);
+
+    if (extrapolate_sigma2) {
+      const auto hk = MBPT::average_hk(Sk, qk, cis2_basis, max_k_Coulomb);
+      std::cout << "Extrapolating Sigma_2 beyond cis2 basis, using average "
+                   "correction ratios:\n ";
+      for (std::size_t k = 0; k < hk.size(); ++k) {
+        fmt::print(" h{}={:.4f},", k, hk[k]);
+      }
+      std::cout << "\n";
+      // Adds extrapolated entries into (in-memory) Sk table directly:
+      // NB: The writing of sk to disk happens above
+      // These are _NOT_ written to disk. These are cheap, and that allows
+      // easy updating of cis2 basis
+      MBPT::extrapolate_Sk(Sk, qk, hk, ci_sp_basis, max_k_Coulomb);
+    }
   }
 
   //----------------------------------------------------------------------------
@@ -488,7 +512,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       "; n_min_core=" + std::to_string(n_min_core) +
       "; denominators=" + MBPT::parse_Denominators(denominators) +
       "; wrong_parity_box=" + (exclude_wrong_parity_box ? "no" : "yes") +
-      "; fk=" + (fk.empty() ? "none" : fk_stream.str());
+      "; fk=" + (fk.empty() ? "none" : fk_stream.str()) +
+      "; extrapolate_sigma2=" + (extrapolate_sigma2 ? "yes" : "no");
   }
   if (!Bk.emptyQ()) {
     ci_settings_key +=

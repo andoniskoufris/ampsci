@@ -46,7 +46,8 @@ struct Integrals {
   Coulomb::QkTable qk{};
   //! Two-body Breit integrals, B^k; empty if not included
   Coulomb::WkTable Bk{};
-  //! Two-body Sigma_2 integrals, S^k; empty if not included
+  //! Two-body Sigma_2 integrals, S^k; empty if not included.
+  //! May include extrapolated entries (see MBPT::extrapolate_Sk)
   Coulomb::LkTable Sk{};
 
   //! False if the tables were never calculated (e.g., CI was run 'read_only')

@@ -93,7 +93,6 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
     const auto sjs = Angular::sixj_2(tjv, tjw, twoJ, tjy, tjx, 2 * k);
     if (sjs == 0.0)
       continue;
-    // const auto Sk_abcd = MBPT::Sk_vwxy(k, a, b, c, d, qk, core, excited, SixJ);
     const auto Sk_abcd = Sk.Q(k, v, w, x, y);
     const auto s = Angular::neg1pow_2(tjv + tjx + 2 * k + twoJ);
     out += s * sjs * Sk_abcd;
@@ -117,7 +116,6 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
     const auto sjs = Angular::sixj_2(tjv, tjw, twoJ, tjx, tjy, 2 * k);
     if (sjs == 0.0)
       continue;
-    // const auto Sk_abdc = MBPT::Sk_vwxy(k, a, b, d, c, qk, core, excited, SixJ);
     const auto Sk_abdc = Sk.Q(k, v, w, y, x);
     const auto s = Angular::neg1pow_2(tjv + tjx + 2 * k);
     out += s * sjs * Sk_abdc;

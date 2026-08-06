@@ -154,6 +154,15 @@ namespace CI {
     print_details;
       // Condition to print details of each CI solution
       // (otherwise just prints summary) [true]
+    fk;
+      // Vector of screening factors for Sigma_2 (fk[k] scales
+      // the k-th Coulomb line). []
+    extrapolate_sigma2;
+      // Extrapolate Sigma_2 to diagrams outside cis2_basis,
+      // using average correction ratios: S^k ~ hk*Q^k, where
+      // hk = <S/Q> is averaged over the calculated Sigma_2
+      // integrals. Note: These are stored in the Sk table, but
+      // NOT written to disk [true]
   }
   @endcode
   * Always check for up-to-date options from command line: `$ ampsci -i CI`
