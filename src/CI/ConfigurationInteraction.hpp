@@ -103,12 +103,14 @@ namespace CI {
       // terms, they will be included. Set negative (or very
       // large) to include all k. [8]
     denominators;
-      // 'RS', 'Fermi', 'Fermi0'. Denominators used in Sigma2
-      // matrix elements. RS uses actual states for external
-      // legs, Fermi uses the lowest excited state for each
-      // kappa, Fermi0 uses lowest excited state for all
-      // kappas (and thus cancels in all except diagram 'd').
-      // [Fermi0]
+      // 'DFK', 'RS', 'Fermi', 'Fermi0'. Denominators used in
+      // Sigma2 matrix elements. DFK (Dzuba-Flambaum-Kozlov):
+      // target-state legs use the lowest excited state of their
+      // kappa, intermediate-state legs use actual energies. RS
+      // uses actual energies for all external legs, Fermi uses
+      // the lowest excited state for each kappa (both legs),
+      // Fermi0 uses lowest excited state for all kappas (and
+      // thus cancels in all except diagram 'd'). [DFK]
     qk_file;
       // Filename for storing two-body Coulomb integrals. By
       // default, is ~ At.qk, where At is atomic symbol +

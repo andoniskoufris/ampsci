@@ -542,6 +542,47 @@ TEST_CASE("MBPT: Sigma2", "[MBPT][Sigma2][CI][unit]") {
             } else {
               REQUIRE(sk3 == 0.0);
             }
+
+            // DFK denominators: Lk and bra-ket (Hermitian) symmetries
+            const double dfk1 = MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited,
+                                              SixJ, MBPT::Denominators::DFK);
+            const double dfk2 = MBPT::Sk_vwxy(k, w, v, y, x, qk, core, excited,
+                                              SixJ, MBPT::Denominators::DFK);
+            const double dfk3 = MBPT::Sk_vwxy(k, x, y, v, w, qk, core, excited,
+                                              SixJ, MBPT::Denominators::DFK);
+            REQUIRE(dfk2 == Approx(dfk1));
+            REQUIRE(dfk3 == Approx(dfk1));
+          }
+        }
+      }
+    }
+  }
+
+  // When every external leg is the lowest excited state of its kappa,
+  // e_bar equals the actual energy, so DFK, RS, and Fermi all coincide
+  std::vector<DiracSpinor> lowest;
+  for (const auto &n : excited) {
+    const auto same_kappa = [&n](const auto &m) {
+      return m.kappa() == n.kappa();
+    };
+    if (n.l() <= 2 && std::find_if(lowest.begin(), lowest.end(), same_kappa) ==
+                        lowest.end()) {
+      lowest.push_back(n);
+    }
+  }
+  for (const auto &v : lowest) {
+    for (const auto &w : lowest) {
+      for (const auto &x : lowest) {
+        for (const auto &y : lowest) {
+          for (int k = 0; k <= kmax; ++k) {
+            const double s_dfk = MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited,
+                                               SixJ, MBPT::Denominators::DFK);
+            const double s_rs = MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited,
+                                              SixJ, MBPT::Denominators::RS);
+            const double s_f = MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited,
+                                             SixJ, MBPT::Denominators::Fermi);
+            REQUIRE(s_dfk == Approx(s_rs));
+            REQUIRE(s_dfk == Approx(s_f));
           }
         }
       }

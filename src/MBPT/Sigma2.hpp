@@ -8,10 +8,11 @@
 
 namespace MBPT {
 
-/*! @brief Type of energy demoninators: RS, Fermi, Fermi0
+/*! @brief Type of energy denominators: DFK, RS, Fermi, Fermi0
 
- - RS     : Use actual orbital energies for external legs. May be danger of accidental enhancement.
- - Fermi  : Use energy from the "Fermi" level (i.e., lowest state for given kappa in excited spectrum).
+ - DFK    : Dzuba-Flambaum-Kozlov convention (Brillouin-Wigner-like, with the target-state energy approximated by the lowest configuration). The external leg belonging to the target state is evaluated at the Fermi level (lowest state for its kappa in excited spectrum); the external leg appearing in the intermediate state keeps its actual orbital energy. Retains state dependence, with no danger of accidental enhancement.
+ - RS     : Use actual orbital energies for both external legs. May be danger of accidental enhancement.
+ - Fermi  : Both external legs evaluated at the Fermi level for their kappa.
  - Fermi0 : As above, but assume Fermi level for all kappas the same. These often cancel, so there is no (excited-excited) term in denominator (except diagram d). Fine, since the remaining core-excited always dominates.
 
 In each case, each diagram is averaged with its bra-ket partner,
@@ -21,12 +22,12 @@ this order in PT. For Fermi0 the two partners coincide.
 
 Energy for internal legs (hole-particle) always actual orbtials.
 */
-enum class Denominators { RS, Fermi, Fermi0 };
+enum class Denominators { RS, Fermi, Fermi0, DFK };
 
 //! Returns string representation of Denominators enum
 std::string parse_Denominators(Denominators d);
 
-//! Parses string to Denominators enum (case-insensitive); returns Fermi0 if unrecognised
+//! Parses string to Denominators enum (case-insensitive); returns DFK if unrecognised
 Denominators parse_Denominators(std::string_view s);
 
 /*!
@@ -112,7 +113,7 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
                const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
                const std::vector<DiracSpinor> &excited,
                const Angular::SixJTable &SixJ,
-               Denominators denominators = Denominators::Fermi0,
+               Denominators denominators = Denominators::DFK,
                const std::vector<double> &fk = {});
 
 /*!
@@ -200,7 +201,7 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   @param qk                       Precomputed Coulomb integral table (QkTable).
   @param max_k                    Maximum multipolarity to include.
   @param exclude_wrong_parity_box If true, excludes box diagrams with "wrong" parity.
-  @param denominators             RS, Fermi, Fermi0: see \ref MBPT::Denominators
+  @param denominators             DFK, RS, Fermi, Fermi0: see \ref MBPT::Denominators
   @param no_new_integrals         If true, only reads existing intergals; no new computation.
   @param fk                       Screening factors; fk[k] scales the k-th Coulomb line.
 
