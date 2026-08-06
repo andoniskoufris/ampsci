@@ -49,8 +49,7 @@ double sos_valence(int K, const DiracSpinor &Fb, const DiracSpinor &Fa,
                    const ExternalField::CorePolarisation *dVt,
                    const ExternalField::CorePolarisation *dVs,
                    const Coulomb::meTable<double> &t_me,
-                   const Coulomb::meTable<double> &s_me, double denom_min,
-                   std::ostream &outstream) {
+                   const Coulomb::meTable<double> &s_me) {
 
   if (Fb.parity() * Fa.parity() != t->parity() * s->parity())
     return 0.0;
@@ -61,7 +60,6 @@ double sos_valence(int K, const DiracSpinor &Fb, const DiracSpinor &Fa,
   const auto ks = s->rank();
 
   double A = 0.0;
-  std::size_t n_skipped = 0;
 
   for (const auto &n : spectrum) {
 
@@ -71,31 +69,16 @@ double sos_valence(int K, const DiracSpinor &Fb, const DiracSpinor &Fa,
     // 'ts' term: s takes a -> n, t takes n -> b
     if (c1 != 0.0 && !t->isZero(Fb, n) && !s->isZero(n, Fa)) {
       const auto denom = Fa.en() + omega_s - n.en();
-      if (std::abs(denom) < denom_min) {
-        ++n_skipped;
-      } else {
-        A += c1 * table_me(t_me, t, dVt, Fb, n) *
-             table_me(s_me, s, dVs, n, Fa) / denom;
-      }
+      A += c1 * table_me(t_me, t, dVt, Fb, n) * table_me(s_me, s, dVs, n, Fa) /
+           denom;
     }
 
     // 'st' term: t takes a -> n, s takes n -> b
     if (c2 != 0.0 && !s->isZero(Fb, n) && !t->isZero(n, Fa)) {
       const auto denom = Fa.en() + omega - n.en();
-      if (std::abs(denom) < denom_min) {
-        ++n_skipped;
-      } else {
-        A += c2 * table_me(s_me, s, dVs, Fb, n) *
-             table_me(t_me, t, dVt, n, Fa) / denom;
-      }
+      A += c2 * table_me(s_me, s, dVs, Fb, n) * table_me(t_me, t, dVt, n, Fa) /
+           denom;
     }
-  }
-
-  if (n_skipped > 0) {
-    fmt::print(outstream,
-               "Warning: sos_valence skipped {} near-degenerate terms "
-               "(|denominator| < {:.1e})\n",
-               n_skipped, denom_min);
   }
 
   return A;

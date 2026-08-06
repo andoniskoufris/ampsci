@@ -124,16 +124,14 @@ namespace Amplitudes {
                  operator. May be nullptr. Ignored for table entries.
   @param t_me,s_me  Optional tables of single-particle reduced matrix
                  elements; empty (default) to calculate directly.
-  @param denom_min  Terms with |denominator| below this are skipped (and
-                 counted, reported to @p outstream).
-  @param outstream  Stream for warnings.
   @return \f$ A^K \f$ (valence part).
 
   @note Degenerate denominators arise for even-parity operator pairs (an
         intermediate state degenerate with \f$ \en_a + \omega \f$; e.g.
-        n = a for a static diagonal amplitude). Such terms are skipped;
-        near-degenerate states should be treated separately (cf. the
-        project-out treatment in the pnc module).
+        n = a for a static diagonal amplitude). Such terms diverge, and
+        nothing is skipped here: remove the offending states from the sum
+        and treat them separately (cf. the project-out treatment in the
+        pnc module).
 */
 [[nodiscard]] double
 sos_valence(int K, const DiracSpinor &Fb, const DiracSpinor &Fa,
@@ -143,8 +141,7 @@ sos_valence(int K, const DiracSpinor &Fb, const DiracSpinor &Fa,
             const ExternalField::CorePolarisation *dVt = nullptr,
             const ExternalField::CorePolarisation *dVs = nullptr,
             const Coulomb::meTable<double> &t_me = {},
-            const Coulomb::meTable<double> &s_me = {},
-            double denom_min = 1.0e-8, std::ostream &outstream = std::cout);
+            const Coulomb::meTable<double> &s_me = {});
 
 /*!
   @brief Contribution to A^K from the polarisation of the closed core, by
