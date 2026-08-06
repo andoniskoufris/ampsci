@@ -508,10 +508,11 @@ double Lkmnij_loop(int k, const DiracSpinor &m, const DiracSpinor &n,
     SL2(k, m, n, i, j, qk, core, excited, Lk, e_i, e_m);
   // Optionally include "4th" ladder diagram
   // nb: L4 not fully checked!
-  if (include_L4)
+  if (include_L4) {
     return L123SL12 + L4_loop(k, m, n, i, j, qk, core, SixJ, Lk, Sk, e_m);
-  else
+  } else {
     return L123SL12;
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -877,8 +878,6 @@ double SQS1(int k, const DiracSpinor &m, const DiracSpinor &n,
   const auto k_factor = Angular::neg1pow_2(2 * k) / (2.0 * k + 1.0);
   const auto eim = e_i.value_or(i.en()) - e_m.value_or(m.en());
 
-  // (n,j) change on every call so a cross-call cache for Q^u_{cnjr} would never
-  // hit; look up inline (only for pairs surviving selection rules).
   const auto core_size = core.size();
   const auto excited_size = excited.size();
 

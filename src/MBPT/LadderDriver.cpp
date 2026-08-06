@@ -272,6 +272,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "No new Lk integrals required\n";
   }
   lk_next = lk;
+  sk_next = sk;
 
   // convert to inverse cm
   const auto icm = PhysConst::Hartree_invcm;
