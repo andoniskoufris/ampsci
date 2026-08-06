@@ -95,9 +95,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"StructureRadiation{}",
       "Options for structure radiation. If this block is included, SR is "
       "added to every single-particle matrix element used in the amplitude: "
-      "use with care. The normalisation of states is NOT included: it cannot "
-      "be done with mixed states, which never resolve the individual "
-      "intermediate states. Use the CI_Pol module for that"}});
+      "use with care. The normalisation of states is NOT included"}});
 
   // Check for Structure Radiation
   const auto t_SR_input = input.getBlock("StructureRadiation");

@@ -60,10 +60,6 @@ A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
     const Integrals &ints, const std::vector<Level> &levels_to_remove,
     std::ostream &outstream) {
 
-  // The normalisation of the intermediate states is not included: it cannot be
-  // had from a mixed state, which never resolves the individual solutions. The
-  // external legs, (1 + F_a + F_b), are applied by the caller
-
   // The amplitude, evaluated with the mixed states of s, and of t
   double A_s{0.0};
   double A_t{0.0};

@@ -275,11 +275,7 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
         PNC), since then the intermediate states have the opposite parity to
         \f$ a \f$ and \f$ b \f$.
 
-  @note The normalisation of the intermediate states, the \f$ 2F_n \f$ of
-        \f$ (1+F_b+F_n)(1+F_n+F_a) \f$, is NOT included. It cannot be had from
-        a mixed state, which never resolves the individual \f$ n \f$; see the
-        discussion in Methods. Only the external legs can be applied, by
-        multiplying the result by \f$ (1+F_a+F_b) \f$.
+  @note The normalisation of states is NOT included.
 */
 [[nodiscard]] std::pair<double, double>
 A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
