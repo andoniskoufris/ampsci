@@ -139,9 +139,6 @@ namespace CI {
     print_details;
       // Condition to print details of each CI solution
       // (otherwise just prints summary) [true]
-    parallel_ci;
-      // Run CI in parallel (solve each J/Pi in parallel).
-      // Faster, uses slightly more memory [true]
   }
   @endcode
   * Always check for up-to-date options from command line: `$ ampsci -i CI`
