@@ -80,4 +80,16 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
   return sum * (1.0 / v.twojp1());
 }
 
+//==============================================================================
+template <class CoulombIntegral>
+double dSigma_dE_vw(const DiracSpinor &v, const DiracSpinor &w,
+                    const CoulombIntegral &qk,
+                    const std::vector<DiracSpinor> &core,
+                    const std::vector<DiracSpinor> &excited, double ev,
+                    int max_l_internal, double delta) {
+  const auto Sp = Sigma_vw(v, w, qk, core, excited, max_l_internal, ev + delta);
+  const auto Sm = Sigma_vw(v, w, qk, core, excited, max_l_internal, ev - delta);
+  return (Sp - Sm) / (2.0 * delta);
+}
+
 } // namespace MBPT

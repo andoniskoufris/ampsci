@@ -4,7 +4,9 @@
 #include "Coulomb/meTable.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/Sigma2.hpp" //temp - remove after refactor
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 class DiracDiracSpinor;
 namespace MBPT {
@@ -16,6 +18,135 @@ class Breit;
 }
 
 namespace CI {
+
+//==============================================================================
+/*!
+  @brief Resummed derivative (dSigma/dE) correction to a Sigma_1 matrix
+  element (Kozlov formula).
+  @details
+  Returns the corrected matrix element,
+
+  \f[
+    \Sigma \to \Sigma \left[ 1 - \delta E \, (d\Sigma/dE)/\Sigma \right]^{-1},
+  \f]
+
+  which resums the linear expansion
+  \f$ \Sigma(\epsilon_0 + \delta E) \approx \Sigma + \delta E \, d\Sigma/dE \f$.
+
+  Guard: if the corrected value exceeds \f$ |\Sigma| \f$, then
+  \f$ \delta E \, (d\Sigma/dE) \f$ is approaching \f$ \Sigma \f$, where the
+  expression diverges; the correction is distrusted, and the uncorrected
+  \f$ \Sigma \f$ is returned.
+
+  @param Sigma   Matrix element \f$ \langle a|\Sigma_1|b\rangle \f$.
+  @param dSigma  Energy derivative, \f$ \langle a|d\Sigma_1/dE|b\rangle \f$.
+  @param dE      Energy shift \f$ \delta E \f$ from the energy Sigma_1 was
+                 evaluated at.
+  @return Corrected matrix element.
+*/
+double corrected_Sigma(double Sigma, double dSigma, double dE);
+
+//==============================================================================
+/*!
+  @brief Derivative (dSigma/dE) correction data for the one-body Sigma_1
+  matrix elements.
+  @details
+  Restores the state dependence of Sigma_1, which is otherwise evaluated at a
+  fixed energy for each kappa. Each one-body matrix element entering a CI
+  matrix element is corrected via @ref corrected_Sigma, with
+
+  \f[
+    \delta E = E_0 - E_\Sigma(\kappa) - \epsilon_{\rm spectator},
+  \f]
+
+  where \f$ E_0 \f$ is the reference total two-electron valence energy,
+  \f$ E_\Sigma(\kappa) \f$ is the energy Sigma_1 was evaluated at, and
+  \f$ \epsilon_{\rm spectator} \f$ is the orbital energy of the spectator
+  electron in the determinant.
+
+  Fill with @ref calculate_dSdE_correction; applied by Hab() (as a correction
+  on top of an h1 table that already includes Sigma_1).
+
+  @note The tables are agnostic to how Sigma_1 is calculated: to use the
+        Feynman (all-orders) Sigma, fill S1 and dS1 from the
+        CorrelationPotential (formSigma at two energies) instead of
+        MBPT::Sigma_vw / MBPT::dSigma_dE_vw.
+*/
+struct Sigma1Correction {
+  //! One-body Sigma_1 matrix elements (uncorrected), <a|Sigma_1|b>
+  Coulomb::meTable<double> S1{};
+  //! Energy derivative matrix elements, <a|dSigma_1/dE|b>
+  Coulomb::meTable<double> dS1{};
+  //! Energy Sigma_1 was evaluated at, for each kappa
+  std::map<int, double> e_sigma{};
+  //! Single-particle orbital energies, keyed by nk_index
+  std::map<DiracSpinor::Index, double> en{};
+  //! Reference total two-electron valence energy
+  double E0{0.0};
+
+  [[nodiscard]] bool empty() const { return dS1.empty(); }
+
+  /*!
+    @brief Correction to the one-body matrix element <a|h1|b>, given the
+    spectator orbital.
+    @details
+    Returns \f$ \Sigma_{\rm corrected} - \Sigma \f$, i.e., the amount to add
+    to an h1 matrix element that already includes (uncorrected) Sigma_1.
+    Returns zero for orbitals not in the tables.
+  */
+  [[nodiscard]] double delta_h1(DiracSpinor::Index a, DiracSpinor::Index b,
+                                DiracSpinor::Index spectator) const;
+};
+
+/*!
+  @brief Builds the Sigma_1 derivative-correction tables; see
+  @ref Sigma1Correction.
+  @details
+  For each same-kappa pair in @p ci_basis, computes the (uncorrected) Sigma_1
+  matrix element and its energy derivative (central finite difference of
+  MBPT::Sigma_vw). Sigma_1 is evaluated at the energy of the first state of
+  each kappa in @p ci_basis - the same convention as calculate_h1_table(), so
+  the stored S1 matches the Sigma_1 included in the h1 table.
+
+  @param ci_basis          Basis states for which table entries are needed.
+  @param s1_basis_core     Core states used as internal lines for Sigma_1.
+  @param s1_basis_excited  Excited states used as internal lines for Sigma_1.
+  @param qk                Table of Coulomb \f$ Q^k \f$ integrals.
+  @param E0                Reference total two-electron valence energy (au).
+  @return Filled Sigma1Correction tables.
+*/
+[[nodiscard]] Sigma1Correction
+calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
+                          const std::vector<DiracSpinor> &s1_basis_core,
+                          const std::vector<DiracSpinor> &s1_basis_excited,
+                          const Coulomb::QkTable &qk, double E0);
+
+/*!
+  @brief Finds the reference energy E0 for the derivative correction
+  self-consistently; updates @p s1_corr.E0 in place.
+  @details
+  The CI is first solved with no correction, and E0 set to the lowest energy
+  over the given (J, parity) sectors; the CI is then re-solved with the
+  correction included and E0 updated, repeating until E0 converges (or
+  @p max_iterations is reached). Each pass is cheap: the integral tables are
+  fixed, so only the Hamiltonian construction and lowest eigenvalue are
+  repeated.
+
+  @param s1_corr        Correction tables; E0 is updated in place.
+  @param ci_basis       Single-particle basis for the CI expansion.
+  @param J_pi_list      {2J, parity} pairs of the sectors to include.
+  @param h1             One-body matrix element table (includes Sigma_1).
+  @param qk             Coulomb \f$ Q^k \f$ table.
+  @param Bk             Pointer to Breit table; ignored if nullptr.
+  @param Sk             Pointer to \f$ \Sigma_2 \f$ table; ignored if nullptr.
+  @param max_iterations Maximum number of E0 update passes.
+*/
+void iterate_E0(Sigma1Correction &s1_corr,
+                const std::vector<DiracSpinor> &ci_basis,
+                const std::vector<std::pair<int, int>> &J_pi_list,
+                const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
+                const Coulomb::WkTable *Bk = nullptr,
+                const Coulomb::LkTable *Sk = nullptr, int max_iterations = 10);
 
 //==============================================================================
 /*!
@@ -49,6 +180,8 @@ struct Integrals {
   //! Two-body Sigma_2 integrals, S^k; empty if not included.
   //! May include extrapolated entries (see MBPT::extrapolate_Sk)
   Coulomb::LkTable Sk{};
+  //! Derivative (dSigma/dE) correction for Sigma_1; empty if not included
+  Sigma1Correction s1_corr{};
 
   //! False if the tables were never calculated (e.g., CI was run 'read_only')
   [[nodiscard]] bool availableQ() const {
@@ -152,10 +285,14 @@ double CSF2_Breit(const Coulomb::WkTable &Bk, DiracSpinor::Index v,
   @param twoJ  Twice the total angular momentum 2J.
   @param h1    Table of one-body matrix elements \f$ \langle a | h_1 | b \rangle \f$.
   @param qk    Table of Coulomb \f$ Q^k \f$ integrals.
+  @param s1c   Optional derivative (dSigma/dE) correction to Sigma_1; applied
+               to each one-body matrix element (with the spectator orbital
+               energy) if given. See @ref Sigma1Correction.
   @return CI Hamiltonian matrix element \f$ H_{AB} \f$.
 */
 double Hab(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
-           const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk);
+           const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
+           const Sigma1Correction *s1c = nullptr);
 
 /*!
   @brief Two-body \f$ \Sigma_2 \f$ correction to Hab().
@@ -461,13 +598,16 @@ std::string Term_Symbol(int L, int two_S, int parity);
   @param qk    Coulomb \f$ Q^k \f$ integral table.
   @param Bk    Pointer to Breit \f$ W^k \f$ table; ignored if nullptr.
   @param Sk    Pointer to \f$ \Sigma_2 \f$ \f$ L^k \f$ table; ignored if nullptr.
+  @param s1c   Pointer to derivative (dSigma/dE) correction for Sigma_1;
+               ignored if nullptr. See @ref Sigma1Correction.
   @return Full CI Hamiltonian matrix in the CSF basis.
 */
 LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
                                      const Coulomb::meTable<double> &h1,
                                      const Coulomb::QkTable &qk,
                                      const Coulomb::WkTable *Bk = nullptr,
-                                     const Coulomb::LkTable *Sk = nullptr);
+                                     const Coulomb::LkTable *Sk = nullptr,
+                                     const Sigma1Correction *s1c = nullptr);
 
 /*!
   @brief Constructs the CI Hamiltonian matrix from a set of integral tables.

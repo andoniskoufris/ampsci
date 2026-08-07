@@ -7,6 +7,9 @@
 #include "MBPT/Sigma2.hpp"
 #include "MBPT/StructureRad.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
+#include "fmt/format.hpp"
+#include <iostream>
+#include <utility>
 #include <vector>
 
 namespace CI {
@@ -191,9 +194,142 @@ double Breit_AB(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
 }
 
 //==============================================================================
+double corrected_Sigma(double Sigma, double dSigma, double dE) {
+  if (Sigma == 0.0) {
+    return 0.0;
+  }
+  const auto denom = Sigma - dE * dSigma;
+  if (denom == 0.0) {
+    return Sigma;
+  }
+  const auto Sigma_c = Sigma * Sigma / denom;
+  // If the correction enhances |Sigma|, dE*dSigma is approaching Sigma,
+  // where the formula diverges: distrust, return uncorrected Sigma
+  return std::abs(Sigma_c) > std::abs(Sigma) ? Sigma : Sigma_c;
+}
+
+//==============================================================================
+double Sigma1Correction::delta_h1(DiracSpinor::Index a, DiracSpinor::Index b,
+                                  DiracSpinor::Index spectator) const {
+  const auto Sig = S1.getv(a, b);
+  if (Sig == 0.0) {
+    return 0.0;
+  }
+  const auto es = e_sigma.find(Angular::nkindex_to_kappa(a));
+  const auto e_spec = en.find(spectator);
+  if (es == e_sigma.end() || e_spec == en.end()) {
+    return 0.0;
+  }
+  const auto dE = E0 - es->second - e_spec->second;
+  return corrected_Sigma(Sig, dS1.getv(a, b), dE) - Sig;
+}
+
+//==============================================================================
+Sigma1Correction
+calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
+                          const std::vector<DiracSpinor> &s1_basis_core,
+                          const std::vector<DiracSpinor> &s1_basis_excited,
+                          const Coulomb::QkTable &qk, double E0) {
+  Sigma1Correction corr;
+  corr.E0 = E0;
+
+  for (const auto &v : ci_basis) {
+    corr.en[v.nk_index()] = v.en();
+    // First of each kappa: the energy Sigma_1 is evaluated at (same
+    // convention as calculate_h1_table)
+    corr.e_sigma.insert({v.kappa(), v.en()});
+  }
+
+  // First, in serial, add a zero for each element. The map structure is then
+  // fixed, so the values may be filled in parallel below
+  for (const auto &v : ci_basis) {
+    for (const auto &w : ci_basis) {
+      if (w.kappa() == v.kappa()) {
+        corr.S1.add(v, w, 0.0);
+        corr.dS1.add(v, w, 0.0);
+      }
+    }
+  }
+
+#pragma omp parallel for schedule(dynamic)
+  for (auto iv = 0ul; iv < ci_basis.size(); ++iv) {
+    const auto &v = ci_basis[iv];
+    const auto ev = corr.e_sigma.at(v.kappa());
+
+    for (const auto &w : ci_basis) {
+      if (w > v)
+        continue;
+      if (w.kappa() != v.kappa())
+        continue;
+
+      const auto S0 =
+        MBPT::Sigma_vw(v, w, qk, s1_basis_core, s1_basis_excited, 99, ev);
+      const auto dS =
+        MBPT::dSigma_dE_vw(v, w, qk, s1_basis_core, s1_basis_excited, ev);
+
+      *corr.S1.get(v, w) = S0;
+      *corr.dS1.get(v, w) = dS;
+      // Add symmetric partner:
+      if (v != w) {
+        *corr.S1.get(w, v) = S0;
+        *corr.dS1.get(w, v) = dS;
+      }
+    }
+  }
+  return corr;
+}
+
+//==============================================================================
+void iterate_E0(Sigma1Correction &s1_corr,
+                const std::vector<DiracSpinor> &ci_basis,
+                const std::vector<std::pair<int, int>> &J_pi_list,
+                const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
+                const Coulomb::WkTable *Bk, const Coulomb::LkTable *Sk,
+                int max_iterations) {
+  std::cout << "Iterating E0 for derivative (dSigma/dE) correction:\n";
+  const auto eps_E0 = 1.0e-8;
+  auto E0 = 0.0;
+  for (int it = 0; it <= max_iterations; ++it) {
+    // First pass finds the initial E0: no correction
+    const Sigma1Correction *s1c = it == 0 ? nullptr : &s1_corr;
+
+    auto E_min = 0.0;
+    for (const auto &[twoj, pi] : J_pi_list) {
+      PsiJPi psi{twoj, pi, ci_basis};
+      if (psi.CSFs().empty()) {
+        continue;
+      }
+      const auto Hci = construct_Hci(psi, h1, qk, Bk, Sk, s1c);
+      psi.solve(Hci, 1);
+      if (psi.num_solutions() > 0 && psi.energy(0) < E_min) {
+        E_min = psi.energy(0);
+      }
+    }
+
+    if (it == 0) {
+      fmt::print("  it  0: E0 = {:.8f} au (no correction)\n", E_min);
+    } else {
+      fmt::print("  it {:2}: E0 = {:.8f} au (dE0 = {:.1e})\n", it, E_min,
+                 E_min - E0);
+    }
+    const auto converged = it > 0 && std::abs(E_min - E0) < eps_E0;
+    E0 = E_min;
+    s1_corr.E0 = E0;
+    if (converged) {
+      break;
+    }
+    if (it == max_iterations) {
+      std::cout << "Warning: E0 iteration did not converge\n";
+    }
+  }
+  std::cout << "\n" << std::flush;
+}
+
+//==============================================================================
 // Determines CI Hamiltonian matrix element for two 2-particle CSFs, a and b
 double Hab(const CI::CSF2 &X, const CI::CSF2 &V, int twoJ,
-           const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk) {
+           const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
+           const Sigma1Correction *s1c) {
 
   // Calculates matrix element of the CI Hamiltonian between two CSFs
 
@@ -208,18 +344,20 @@ double Hab(const CI::CSF2 &X, const CI::CSF2 &V, int twoJ,
   const auto tjw = Angular::nkindex_to_twoj(w);
   const auto s = Angular::neg1pow_2(twoJ + tjv + tjw);
 
+  // In each term, the matched orbital is the spectator (its energy enters
+  // the dSigma/dE correction, if included)
   double h1_VX = 0.0;
   if (x == v) {
-    h1_VX += eta2 * h1.getv(y, w);
+    h1_VX += eta2 * (h1.getv(y, w) + (s1c ? s1c->delta_h1(y, w, v) : 0.0));
   }
   if (x == w) {
-    h1_VX -= s * eta2 * h1.getv(y, v);
+    h1_VX -= s * eta2 * (h1.getv(y, v) + (s1c ? s1c->delta_h1(y, v, w) : 0.0));
   }
   if (y == v) {
-    h1_VX -= s * eta2 * h1.getv(x, w);
+    h1_VX -= s * eta2 * (h1.getv(x, w) + (s1c ? s1c->delta_h1(x, w, v) : 0.0));
   }
   if (y == w) {
-    h1_VX += eta2 * h1.getv(x, v);
+    h1_VX += eta2 * (h1.getv(x, v) + (s1c ? s1c->delta_h1(x, v, w) : 0.0));
   }
 
   return h1_VX + CSF2_Coulomb(qk, v, w, x, y, twoJ);
@@ -573,11 +711,10 @@ std::string Term_Symbol(int L, int two_S, int parity) {
 }
 
 //==============================================================================
-LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
-                                     const Coulomb::meTable<double> &h1,
-                                     const Coulomb::QkTable &qk,
-                                     const Coulomb::WkTable *Bk,
-                                     const Coulomb::LkTable *Sk) {
+LinAlg::Matrix<double>
+construct_Hci(const PsiJPi &psi, const Coulomb::meTable<double> &h1,
+              const Coulomb::QkTable &qk, const Coulomb::WkTable *Bk,
+              const Coulomb::LkTable *Sk, const Sigma1Correction *s1c) {
 
   const auto N_CSFs = psi.CSFs().size();
   const auto twoJ = psi.twoJ();
@@ -592,7 +729,7 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
       const auto &B = psi.CSF(iB);
 
       // Regular CI matrix (h1 may include Sigma_1):
-      const auto E_AB = Hab(A, B, twoJ, h1, qk);
+      const auto E_AB = Hab(A, B, twoJ, h1, qk, s1c);
       // Sigma_2 correction:
       const auto dEs_AB = Sk ? CI::Sigma2_AB(A, B, twoJ, *Sk) : 0.0;
       // Breit correction:
@@ -613,7 +750,8 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
 LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints) {
   const auto Bk = ints.Bk.emptyQ() ? nullptr : &ints.Bk;
   const auto Sk = ints.Sk.emptyQ() ? nullptr : &ints.Sk;
-  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk);
+  const auto s1c = ints.s1_corr.empty() ? nullptr : &ints.s1_corr;
+  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, s1c);
 }
 
 } // namespace CI

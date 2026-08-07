@@ -170,6 +170,28 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
                 std::optional<double> ev = std::nullopt);
 
 /*!
+  @brief Energy derivative of the one-body correlation correction,
+  \f$ d\langle v|\Sigma(E)|w\rangle/dE \f$, evaluated at E = @p ev.
+  @details
+  Central finite difference of Sigma_vw(), with step @p delta.
+
+  @param v,w            External spinors.
+  @param qk             Coulomb integral table (YkTable or QkTable).
+  @param core           Core (hole) states.
+  @param excited        Excited (particle) states.
+  @param ev             Energy at which the derivative is evaluated.
+  @param max_l_internal Maximum \f$ l \f$ for internal lines (default 99).
+  @param delta          Finite-difference step, in au.
+  @return \f$ d\langle v|\Sigma(E)|w\rangle/dE \f$.
+*/
+template <class CoulombIntegral>
+double dSigma_dE_vw(const DiracSpinor &v, const DiracSpinor &w,
+                    const CoulombIntegral &qk,
+                    const std::vector<DiracSpinor> &core,
+                    const std::vector<DiracSpinor> &excited, double ev,
+                    int max_l_internal = 99, double delta = 0.01);
+
+/*!
   @brief Returns energy of first excited state matching a given \f$ \kappa \f$.
   @details
   Searches @p excited for the first state with the given @p kappa_v and

@@ -1,3 +1,4 @@
+#include "Angular/Wigner369j.hpp"
 #include "CI_Integrals.hpp"
 #include "ConfigurationInteraction.hpp"
 #include "Coulomb/include.hpp"
@@ -238,4 +239,79 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
   REQUIRE(CI::Term_Symbol(1, 3, 2, -1) == "3^F°_1/2");
   REQUIRE(CI::Term_Symbol(1, 2, 1, -1) == "2^D°_1/2");
   REQUIRE(CI::Term_Symbol(6, 0, 0, 1) == "1^S_3");
+}
+
+//==============================================================================
+TEST_CASE("CI: derivative correction", "[CI][unit]") {
+
+  std::cout << "CI, derivative (dSigma/dE) correction for Sigma_1\n";
+
+  //-----------------------------------------------------------------------
+  // corrected_Sigma: formula and guard
+
+  // Sigma = 0: no correction
+  REQUIRE(CI::corrected_Sigma(0.0, 0.1, 0.5) == 0.0);
+
+  // dE = 0: Sigma unchanged (Sigma^2/Sigma = Sigma)
+  REQUIRE(CI::corrected_Sigma(-0.1, 0.05, 0.0) == Approx(-0.1).margin(1.0e-14));
+
+  // Exact resummed value: Sigma*Sigma/(Sigma - dE*dSigma)
+  REQUIRE(CI::corrected_Sigma(-0.1, -0.02, -0.5) ==
+          Approx(0.01 / -0.11).margin(1.0e-14));
+
+  // Small dE: matches linear expansion, Sigma + dE*dSigma
+  {
+    const auto dE = 1.0e-4;
+    const auto lin = -0.1 + dE * 0.05;
+    REQUIRE(CI::corrected_Sigma(-0.1, 0.05, dE) == Approx(lin).margin(1.0e-8));
+  }
+
+  // Guard: corrected value exceeds |Sigma| (near divergence): uncorrected
+  // -0.1 - (-0.5)*(0.02) = -0.09, so |Sig^2/denom| = 0.111 > 0.1
+  REQUIRE(CI::corrected_Sigma(-0.1, 0.02, -0.5) ==
+          Approx(-0.1).margin(1.0e-14));
+
+  //-----------------------------------------------------------------------
+  // Sigma1Correction::delta
+
+  const auto ia = static_cast<DiracSpinor::Index>(Angular::nk_to_index(1, -1));
+  const auto ib = static_cast<DiracSpinor::Index>(Angular::nk_to_index(2, -1));
+
+  CI::Sigma1Correction corr;
+  corr.E0 = -2.0;
+  corr.e_sigma[-1] = -1.0;
+  corr.en[ia] = -1.0;
+  corr.en[ib] = -0.5;
+  corr.S1.add(ia, ia, -0.1);
+  corr.S1.add(ia, ib, -0.05);
+  corr.S1.add(ib, ia, -0.05);
+  corr.S1.add(ib, ib, -0.08);
+  corr.dS1.add(ia, ia, -0.02);
+  corr.dS1.add(ia, ib, -0.02);
+  corr.dS1.add(ib, ia, -0.02);
+  corr.dS1.add(ib, ib, -0.02);
+
+  REQUIRE(!corr.empty());
+
+  // delta(a,a; spectator b): dE = E0 - e_sigma - en(b) = -2 + 1 + 0.5 = -0.5
+  // corrected = 0.01/(-0.1 - 0.01) = -0.0909..., delta = +0.00909...
+  REQUIRE(corr.delta_h1(ia, ia, ib) ==
+          Approx(0.01 / -0.11 + 0.1).margin(1.0e-14));
+
+  // Symmetric in (a, b):
+  REQUIRE(corr.delta_h1(ia, ib, ia) == Approx(corr.delta_h1(ib, ia, ia)));
+
+  // Missing orbital/spectator: no correction
+  const auto ix = static_cast<DiracSpinor::Index>(Angular::nk_to_index(3, 1));
+  REQUIRE(corr.delta_h1(ix, ix, ia) == 0.0);
+  REQUIRE(corr.delta_h1(ia, ia, ix) == 0.0);
+
+  // Zero derivative: no correction (any dE)
+  CI::Sigma1Correction corr0 = corr;
+  corr0.dS1 = {};
+  corr0.dS1.add(ia, ia, 0.0);
+  REQUIRE(corr0.delta_h1(ia, ia, ib) == Approx(0.0).margin(1.0e-14));
+
+  // Default (empty) correction:
+  REQUIRE(CI::Sigma1Correction{}.empty());
 }

@@ -15,6 +15,7 @@
 #include "fmt/format.hpp"
 #include "fmt/ostream.hpp"
 #include "qip/Vector.hpp"
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <iostream>
@@ -82,6 +83,20 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "lowest excited state for each kappa (both legs), Fermi0 uses lowest "
      "excited state for all kappas (and thus cancels in all except diagram "
      "'d'). Applies to Sigma_2 only. [DFK]"},
+    {"derivative_correction",
+     "Include the derivative (dSigma/dE) correction to the Sigma_1 matrix "
+     "elements: Sigma -> Sigma*Sigma/(Sigma - dE*dSigma/dE), with dE = E0 - "
+     "E_sigma(kappa) - e_spectator (energy of the other electron in the "
+     "CSF). Restores the configuration dependence lost by evaluating Sigma_1 "
+     "at a fixed energy. Requires sigma1. The correction is calculated at "
+     "second order (Goldstone); with an existing Correlation Potential or "
+     "Brueckner basis it is applied on top of the all-orders Sigma_1. The "
+     "reference energy E0 (lowest energy over the requested J/pi) is found "
+     "iteratively - see max_iterations. [false]"},
+    {"max_iterations",
+     "Maximum iterations used to find the derivative-correction reference "
+     "energy E0: solve CI, set E0 to the lowest energy, re-solve with the "
+     "correction, repeat until E0 converges. [10]"},
     {"qk_file",
      "Filename for storing two-body Coulomb integrals. By default, is "
      "~ At.qk, where At is atomic symbol + 'identity'. Set to 'false' to "
@@ -249,6 +264,10 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // cis2_basis
   const auto extrapolate_sigma2 = input.get("extrapolate_sigma2", true);
 
+  // Derivative (dSigma/dE) correction for Sigma_1
+  const auto derivative_correction = input.get("derivative_correction", false);
+  const auto max_iterations = input.get("max_iterations", 10);
+
   //----------------------------------------------------------------------------
 
   if (include_MBPT && !read_only) {
@@ -339,7 +358,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
         };
 
       // Then, add those required for Sigma_1 (unless we have matrix!)
-      if (include_Sigma1 && !wf.Sigma()) {
+      // (With matrix, still required if calculating derivative correction)
+      if (include_Sigma1 && (!wf.Sigma() || derivative_correction)) {
         const auto temp_basis = qip::merge(core_s1, excited_s1);
         std::cout << "and: " << DiracSpinor::state_config(temp_basis)
                   << " (for MBPT)\n"
@@ -349,7 +369,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       }
 
       // Then, add those required for Sigma_2 (unless we already did Sigma_1)
-      if (include_Sigma2 && !(include_Sigma1 && !wf.Sigma())) {
+      if (include_Sigma2 &&
+          !(include_Sigma1 && (!wf.Sigma() || derivative_correction))) {
         const auto temp_basis = qip::merge(core_s2, excited_s2);
         std::cout << "and: " << DiracSpinor::state_config(temp_basis)
                   << " (for MBPT)\n"
@@ -387,6 +408,30 @@ Solutions configuration_interaction(const IO::InputBlock &input,
               CI::calculate_h1_table(ci_sp_basis, *wf.Sigma(), include_Sigma1) :
               CI::calculate_h1_table(ci_sp_basis, core_s1, excited_s1, qk,
                                      include_Sigma1);
+
+  // Derivative (dSigma/dE) correction for Sigma_1
+  CI::Sigma1Correction s1_corr;
+  if (derivative_correction) {
+    if (!include_Sigma1) {
+      fmt2::warning();
+      std::cout << ": derivative_correction requires sigma1 - skipping\n";
+    } else {
+      // Initial E0: lowest zeroth-order configuration energy; iterated below
+      const auto e_lowest =
+        std::min_element(
+          ci_sp_basis.cbegin(), ci_sp_basis.cend(),
+          [](const auto &a, const auto &b) { return a.en() < b.en(); })
+          ->en();
+      const auto E0 = 2.0 * e_lowest;
+      fmt::print(
+        "Including derivative (dSigma/dE) correction for Sigma_1: E0 = "
+        "{:.6f} au (initial)\n",
+        E0);
+      std::cout << std::flush;
+      s1_corr =
+        CI::calculate_dSdE_correction(ci_sp_basis, core_s1, excited_s1, qk, E0);
+    }
+  }
 
   //----------------------------------------------------------------------------
   // Breit and QED
@@ -497,9 +542,14 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // stored in an existing file does not match, the file is not read, and is
   // discarded (started fresh) on the next write.
   std::string ci_settings_key = "max_k=" + std::to_string(max_k_Coulomb);
-  if (include_Sigma1 && !Brueckner) {
+  if ((include_Sigma1 && !Brueckner) || !s1_corr.empty()) {
     ci_settings_key += "; s1_basis=" + DiracSpinor::state_config(s1_basis) +
                        "; n_min_core=" + std::to_string(n_min_core);
+  }
+  // nb: converged E0 not in key: it is derived (self-consistently) from the
+  // other settings, so is reproducible
+  if (!s1_corr.empty()) {
+    ci_settings_key += "; dSdE=yes";
   }
   if (include_Sigma2) {
     std::ostringstream fk_stream;
@@ -523,24 +573,40 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   const auto sort_output = input.get("sort_output", false);
   const auto print_details = input.get("print_details", true);
 
-  const auto n_Js = J_even_list.size() + J_odd_list.size();
+  // {2J, parity} for each requested sector
+  std::vector<std::pair<int, int>> J_pi_list;
+  for (const auto J : J_even_list) {
+    J_pi_list.push_back({2 * J, +1});
+  }
+  for (const auto J : J_odd_list) {
+    J_pi_list.push_back({2 * J, -1});
+  }
 
-  levels.resize(n_Js);
+  levels.resize(J_pi_list.size());
 
-  fmt::print("Running CI for {} J/pi's\n\n", n_Js);
+  // Iterate E0 for the derivative correction: solve with no correction for
+  // initial E0 (lowest energy over requested J/pi), apply correction,
+  // re-solve, repeat until E0 converges.
+  // Cheap: all integral tables are fixed; each iteration is only the Hci
+  // construction + lowest eigenvalue for each J/pi
+  if (!s1_corr.empty() && !read_only && max_iterations > 0) {
+    CI::iterate_E0(s1_corr, ci_sp_basis, J_pi_list, h1, qk,
+                   Bk.emptyQ() ? nullptr : &Bk, include_Sigma2 ? &Sk : nullptr,
+                   max_iterations);
+  }
+
+  fmt::print("Running CI for {} J/pi's\n\n", J_pi_list.size());
   std::cout << std::flush;
 
   {
     IO::ChronoTimer t2("CI Eigenvalues");
-    for (std::size_t i = 0; i < n_Js; ++i) {
-      const auto [twoj, pi] =
-        i < J_even_list.size() ?
-          std::pair{2 * J_even_list.at(i), +1} :
-          std::pair{2 * J_odd_list.at(i - J_even_list.size()), -1};
+    for (std::size_t i = 0; i < J_pi_list.size(); ++i) {
+      const auto [twoj, pi] = J_pi_list.at(i);
 
-      levels.at(i) = run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm,
-                            h1, qk, Bk, Sk, include_Sigma2, print_details,
-                            read_only, std::cout, ci_fname, ci_settings_key);
+      levels.at(i) =
+        run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
+               Sk, include_Sigma2, print_details, read_only, std::cout,
+               ci_fname, ci_settings_key, s1_corr.empty() ? nullptr : &s1_corr);
     }
   }
 
@@ -556,6 +622,12 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     if (e < e0) {
       e0 = e;
     }
+  }
+
+  // read_only: E0 was not iterated; set from the read solutions, so later
+  // Hci reconstructions (from the stored Integrals) are consistent
+  if (read_only && !s1_corr.empty() && e0 < 0.0) {
+    s1_corr.E0 = e0;
   }
 
   // This is just for screen output:
@@ -611,6 +683,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   out.integrals.qk = std::move(qk);
   out.integrals.Bk = std::move(Bk);
   out.integrals.Sk = std::move(Sk);
+  out.integrals.s1_corr = std::move(s1_corr);
 
   return out;
 }
@@ -624,7 +697,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only,
               std::ostream &outstream, const std::string &ci_fname,
-              const std::string &ci_settings_key) {
+              const std::string &ci_settings_key, const Sigma1Correction *s1c) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -673,7 +746,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     // Construct the CI matrix:
     const auto br_ptr = !Bk.emptyQ() ? &Bk : nullptr;
     const auto s2_ptr = include_Sigma2 ? &Sk : nullptr;
-    const auto Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr);
+    const auto Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1c);
 
     if (all_below_cm) {
       fmt::print(outstream, "Finding all solutions below {} cm^-1\n",
