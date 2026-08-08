@@ -14,12 +14,12 @@
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
 #include "fmt/ostream.hpp"
+#include "qip/String.hpp"
 #include "qip/Vector.hpp"
 #include <algorithm>
 #include <array>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <vector>
 
 namespace CI {
@@ -103,19 +103,17 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "disable read/write."},
     {"sk_file",
      "Filename for storing two-body Sigma_2 integrals. By default, is "
-     "At_n_b_k_d[_fk].sk, where At is atomic symbol, n is n_min_core, b is "
-     "s2 (internal) basis, k is max_k, d is the denominators mode, and _fk "
-     "is appended if screening factors are set. Set to 'false' to disable "
-     "read/write. Note: convenience cache only. Stored integrals are re-used "
-     "as-is; the fk _values_ and other settings are not check - it is the "
-     "user's responsibility to delete the file when changing those."},
+     "At_b_hash.sk.abf, where At is atomic symbol + 'identity', b is the s2 "
+     "(internal) basis, and hash encodes other settings that changes the "
+     "integrals. Set to 'false' to disable read/write."},
     {"bk_file", "Filename for storing two-body Breit integrals. By default, is "
                 "~ At.bk, where At is atomic symbol + 'identity'. Set to "
                 "'false' to disable read/write."},
     {"ci_file",
-     "Filename for storing CI solutions (energies + eigenvectors). Default "
-     "is auto-generated: identity_cibasis[_s1][_s2][_bru].ci.abf. "
-     "Set to 'false' to disable read/write. [auto]"},
+     "Filename for storing CI solutions. Default: At_b_hash.ci.abf, where At "
+     "is atomic symbol + 'identity', b is ci_basis, and hash encodes "
+     "other setting that  changes the CI Hamiltonian. "
+     "Set to 'false' to disable read/write."},
     {"read_only",
      "If true, will *only* read in the existing CI solutions, and will not "
      "calculate anything new, even if new states are requested. You must set "
@@ -302,8 +300,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
         std::cout << "(Unless they were already calculated in sk file)\n";
       }
       std::cout << "Using: " << MBPT::parse_Denominators(denominators)
-                << " denominators (for *new* integrals). Old integals read in "
-                   "regardless.\n";
+                << " denominators\n";
     }
     std::cout << "\n";
   }
@@ -412,17 +409,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // Derivative (dSigma/dE) correction for Sigma_1
   CI::Sigma1Correction s1_corr;
   if (derivative_correction) {
-    if (!include_Sigma1) {
-      fmt2::warning();
-      std::cout << ": derivative_correction requires sigma1 - skipping\n";
-    } else {
+    if (include_Sigma1) {
       // Initial E0: lowest zeroth-order configuration energy; iterated below
-      const auto e_lowest =
-        std::min_element(
-          ci_sp_basis.cbegin(), ci_sp_basis.cend(),
-          [](const auto &a, const auto &b) { return a.en() < b.en(); })
-          ->en();
-      const auto E0 = 2.0 * e_lowest;
+      const auto E0 = 2.0 * DiracSpinor::min_En(ci_sp_basis);
       fmt::print(
         "Including derivative (dSigma/dE) correction for Sigma_1: E0 = "
         "{:.6f} au (initial)\n",
@@ -469,33 +458,44 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   //----------------------------------------------------------------------------
   // Calculate MBPT corrections to two-body Coulomb integrals
 
+  // The default sk and ci filenames are At_basis_hash, where At identifies the
+  // atom, basis is the relevant basis (kept readable), and hash is a short tag
+  // for every _other_ setting that changes the stored values. Any change to
+  // those settings gives a new filename, so nothing is silently re-used.
+  // Settings common to both files:
+  std::string common_settings = std::to_string(n_min_core) + ";" +
+                                std::to_string(max_k_Coulomb) + ";" +
+                                (Brueckner ? "bru" : "") + ";";
+  for (const auto f : fk) {
+    common_settings += std::to_string(f) + ",";
+  }
+  common_settings += ";";
+
   Coulomb::LkTable Sk;
   if (include_Sigma2) {
 
     // Here, write basis info into filename, since these are _internal_ lines!
-    // Also encode denominators mode and fk (settings that change the values).
-    // nb: fk _values_ and exclude_wrong_parity_box are not encoded: it is the
-    // user's responsibility to delete the file when changing those.
-    const auto Sk_filename =
-      input.get("sk_file", wf.identity() + "_" + std::to_string(n_min_core) +
-                             "_" + DiracSpinor::state_config(excited_s2) +
-                             (max_k_Coulomb >= 0 && max_k_Coulomb < 50 ?
-                                "_" + std::to_string(max_k_Coulomb) :
-                                "") +
-                             "_" + MBPT::parse_Denominators(denominators) +
-                             (fk.empty() ? "" : "_fk") + br_string + ".sk.abf");
-
-    // output screening factors to check
-    for (std::size_t i = 0; i < fk.size(); ++i) {
-      std::cout << "Element number " << i
-                << " of the screening factor vector is " << fk.at(i) << "\n.";
-    }
+    const auto sk_settings = common_settings +
+                             MBPT::parse_Denominators(denominators) + ";" +
+                             (exclude_wrong_parity_box ? "xb" : "") + ";";
+    const auto Sk_filename = input.get(
+      "sk_file", wf.identity() + "_" + DiracSpinor::state_config(excited_s2) +
+                   "_" + qip::hash_string(sk_settings) + ".sk.abf");
 
     std::cout << (no_new_integralsQ ? "\nRead" : "\nCalculate")
               << " two-body MBPT integrals: Σ^k_abcd\n";
 
     std::cout << "For: " << DiracSpinor::state_config(cis2_basis) << ", using "
               << DiracSpinor::state_config(excited_s2) << "\n";
+
+    // output screening factors to check
+    if (!fk.empty()) {
+      std::cout << "Effective screening into Σ_2:\n fk = [";
+      for (std::size_t i = 0; i < fk.size(); ++i) {
+        fmt::print("{:3f}{}", fk.at(i), i + 1 == fk.size() ? "]\n" : ", ");
+      }
+    }
+
     std::cout << std::flush;
 
     Sk = MBPT::calculate_Sk(Sk_filename, cis2_basis, core_s2, excited_s2, qk,
@@ -506,8 +506,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       const auto hk = MBPT::average_hk(Sk, qk, cis2_basis, max_k_Coulomb);
       std::cout << "Extrapolating Sigma_2 beyond cis2 basis, using average "
                    "correction ratios:\n ";
+      std::cout << " hK = [";
       for (std::size_t k = 0; k < hk.size(); ++k) {
-        fmt::print(" h{}={:.4f},", k, hk[k]);
+        fmt::print("{:.2e}{}", hk[k], k + 1 == hk.size() ? "]\n" : ", ");
       }
       std::cout << "\n";
       // Adds extrapolated entries into (in-memory) Sk table directly:
@@ -524,52 +525,6 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   const auto J_odd_list = input.get("J-", J_list);
   const auto num_solutions = input.get("num_solutions", 5);
   const auto all_below_cm = input.get<double>("all_below_cm");
-  const auto ci_input = input.get("ci_input", std::string{""});
-
-  // CI solutions file: identity_basis[_s1][_s2][_bru].ci.abf
-  const auto default_ci_fname =
-    wf.identity() + "_" + basis_string + (include_Sigma1 ? "_s1" : "") +
-    (include_Sigma2 ? "_s2" : "") + br_string + ".ci.abf";
-  const auto ci_fname_input = input.get("ci_file", default_ci_fname);
-  const auto ci_fname =
-    (ci_fname_input == "false") ? std::string{} : ci_fname_input;
-  if (!ci_fname.empty()) {
-    std::cout << "CI solutions file: " << ci_fname << "\n";
-  }
-
-  // Settings key for the ci solutions file: settings that change the CI
-  // Hamiltonian, but are not encoded in the (default) filename. If the key
-  // stored in an existing file does not match, the file is not read, and is
-  // discarded (started fresh) on the next write.
-  std::string ci_settings_key = "max_k=" + std::to_string(max_k_Coulomb);
-  if ((include_Sigma1 && !Brueckner) || !s1_corr.empty()) {
-    ci_settings_key += "; s1_basis=" + DiracSpinor::state_config(s1_basis) +
-                       "; n_min_core=" + std::to_string(n_min_core);
-  }
-  // nb: converged E0 not in key: it is derived (self-consistently) from the
-  // other settings, so is reproducible
-  if (!s1_corr.empty()) {
-    ci_settings_key += "; dSdE=yes";
-  }
-  if (include_Sigma2) {
-    std::ostringstream fk_stream;
-    for (std::size_t i = 0; i < fk.size(); ++i) {
-      fk_stream << (i == 0 ? "" : ",") << fk[i];
-    }
-    ci_settings_key +=
-      "; s2_basis=" + DiracSpinor::state_config(s2_basis) +
-      "; cis2_basis=" + DiracSpinor::state_config(cis2_basis) +
-      "; n_min_core=" + std::to_string(n_min_core) +
-      "; denominators=" + MBPT::parse_Denominators(denominators) +
-      "; wrong_parity_box=" + (exclude_wrong_parity_box ? "no" : "yes") +
-      "; fk=" + (fk.empty() ? "none" : fk_stream.str()) +
-      "; extrapolate_sigma2=" + (extrapolate_sigma2 ? "yes" : "no");
-  }
-  if (!Bk.emptyQ()) {
-    ci_settings_key +=
-      "; Breit_basis=" +
-      input.get("Breit_basis", std::to_string(N_max_core + 6) + "spdf");
-  }
   const auto sort_output = input.get("sort_output", false);
   const auto print_details = input.get("print_details", true);
 
@@ -581,8 +536,39 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   for (const auto J : J_odd_list) {
     J_pi_list.push_back({2 * J, -1});
   }
-
   levels.resize(J_pi_list.size());
+
+  // CI solutions file: At_basis_hash.ci.abf; see above.
+  // Everything that changes the CI Hamiltonian, apart from the ci_basis, goes
+  // into the hash. nb: converged E0 is not included: it is derived
+  // (self-consistently) from the other settings, so is reproducible.
+  std::string ci_settings = common_settings;
+  if (include_Sigma1) {
+    ci_settings += "s1;" + DiracSpinor::state_config(s1_basis) + ";";
+  }
+  if (!s1_corr.empty()) {
+    ci_settings += "dSdE;";
+  }
+  if (include_Sigma2) {
+    ci_settings += "s2;" + MBPT::parse_Denominators(denominators) + ";" +
+                   DiracSpinor::state_config(s2_basis) + ";" +
+                   DiracSpinor::state_config(cis2_basis) + ";" +
+                   (exclude_wrong_parity_box ? "xb" : "") + ";" +
+                   (extrapolate_sigma2 ? "ex" : "") + ";";
+  }
+  if (!Bk.emptyQ()) {
+    ci_settings +=
+      input.get("Breit_basis", std::to_string(N_max_core + 6) + "spdf") + ";";
+  }
+
+  const auto default_ci_fname = wf.identity() + "_" + basis_string + "_" +
+                                qip::hash_string(ci_settings) + ".ci.abf";
+  const auto ci_fname_input = input.get("ci_file", default_ci_fname);
+  const auto ci_fname =
+    (ci_fname_input == "false") ? std::string{} : ci_fname_input;
+  if (!ci_fname.empty()) {
+    std::cout << "CI solutions file: " << ci_fname << "\n";
+  }
 
   // Iterate E0 for the derivative correction: solve with no correction for
   // initial E0 (lowest energy over requested J/pi), apply correction,
@@ -606,7 +592,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       levels.at(i) =
         run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
                Sk, include_Sigma2, print_details, read_only, std::cout,
-               ci_fname, ci_settings_key, s1_corr.empty() ? nullptr : &s1_corr);
+               ci_fname, s1_corr.empty() ? nullptr : &s1_corr);
     }
   }
 
@@ -697,7 +683,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only,
               std::ostream &outstream, const std::string &ci_fname,
-              const std::string &ci_settings_key, const Sigma1Correction *s1c) {
+              const Sigma1Correction *s1c) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -724,8 +710,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
 
   // Try to read existing solutions from file
   bool read_ok =
-    !ci_fname.empty() &&
-    psi.read_write(ci_fname, IO::FRW::read, outstream, ci_settings_key);
+    !ci_fname.empty() && psi.read_write(ci_fname, IO::FRW::read, outstream);
   const auto num_read_solutions = (int)psi.num_solutions();
 
   // Solve only if we don't have enough solutions already
@@ -765,7 +750,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     }
 
     if (!ci_fname.empty()) {
-      psi.read_write(ci_fname, IO::FRW::write, outstream, ci_settings_key);
+      psi.read_write(ci_fname, IO::FRW::write, outstream);
     }
   } else {
     outstream << "Using " << psi.num_solutions()

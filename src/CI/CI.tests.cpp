@@ -203,30 +203,27 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
   }
 
   //-----------------------------------------------------------------------
-  // Settings-key header in the ci solutions file
+  // Multiple (J, pi) sectors in one ci solutions file
 
   {
-    std::string key_fname = "deleteme_" + qip::random_string(3) + ".ci.abf";
-    const auto key_basis = CI::basis_subset(wf.basis(), "4sp");
-    CI::PsiJPi psi{0, +1, key_basis};
-    psi.set_solution(-1.0, LinAlg::Vector<double>(psi.CSFs().size()));
-    // write with key A; read back ok with key A, refused with key B
-    REQUIRE(psi.read_write(key_fname, IO::FRW::write, std::cout, "key_A"));
-    CI::PsiJPi psi2{0, +1, key_basis};
-    REQUIRE(psi2.read_write(key_fname, IO::FRW::read, std::cout, "key_A"));
-    CI::PsiJPi psi3{0, +1, key_basis};
-    REQUIRE(!psi3.read_write(key_fname, IO::FRW::read, std::cout, "key_B"));
-    // write with key B: discards old file, starts fresh; then read with B ok
-    CI::PsiJPi psi4{2, +1, key_basis};
-    psi4.set_solution(-0.5, LinAlg::Vector<double>(psi4.CSFs().size()));
-    REQUIRE(psi4.read_write(key_fname, IO::FRW::write, std::cout, "key_B"));
-    // old (key A) sector was discarded:
-    CI::PsiJPi psi5{0, +1, key_basis};
-    REQUIRE(!psi5.read_write(key_fname, IO::FRW::read, std::cout, "key_B"));
-    // new (key B) sector present:
-    CI::PsiJPi psi6{2, +1, key_basis};
-    REQUIRE(psi6.read_write(key_fname, IO::FRW::read, std::cout, "key_B"));
-    REQUIRE(psi6.energy(0) == Approx(-0.5));
+    const auto fname = "deleteme_" + qip::random_string(3) + ".ci.abf";
+    const auto t_basis = CI::basis_subset(wf.basis(), "4sp");
+    CI::PsiJPi psi_a{0, +1, t_basis};
+    psi_a.set_solution(-1.0, LinAlg::Vector<double>(psi_a.CSFs().size()));
+    REQUIRE(psi_a.read_write(fname, IO::FRW::write, std::cout));
+    // second sector is appended; the first must survive
+    CI::PsiJPi psi_b{2, +1, t_basis};
+    psi_b.set_solution(-0.5, LinAlg::Vector<double>(psi_b.CSFs().size()));
+    REQUIRE(psi_b.read_write(fname, IO::FRW::write, std::cout));
+    CI::PsiJPi read_a{0, +1, t_basis};
+    REQUIRE(read_a.read_write(fname, IO::FRW::read, std::cout));
+    REQUIRE(read_a.energy(0) == Approx(-1.0));
+    CI::PsiJPi read_b{2, +1, t_basis};
+    REQUIRE(read_b.read_write(fname, IO::FRW::read, std::cout));
+    REQUIRE(read_b.energy(0) == Approx(-0.5));
+    // a sector that was never written:
+    CI::PsiJPi read_c{0, -1, t_basis};
+    REQUIRE(!read_c.read_write(fname, IO::FRW::read, std::cout));
   }
 
   //-----------------------------------------------------------------------

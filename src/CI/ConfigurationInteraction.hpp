@@ -100,12 +100,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                       written [default: false].
   @param outstream    Output stream for progress and results [default: stdout].
   @param ci_fname     Filename for reading/writing CI solutions ("" disables).
-  @param ci_settings_key Settings key stored in the solutions file header:
-                      if it does not match the key in an existing file, the
-                      file is not read, and is discarded on the next write
-                      (see @ref PsiJPi::read_write).
   @param s1c          Pointer to derivative (dSigma/dE) correction for
                       Sigma_1; ignored if nullptr. See @ref Sigma1Correction.
+                      
   @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion
   coefficients for the requested solutions.
 */
@@ -116,7 +113,6 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               bool include_Sigma2, bool print_details, bool read_only = false,
               std::ostream &outstream = std::cout,
               const std::string &ci_fname = "",
-              const std::string &ci_settings_key = "",
               const Sigma1Correction *s1c = nullptr);
 
 } // namespace CI

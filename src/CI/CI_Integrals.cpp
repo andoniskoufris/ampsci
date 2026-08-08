@@ -288,8 +288,9 @@ void iterate_E0(Sigma1Correction &s1_corr,
                 int max_iterations) {
   std::cout << "Iterating E0 for derivative (dSigma/dE) correction:\n";
   const auto eps_E0 = 1.0e-8;
-  auto E0 = 0.0;
-  for (int it = 0; it <= max_iterations; ++it) {
+  // auto E0 = s1_corr.E0;
+  fmt::print("  it {:2}: E0 = {:.8f} au\n", 0, s1_corr.E0);
+  for (int it = 1; it <= max_iterations; ++it) {
     // First pass finds the initial E0: no correction
     const Sigma1Correction *s1c = it == 0 ? nullptr : &s1_corr;
 
@@ -301,20 +302,18 @@ void iterate_E0(Sigma1Correction &s1_corr,
       }
       const auto Hci = construct_Hci(psi, h1, qk, Bk, Sk, s1c);
       psi.solve(Hci, 1);
-      if (psi.num_solutions() > 0 && psi.energy(0) < E_min) {
+      // E_min = psi.energy(0);
+      if (psi.energy(0) < E_min) {
         E_min = psi.energy(0);
       }
     }
 
-    if (it == 0) {
-      fmt::print("  it  0: E0 = {:.8f} au (no correction)\n", E_min);
-    } else {
-      fmt::print("  it {:2}: E0 = {:.8f} au (dE0 = {:.1e})\n", it, E_min,
-                 E_min - E0);
-    }
-    const auto converged = it > 0 && std::abs(E_min - E0) < eps_E0;
-    E0 = E_min;
-    s1_corr.E0 = E0;
+    const auto delta = E_min - s1_corr.E0;
+    fmt::print("  it {:2}: E0 = {:.8f} au  (eps = {:.1e})\n", it, E_min,
+               delta / E_min);
+
+    const auto converged = it > 0 && std::abs(delta) < eps_E0;
+    s1_corr.E0 = E_min;
     if (converged) {
       break;
     }
