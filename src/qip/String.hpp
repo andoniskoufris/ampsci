@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cctype> //char from string
 #include <cstdarg>
+#include <cstdint>
 #include <functional>
 #include <sstream>
 #include <string>
@@ -358,6 +359,39 @@ inline std::string int_to_roman(int a) {
   static const std::string I[] = {"",  "I",  "II",  "III",  "IV",
                                   "V", "VI", "VII", "VIII", "IX"};
   return M[a / 1000] + C[(a % 1000) / 100] + X[(a % 100) / 10] + I[(a % 10)];
+}
+
+//==============================================================================
+
+//! 64-bit FNV-1a hash of a string.
+inline std::uint64_t hash(std::string_view string) {
+  std::uint64_t h = 14695981039346656037ull;
+  for (const auto c : string) {
+    h = (h ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+  }
+  return h;
+}
+
+/*!
+  @brief Short base-36 (0-9, a-z) form of @ref hash; intended for filenames.
+
+  @details With the default 6 characters, there are 36^6 ~ 2e9 possible tags:
+  enough that accidental collisions between different settings will not happen
+  in practice.
+
+  @param string    Text to be hashed.
+  @param n_chars   Length of the returned tag (1 to 12).
+*/
+inline std::string hash_string(std::string_view string,
+                               std::size_t n_chars = 6) {
+  static const std::string digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+  auto h = hash(string);
+  std::string out(n_chars, '0');
+  for (std::size_t i = n_chars; i > 0; --i) {
+    out.at(i - 1) = digits.at(h % 36);
+    h /= 36;
+  }
+  return out;
 }
 
 } // namespace qip

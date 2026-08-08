@@ -125,4 +125,19 @@ TEST_CASE("qip::String", "[qip][String][unit]") {
   REQUIRE(qip::ci_contains("AbCdEf", "cde"));
   REQUIRE(qip::ci_contains("AbCdEf", "eF"));
   REQUIRE(!qip::ci_contains("AbCdEf", "ce"));
+
+  //===========================================
+  // FNV-1a: check against the published test vectors
+  REQUIRE(qip::hash("") == 14695981039346656037ull);
+  REQUIRE(qip::hash("a") == 12638187200555641996ull);
+  REQUIRE(qip::hash("foobar") == 9625390261332436968ull);
+
+  REQUIRE(qip::hash_string("abc").length() == 6);
+  REQUIRE(qip::hash_string("abc", 3).length() == 3);
+  REQUIRE(qip::hash_string("abc") == qip::hash_string("abc"));
+  REQUIRE(qip::hash_string("abc") != qip::hash_string("abd"));
+  // base-36: only 0-9 and a-z
+  for (const auto c : qip::hash_string("hello world", 12)) {
+    REQUIRE(((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')));
+  }
 }
