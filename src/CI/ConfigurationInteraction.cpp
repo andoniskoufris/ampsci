@@ -91,12 +91,13 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "at a fixed energy. Requires sigma1. The correction is calculated at "
      "second order (Goldstone); with an existing Correlation Potential or "
      "Brueckner basis it is applied on top of the all-orders Sigma_1. The "
-     "reference energy E0 (lowest energy over the requested J/pi) is found "
+     "reference energy E0 is the lowest energy of each J/pi, and is found "
      "iteratively - see max_iterations. [false]"},
     {"max_iterations",
      "Maximum iterations used to find the derivative-correction reference "
-     "energy E0: solve CI, set E0 to the lowest energy, re-solve with the "
-     "correction, repeat until E0 converges. [10]"},
+     "energy E0. E0 is found separately for each J/pi: solve, set E0 to the "
+     "lowest energy of that J/pi, re-solve, repeat until E0 converges. Set to "
+     "0 to skip the iteration and use the initial estimate. [10]"},
     {"qk_file",
      "Filename for storing two-body Coulomb integrals. By default, is "
      "~ At.qk, where At is atomic symbol + 'identity'. Set to 'false' to "
@@ -570,17 +571,6 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     std::cout << "CI solutions file: " << ci_fname << "\n";
   }
 
-  // Iterate E0 for the derivative correction: solve with no correction for
-  // initial E0 (lowest energy over requested J/pi), apply correction,
-  // re-solve, repeat until E0 converges.
-  // Cheap: all integral tables are fixed; each iteration is only the Hci
-  // construction + lowest eigenvalue for each J/pi
-  if (!s1_corr.empty() && !read_only && max_iterations > 0) {
-    CI::iterate_E0(s1_corr, ci_sp_basis, J_pi_list, h1, qk,
-                   Bk.emptyQ() ? nullptr : &Bk, include_Sigma2 ? &Sk : nullptr,
-                   max_iterations);
-  }
-
   fmt::print("Running CI for {} J/pi's\n\n", J_pi_list.size());
   std::cout << std::flush;
 
@@ -592,7 +582,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       levels.at(i) =
         run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
                Sk, include_Sigma2, print_details, read_only, std::cout,
-               ci_fname, s1_corr.empty() ? nullptr : &s1_corr);
+               ci_fname, s1_corr.empty() ? nullptr : &s1_corr, max_iterations);
     }
   }
 
@@ -610,9 +600,11 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     }
   }
 
-  // read_only: E0 was not iterated; set from the read solutions, so later
-  // Hci reconstructions (from the stored Integrals) are consistent
-  if (read_only && !s1_corr.empty() && e0 < 0.0) {
+  // E0 is found per (J, parity) inside run_CI, so the value stored here is
+  // only a fallback: it is used when a Hci is later re-constructed (from the
+  // stored Integrals) for a (J, parity) that was never solved - e.g. the
+  // intermediate states of the sum-over-states. Use the ground state.
+  if (!s1_corr.empty() && e0 < 0.0) {
     s1_corr.E0 = e0;
   }
 
@@ -683,7 +675,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only,
               std::ostream &outstream, const std::string &ci_fname,
-              const Sigma1Correction *s1c) {
+              const Sigma1Correction *s1c, int max_iterations) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -731,7 +723,42 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     // Construct the CI matrix:
     const auto br_ptr = !Bk.emptyQ() ? &Bk : nullptr;
     const auto s2_ptr = include_Sigma2 ? &Sk : nullptr;
-    const auto Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1c);
+
+    // The dSigma/dE correction depends on E0, the lowest energy of _this_
+    // (J, parity), which we only know once we have solved. So: solve for the
+    // lowest level, set E0 to it, and repeat until E0 stops moving. Only E0
+    // changes between passes; the Sigma_1 tables are fixed.
+    // nb: the final solve re-uses the converged Hci, so no matrix is built
+    // that we do not use.
+    Sigma1Correction s1_sector{};
+    const Sigma1Correction *s1_use = s1c;
+    if (s1c != nullptr && max_iterations > 0) {
+      s1_sector = *s1c;
+      s1_use = &s1_sector;
+    }
+
+    LinAlg::Matrix<double> Hci;
+    if (s1_use == s1c) {
+      // No correction (or iteration disabled): single matrix
+      Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1_use);
+    } else {
+      constexpr auto eps_E0 = 1.0e-8;
+      fmt::print(outstream, "Iterating E0 for dSigma/dE correction:\n");
+      for (int it = 1; it <= max_iterations; ++it) {
+        Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1_use);
+        psi.solve(Hci, 1);
+        const auto delta = psi.energy(0) - s1_sector.E0;
+        s1_sector.E0 = psi.energy(0);
+        fmt::print(outstream, "  it {:2}: E0 = {:.8f} au  (dE0 = {:.1e})\n", it,
+                   s1_sector.E0, delta);
+        if (std::abs(delta) < eps_E0) {
+          break;
+        }
+        if (it == max_iterations) {
+          outstream << "Warning: E0 iteration did not converge\n";
+        }
+      }
+    }
 
     if (all_below_cm) {
       fmt::print(outstream, "Finding all solutions below {} cm^-1\n",

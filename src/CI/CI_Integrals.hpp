@@ -121,33 +121,6 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
                           const std::vector<DiracSpinor> &s1_basis_excited,
                           const Coulomb::QkTable &qk, double E0);
 
-/*!
-  @brief Finds the reference energy E0 for the derivative correction
-  self-consistently; updates @p s1_corr.E0 in place.
-  @details
-  The CI is first solved with no correction, and E0 set to the lowest energy
-  over the given (J, parity) sectors; the CI is then re-solved with the
-  correction included and E0 updated, repeating until E0 converges (or
-  @p max_iterations is reached). Each pass is cheap: the integral tables are
-  fixed, so only the Hamiltonian construction and lowest eigenvalue are
-  repeated.
-
-  @param s1_corr        Correction tables; E0 is updated in place.
-  @param ci_basis       Single-particle basis for the CI expansion.
-  @param J_pi_list      {2J, parity} pairs of the sectors to include.
-  @param h1             One-body matrix element table (includes Sigma_1).
-  @param qk             Coulomb \f$ Q^k \f$ table.
-  @param Bk             Pointer to Breit table; ignored if nullptr.
-  @param Sk             Pointer to \f$ \Sigma_2 \f$ table; ignored if nullptr.
-  @param max_iterations Maximum number of E0 update passes.
-*/
-void iterate_E0(Sigma1Correction &s1_corr,
-                const std::vector<DiracSpinor> &ci_basis,
-                const std::vector<std::pair<int, int>> &J_pi_list,
-                const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
-                const Coulomb::WkTable *Bk = nullptr,
-                const Coulomb::LkTable *Sk = nullptr, int max_iterations = 10);
-
 //==============================================================================
 /*!
   @brief The integral tables required to construct the CI Hamiltonian matrix.

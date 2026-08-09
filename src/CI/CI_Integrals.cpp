@@ -280,51 +280,6 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
 }
 
 //==============================================================================
-void iterate_E0(Sigma1Correction &s1_corr,
-                const std::vector<DiracSpinor> &ci_basis,
-                const std::vector<std::pair<int, int>> &J_pi_list,
-                const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
-                const Coulomb::WkTable *Bk, const Coulomb::LkTable *Sk,
-                int max_iterations) {
-  std::cout << "Iterating E0 for derivative (dSigma/dE) correction:\n";
-  const auto eps_E0 = 1.0e-8;
-  // auto E0 = s1_corr.E0;
-  fmt::print("  it {:2}: E0 = {:.8f} au\n", 0, s1_corr.E0);
-  for (int it = 1; it <= max_iterations; ++it) {
-    // First pass finds the initial E0: no correction
-    const Sigma1Correction *s1c = it == 0 ? nullptr : &s1_corr;
-
-    auto E_min = 0.0;
-    for (const auto &[twoj, pi] : J_pi_list) {
-      PsiJPi psi{twoj, pi, ci_basis};
-      if (psi.CSFs().empty()) {
-        continue;
-      }
-      const auto Hci = construct_Hci(psi, h1, qk, Bk, Sk, s1c);
-      psi.solve(Hci, 1);
-      // E_min = psi.energy(0);
-      if (psi.energy(0) < E_min) {
-        E_min = psi.energy(0);
-      }
-    }
-
-    const auto delta = E_min - s1_corr.E0;
-    fmt::print("  it {:2}: E0 = {:.8f} au  (eps = {:.1e})\n", it, E_min,
-               delta / E_min);
-
-    const auto converged = it > 0 && std::abs(delta) < eps_E0;
-    s1_corr.E0 = E_min;
-    if (converged) {
-      break;
-    }
-    if (it == max_iterations) {
-      std::cout << "Warning: E0 iteration did not converge\n";
-    }
-  }
-  std::cout << "\n" << std::flush;
-}
-
-//==============================================================================
 // Determines CI Hamiltonian matrix element for two 2-particle CSFs, a and b
 double Hab(const CI::CSF2 &X, const CI::CSF2 &V, int twoJ,
            const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
@@ -749,8 +704,16 @@ construct_Hci(const PsiJPi &psi, const Coulomb::meTable<double> &h1,
 LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints) {
   const auto Bk = ints.Bk.emptyQ() ? nullptr : &ints.Bk;
   const auto Sk = ints.Sk.emptyQ() ? nullptr : &ints.Sk;
-  const auto s1c = ints.s1_corr.empty() ? nullptr : &ints.s1_corr;
-  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, s1c);
+  if (ints.s1_corr.empty()) {
+    return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, nullptr);
+  }
+  // E0 is per (J, parity): if psi has been solved, it is just the lowest
+  // energy of this sector. Otherwise, fall back to the stored E0.
+  auto s1_sector = ints.s1_corr;
+  if (psi.num_solutions() > 0) {
+    s1_sector.E0 = psi.energy(0);
+  }
+  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, &s1_sector);
 }
 
 } // namespace CI

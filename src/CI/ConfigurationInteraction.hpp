@@ -102,6 +102,11 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   @param ci_fname     Filename for reading/writing CI solutions ("" disables).
   @param s1c          Pointer to derivative (dSigma/dE) correction for
                       Sigma_1; ignored if nullptr. See @ref Sigma1Correction.
+  @param max_iterations Maximum passes used to find the reference energy E0
+                      for the dSigma/dE correction (ignored if @p s1c is
+                      nullptr). E0 is the lowest energy of this (J, parity),
+                      so is found self-consistently: solve, set E0 to the
+                      lowest energy, re-solve, repeat.
                       
   @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion
   coefficients for the requested solutions.
@@ -113,6 +118,6 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               bool include_Sigma2, bool print_details, bool read_only = false,
               std::ostream &outstream = std::cout,
               const std::string &ci_fname = "",
-              const Sigma1Correction *s1c = nullptr);
+              const Sigma1Correction *s1c = nullptr, int max_iterations = 10);
 
 } // namespace CI
