@@ -2,6 +2,7 @@
 #include "Angular/include.hpp"
 #include "Coulomb/include.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
+#include <algorithm>
 #include <cassert>
 
 namespace MBPT {
@@ -499,6 +500,15 @@ std::vector<double> average_hk(const Coulomb::LkTable &Sk,
   std::vector<double> sum(std::size_t(k_max + 1), 0.0);
   std::vector<long> num(std::size_t(k_max + 1), 0);
 
+  // S^k has a 4-fold symmetry: S^k_vwxy = S^k_wvyx = S^k_xyvw = S^k_yxwv.
+  // The Lk normal order accounts for the first pair; the bra-ket pair is added
+  // here. Count each distinct integral once - otherwise each is weighted by its
+  // own symmetry multiplicity, which is not the same for every integral.
+  const auto normal_order = [&Sk](const DiracSpinor &v, const DiracSpinor &w,
+                                  const DiracSpinor &x, const DiracSpinor &y) {
+    return std::min(Sk.NormalOrder(v, w, x, y), Sk.NormalOrder(x, y, v, w));
+  };
+
   // Parallel over k: each k accumulates independently
 #pragma omp parallel for
   for (int k = 0; k <= k_max; ++k) {
@@ -506,10 +516,13 @@ std::vector<double> average_hk(const Coulomb::LkTable &Sk,
       for (const auto &w : external) {
         for (const auto &x : external) {
           for (const auto &y : external) {
+            const auto index = normal_order(v, w, x, y);
+            if (index != Sk.CurrentOrder(v, w, x, y))
+              continue;
             const auto [k0, k1] = Coulomb::k_minmax_Q(v, w, x, y);
             if (k < k0 || k > k1 || (k - k0) % 2 != 0)
               continue;
-            const auto s = Sk.Q(k, v, w, x, y);
+            const auto s = Sk.Q(k, index);
             if (s == 0.0)
               continue;
             const auto q = qk.Q(k, v, w, x, y);

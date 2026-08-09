@@ -8,7 +8,10 @@
 #include "MBPT/StructureRad.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "fmt/format.hpp"
+#include "fmt/ostream.hpp"
+#include <cassert>
 #include <iostream>
+#include <ostream>
 #include <utility>
 #include <vector>
 
@@ -227,7 +230,8 @@ double corrected_Sigma(double Sigma, double dSigma, double dE) {
 double Sigma1Correction::delta_h1(DiracSpinor::Index a, DiracSpinor::Index b,
                                   DiracSpinor::Index spectator) const {
   const auto Sig = S1.getv(a, b);
-  if (Sig == 0.0) {
+  // E0 = 0.0 means it was never set: no correction (see iterate_E0)
+  if (Sig == 0.0 || E0 == 0.0) {
     return 0.0;
   }
   const auto es = e_sigma.find(Angular::nkindex_to_kappa(a));
@@ -244,9 +248,10 @@ Sigma1Correction
 calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
                           const std::vector<DiracSpinor> &s1_basis_core,
                           const std::vector<DiracSpinor> &s1_basis_excited,
-                          const Coulomb::QkTable &qk, double E0) {
+                          const Coulomb::QkTable &qk) {
+  // nb: E0 is left at 0.0 (not set): it belongs to a single (J, parity), and
+  // is found by iterate_E0()
   Sigma1Correction corr;
-  corr.E0 = E0;
 
   for (const auto &v : ci_basis) {
     corr.en[v.nk_index()] = v.en();
@@ -292,6 +297,83 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
     }
   }
   return corr;
+}
+
+//==============================================================================
+LinAlg::Matrix<double>
+iterate_E0(PsiJPi *psi, const Sigma1Correction &s1c,
+           const Coulomb::meTable<double> &h1, const Coulomb::QkTable &qk,
+           const Coulomb::WkTable *Bk, const Coulomb::LkTable *Sk,
+           const std::vector<double> &hk, std::ostream &outstream) {
+  assert(psi != nullptr);
+
+  constexpr auto eps_E0 = 1.0e-8;
+  constexpr auto max_iterations = 16;
+  const auto N_CSFs = psi->CSFs().size();
+
+  // E0 belongs to this (J, parity), but the correction tables are shared
+  // between them: work on a local copy. Only E0 changes between passes.
+  auto s1_sector = s1c;
+
+  // E0 = 0.0 means "not set": start from the lowest zeroth-order configuration
+  // (two electrons in the lowest orbital)
+  if (s1_sector.E0 == 0.0) {
+    auto e_min = 0.0;
+    for (const auto &orbital : s1_sector.en) {
+      if (orbital.second < e_min) {
+        e_min = orbital.second;
+      }
+    }
+    s1_sector.E0 = 2.0 * e_min;
+  }
+
+  fmt::print(outstream,
+             "Iterating E0 for dSigma/dE correction (initial: {:.8f} au):\n",
+             s1_sector.E0);
+  outstream << std::flush;
+
+  // First pass: build Hci at the current E0, and diagonalise for the lowest
+  // level. E0 enters only through the (small) dSigma/dE correction, so the
+  // state itself hardly changes from pass to pass. Later passes therefore
+  // rebuild Hci with the updated E0, and take the new E0 as the expectation
+  // value of the new Hci in the (unchanged) state: first-order perturbation
+  // theory in the change to Hci. Building Hci is N^2; diagonalising is N^3,
+  // so this is much cheaper than re-solving each pass.
+  auto Hci = construct_Hci(*psi, h1, qk, Bk, Sk, &s1_sector, hk);
+  psi->solve(Hci, 1);
+  const auto c = psi->coefs(0);
+
+  auto delta = psi->energy(0) - s1_sector.E0;
+  s1_sector.E0 = psi->energy(0);
+  fmt::print(outstream, "  it {:2}: E0 = {:.8f} au (eps = {:.1e})\n", 1,
+             s1_sector.E0, delta / s1_sector.E0);
+  outstream << std::flush;
+
+  for (int it = 2; it <= max_iterations && std::abs(delta) >= eps_E0; ++it) {
+    Hci = construct_Hci(*psi, h1, qk, Bk, Sk, &s1_sector, hk);
+
+    // <c|Hci|c>; c is normalised
+    double E0_new = 0.0;
+#pragma omp parallel for reduction(+ : E0_new)
+    for (std::size_t i = 0; i < N_CSFs; ++i) {
+      double row = 0.0;
+      for (std::size_t j = 0; j < N_CSFs; ++j) {
+        row += Hci(i, j) * c[j];
+      }
+      E0_new += c[i] * row;
+    }
+
+    delta = E0_new - s1_sector.E0;
+    s1_sector.E0 = E0_new;
+    fmt::print(outstream, "  it {:2}: E0 = {:.8f} au (eps = {:.1e})\n", it,
+               s1_sector.E0, delta / s1_sector.E0);
+    outstream << std::flush;
+    if (it == max_iterations && std::abs(delta) >= eps_E0) {
+      outstream << "Warning: E0 iteration did not converge\n";
+    }
+  }
+
+  return Hci;
 }
 
 //==============================================================================

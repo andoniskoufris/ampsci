@@ -245,7 +245,8 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   @brief Average Sigma_2 correction ratios, h_k, for each multipole k.
   @details
   h_k = <S^k/Q^k>, averaged over all stored S^k integrals with
-  |Q^k| above a small cut-off.
+  |Q^k| above a small cut-off. Each distinct integral is counted once (the
+  4-fold symmetry of S^k is accounted for), so integrals are weighted equally.
   Used to extrapolate Sigma_2 to diagrams outside the tabulated set:
   S^k ~ h_k Q^k. Entries with no data are 0.0 (no correction).
 

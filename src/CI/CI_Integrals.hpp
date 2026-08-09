@@ -4,6 +4,7 @@
 #include "Coulomb/meTable.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/Sigma2.hpp" //temp - remove after refactor
+#include <iostream>
 #include <map>
 #include <string>
 #include <utility>
@@ -81,7 +82,8 @@ struct Sigma1Correction {
   std::map<int, double> e_sigma{};
   //! Single-particle orbital energies, keyed by nk_index
   std::map<DiracSpinor::Index, double> en{};
-  //! Reference total two-electron valence energy
+  //! Reference total two-electron valence energy. 0.0 means "not set": it
+  //! belongs to a single (J, parity), and is found by @ref iterate_E0
   double E0{0.0};
 
   [[nodiscard]] bool empty() const { return dS1.empty(); }
@@ -112,14 +114,46 @@ struct Sigma1Correction {
   @param s1_basis_core     Core states used as internal lines for Sigma_1.
   @param s1_basis_excited  Excited states used as internal lines for Sigma_1.
   @param qk                Table of Coulomb \f$ Q^k \f$ integrals.
-  @param E0                Reference total two-electron valence energy (au).
-  @return Filled Sigma1Correction tables.
+  @return Filled Sigma1Correction tables (E0 left unset; see @ref iterate_E0).
 */
 [[nodiscard]] Sigma1Correction
 calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
                           const std::vector<DiracSpinor> &s1_basis_core,
                           const std::vector<DiracSpinor> &s1_basis_excited,
-                          const Coulomb::QkTable &qk, double E0);
+                          const Coulomb::QkTable &qk);
+
+/*!
+  @brief Finds the reference energy E0 for the dSigma/dE correction, for a
+  single (J, parity); returns the CI Hamiltonian built with it.
+  @details
+  E0 is the lowest energy of this (J, parity), which is only known once we
+  have solved - so it is found self-consistently. If @p s1c has no E0 set
+  (i.e., 0.0), the iteration starts from the lowest zeroth-order configuration
+  energy. The first pass builds the
+  CI Hamiltonian at the current E0 and diagonalises it for the lowest level.
+  E0 enters only through the (small) dSigma/dE correction, so the state itself
+  hardly changes from pass to pass: later passes rebuild the Hamiltonian with
+  the updated E0 and take the new E0 as the expectation value of the new
+  Hamiltonian in the (unchanged) state - first-order perturbation theory in
+  the change to the Hamiltonian. Only the first pass is diagonalised.
+
+  @param psi            Solved for the lowest level (updated in place).
+  @param s1c            Correction tables. E0 belongs to a single (J, parity),
+                        while these tables are shared between them, so a local
+                        copy is made: @p s1c is left as it was.
+  @param h1             One-body matrix element table (includes Sigma_1).
+  @param qk             Coulomb \f$ Q^k \f$ table.
+  @param Bk             Pointer to Breit table; ignored if nullptr.
+  @param Sk             Pointer to \f$ \Sigma_2 \f$ table; ignored if nullptr.
+  @param hk             Average S^k/Q^k ratios; see @ref MBPT::average_hk.
+  @param outstream      Stream for the per-pass output.
+  @return CI Hamiltonian matrix, built with the converged E0.
+*/
+[[nodiscard]] LinAlg::Matrix<double> iterate_E0(
+  PsiJPi *psi, const Sigma1Correction &s1c, const Coulomb::meTable<double> &h1,
+  const Coulomb::QkTable &qk, const Coulomb::WkTable *Bk = nullptr,
+  const Coulomb::LkTable *Sk = nullptr, const std::vector<double> &hk = {},
+  std::ostream &outstream = std::cout);
 
 //==============================================================================
 /*!
