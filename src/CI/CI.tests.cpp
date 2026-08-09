@@ -182,9 +182,9 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
     REQUIRE(any_data);
 
     // Extrapolate with hk = 1 for all k: then S^k = Q^k everywhere, and
-    // Sigma2_AB must equal the Coulomb part for every CSF pair
+    // Sigma2_AB must equal the Coulomb part for every CSF pair.
+    // nb: Sk_test only covers sub_basis, so all other pairs are extrapolated
     const std::vector<double> hk_1(10, 1.0);
-    MBPT::extrapolate_Sk(Sk_test, ints.qk, hk_1, ints.ci_basis, 8);
     for (const auto &psi0 : CIWFs) {
       const auto twoJ = psi0.twoJ();
       const auto n_csf = std::min(psi0.CSFs().size(), std::size_t(6));
@@ -192,7 +192,7 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
         for (std::size_t j = 0; j <= i; ++j) {
           const auto &A = psi0.CSF(i);
           const auto &B = psi0.CSF(j);
-          const auto s2_x = CI::Sigma2_AB(A, B, twoJ, Sk_test);
+          const auto s2_x = CI::Sigma2_AB(A, B, twoJ, Sk_test, &ints.qk, hk_1);
           const auto [v, w] = A.states;
           const auto [x, y] = B.states;
           const auto coulomb = CI::CSF2_Coulomb(ints.qk, v, w, x, y, twoJ);

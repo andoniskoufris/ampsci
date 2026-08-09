@@ -142,13 +142,14 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "existing sk file already has these, they will be included [false]"},
   });
 
-  // construct first, for RVO
-  std::vector<PsiJPi> levels;
-
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
     return {};
   }
+  //----------------------------------------------------------------------------
+
+  // construct first, for RVO
+  std::vector<PsiJPi> levels;
 
   //----------------------------------------------------------------------------
   // Single-particle basis:
@@ -473,6 +474,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   common_settings += ";";
 
   Coulomb::LkTable Sk;
+  // Average S^k/Q^k ratios, for extrapolating Sigma_2 beyond cis2_basis
+  std::vector<double> hk;
   if (include_Sigma2) {
 
     // Here, write basis info into filename, since these are _internal_ lines!
@@ -504,19 +507,16 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                             denominators, no_new_integralsQ, fk);
 
     if (extrapolate_sigma2) {
-      const auto hk = MBPT::average_hk(Sk, qk, cis2_basis, max_k_Coulomb);
+      // Store the <hk> average ratios.
+      // S^k = hk*Q^k formed as needed
+      hk = MBPT::average_hk(Sk, qk, cis2_basis, max_k_Coulomb);
       std::cout << "Extrapolating Sigma_2 beyond cis2 basis, using average "
                    "correction ratios:\n ";
-      std::cout << " hK = [";
+      std::cout << " hk = [";
       for (std::size_t k = 0; k < hk.size(); ++k) {
         fmt::print("{:.2e}{}", hk[k], k + 1 == hk.size() ? "]\n" : ", ");
       }
       std::cout << "\n";
-      // Adds extrapolated entries into (in-memory) Sk table directly:
-      // NB: The writing of sk to disk happens above
-      // These are _NOT_ written to disk. These are cheap, and that allows
-      // easy updating of cis2 basis
-      MBPT::extrapolate_Sk(Sk, qk, hk, ci_sp_basis, max_k_Coulomb);
     }
   }
 
@@ -661,6 +661,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   out.integrals.qk = std::move(qk);
   out.integrals.Bk = std::move(Bk);
   out.integrals.Sk = std::move(Sk);
+  out.integrals.hk = std::move(hk);
   out.integrals.s1_corr = std::move(s1_corr);
 
   return out;
@@ -675,7 +676,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only,
               std::ostream &outstream, const std::string &ci_fname,
-              const Sigma1Correction *s1c, int max_iterations) {
+              const Sigma1Correction *s1c, int max_iterations,
+              const std::vector<double> &hk) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -740,12 +742,12 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     LinAlg::Matrix<double> Hci;
     if (s1_use == s1c) {
       // No correction (or iteration disabled): single matrix
-      Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1_use);
+      Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1_use, hk);
     } else {
       constexpr auto eps_E0 = 1.0e-8;
       fmt::print(outstream, "Iterating E0 for dSigma/dE correction:\n");
       for (int it = 1; it <= max_iterations; ++it) {
-        Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1_use);
+        Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1_use, hk);
         psi.solve(Hci, 1);
         const auto delta = psi.energy(0) - s1_sector.E0;
         s1_sector.E0 = psi.energy(0);

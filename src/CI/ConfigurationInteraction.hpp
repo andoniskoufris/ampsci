@@ -107,6 +107,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                       nullptr). E0 is the lowest energy of this (J, parity),
                       so is found self-consistently: solve, set E0 to the
                       lowest energy, re-solve, repeat.
+  @param hk           Average S^k/Q^k ratios, for extrapolating Sigma_2 beyond
+                      the cis2 basis; empty for no extrapolation.
+                      See @ref MBPT::average_hk.
                       
   @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion
   coefficients for the requested solutions.
@@ -118,6 +121,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               bool include_Sigma2, bool print_details, bool read_only = false,
               std::ostream &outstream = std::cout,
               const std::string &ci_fname = "",
-              const Sigma1Correction *s1c = nullptr, int max_iterations = 10);
+              const Sigma1Correction *s1c = nullptr, int max_iterations = 10,
+              const std::vector<double> &hk = {});
 
 } // namespace CI

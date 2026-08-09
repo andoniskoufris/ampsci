@@ -78,7 +78,8 @@ double CSF2_Coulomb(const Coulomb::QkTable &qk, DiracSpinor::Index v,
 //==============================================================================
 double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
                    DiracSpinor::Index w, DiracSpinor::Index x,
-                   DiracSpinor::Index y, int twoJ) {
+                   DiracSpinor::Index y, int twoJ, const Coulomb::QkTable *qk,
+                   const std::vector<double> &hk) {
 
   // If c==d, or a==b : can make short-cut due to symmetry
   // More efficient to use two Q's than W:
@@ -90,13 +91,25 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
   const auto tjx = Angular::nkindex_to_twoj(x);
   const auto tjy = Angular::nkindex_to_twoj(y);
 
+  // S^k for a diagram that was not calculated (i.e., outside the cis2 basis)
+  const auto extrap = [qk, &hk](int k, DiracSpinor::Index a,
+                                DiracSpinor::Index b, DiracSpinor::Index c,
+                                DiracSpinor::Index d) {
+    if (qk == nullptr || std::size_t(k) >= hk.size())
+      return 0.0;
+    return hk[std::size_t(k)] * qk->Q(k, a, b, c, d);
+  };
+
   // Direct part:
   const auto [k0, k1] = MBPT::k_minmax_S(tjv, tjw, tjx, tjy);
   for (int k = k0; k <= k1; ++k) {
     const auto sjs = Angular::sixj_2(tjv, tjw, twoJ, tjy, tjx, 2 * k);
     if (sjs == 0.0)
       continue;
-    const auto Sk_abcd = Sk.Q(k, v, w, x, y);
+    // Diagrams outside the cis2 basis have no stored S^k: extrapolate them
+    // as S^k = hk*Q^k (rather than storing the extrapolated table)
+    const auto Sk_abcd =
+      Sk.contains(k, v, w, x, y) ? Sk.Q(k, v, w, x, y) : extrap(k, v, w, x, y);
     const auto s = Angular::neg1pow_2(tjv + tjx + 2 * k + twoJ);
     out += s * sjs * Sk_abcd;
   }
@@ -119,7 +132,8 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
     const auto sjs = Angular::sixj_2(tjv, tjw, twoJ, tjx, tjy, 2 * k);
     if (sjs == 0.0)
       continue;
-    const auto Sk_abdc = Sk.Q(k, v, w, y, x);
+    const auto Sk_abdc =
+      Sk.contains(k, v, w, y, x) ? Sk.Q(k, v, w, y, x) : extrap(k, v, w, y, x);
     const auto s = Angular::neg1pow_2(tjv + tjx + 2 * k);
     out += s * sjs * Sk_abdc;
   }
@@ -179,10 +193,11 @@ double CSF2_Breit(const Coulomb::WkTable &Bk, DiracSpinor::Index v,
 
 //==============================================================================
 double Sigma2_AB(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
-                 const Coulomb::LkTable &Sk) {
+                 const Coulomb::LkTable &Sk, const Coulomb::QkTable *qk,
+                 const std::vector<double> &hk) {
   const auto [v, w] = A.states;
   const auto [x, y] = B.states;
-  return CSF2_Sigma2(Sk, v, w, x, y, twoJ);
+  return CSF2_Sigma2(Sk, v, w, x, y, twoJ, qk, hk);
 }
 
 //==============================================================================
@@ -668,7 +683,8 @@ std::string Term_Symbol(int L, int two_S, int parity) {
 LinAlg::Matrix<double>
 construct_Hci(const PsiJPi &psi, const Coulomb::meTable<double> &h1,
               const Coulomb::QkTable &qk, const Coulomb::WkTable *Bk,
-              const Coulomb::LkTable *Sk, const Sigma1Correction *s1c) {
+              const Coulomb::LkTable *Sk, const Sigma1Correction *s1c,
+              const std::vector<double> &hk) {
 
   const auto N_CSFs = psi.CSFs().size();
   const auto twoJ = psi.twoJ();
@@ -685,7 +701,7 @@ construct_Hci(const PsiJPi &psi, const Coulomb::meTable<double> &h1,
       // Regular CI matrix (h1 may include Sigma_1):
       const auto E_AB = Hab(A, B, twoJ, h1, qk, s1c);
       // Sigma_2 correction:
-      const auto dEs_AB = Sk ? CI::Sigma2_AB(A, B, twoJ, *Sk) : 0.0;
+      const auto dEs_AB = Sk ? CI::Sigma2_AB(A, B, twoJ, *Sk, &qk, hk) : 0.0;
       // Breit correction:
       const auto dEb_AB = Bk ? CI::Breit_AB(A, B, twoJ, *Bk) : 0.0;
 
@@ -705,7 +721,7 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints) {
   const auto Bk = ints.Bk.emptyQ() ? nullptr : &ints.Bk;
   const auto Sk = ints.Sk.emptyQ() ? nullptr : &ints.Sk;
   if (ints.s1_corr.empty()) {
-    return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, nullptr);
+    return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, nullptr, ints.hk);
   }
   // E0 is per (J, parity): if psi has been solved, it is just the lowest
   // energy of this sector. Otherwise, fall back to the stored E0.
@@ -713,7 +729,7 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints) {
   if (psi.num_solutions() > 0) {
     s1_sector.E0 = psi.energy(0);
   }
-  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, &s1_sector);
+  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, &s1_sector, ints.hk);
 }
 
 } // namespace CI

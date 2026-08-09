@@ -260,26 +260,6 @@ std::vector<double> average_hk(const Coulomb::LkTable &Sk,
                                const std::vector<DiracSpinor> &external,
                                int max_k = -1);
 
-/*!
-  @brief Extrapolates the Sigma_2 table to diagrams outside the calculated set.
-  @details
-  For each diagram (k and orbital set) allowed by the Coulomb selection rules
-  over @p external that has no stored S^k, adds the average-screening
-  approximation, S^k = h_k Q^k (see average_hk). Existing (calculated)
-  integrals are untouched. The extrapolated entries are added to the
-  in-memory table only; they are never written to the sk file (they would be
-  indistinguishable from calculated integrals).
-
-  @param Sk        Table of Sigma_2 integrals; extended in place.
-  @param qk        Coulomb integral table.
-  @param hk        Average correction ratios (see average_hk).
-  @param external  States for external legs (typically the full ci basis).
-  @param max_k     Maximum multipole.
-*/
-void extrapolate_Sk(Coulomb::LkTable &Sk, const Coulomb::QkTable &qk,
-                    const std::vector<double> &hk,
-                    const std::vector<DiracSpinor> &external, int max_k);
-
 //==============================================================================
 //==============================================================================
 

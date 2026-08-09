@@ -150,9 +150,12 @@ struct Integrals {
   Coulomb::QkTable qk{};
   //! Two-body Breit integrals, B^k; empty if not included
   Coulomb::WkTable Bk{};
-  //! Two-body Sigma_2 integrals, S^k; empty if not included.
-  //! May include extrapolated entries (see MBPT::extrapolate_Sk)
+  //! Two-body Sigma_2 integrals, S^k; empty if not included
   Coulomb::LkTable Sk{};
+  //! Average S^k/Q^k ratios, indexed by k; empty if Sigma_2 is not being
+  //! extrapolated beyond the cis2 basis. Diagrams with no stored S^k then
+  //! use S^k = hk[k] * Q^k. See MBPT::average_hk
+  std::vector<double> hk{};
   //! Derivative (dSigma/dE) correction for Sigma_1; empty if not included
   Sigma1Correction s1_corr{};
 
@@ -224,7 +227,9 @@ double CSF2_Coulomb(const Coulomb::QkTable &qk, DiracSpinor::Index v,
 */
 double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
                    DiracSpinor::Index w, DiracSpinor::Index x,
-                   DiracSpinor::Index y, int twoJ);
+                   DiracSpinor::Index y, int twoJ,
+                   const Coulomb::QkTable *qk = nullptr,
+                   const std::vector<double> &hk = {});
 
 /*!
   @brief Antisymmetrised two-body Breit matrix element in the coupled CSF
@@ -280,7 +285,9 @@ double Hab(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
   @return \f$ \Sigma_2 \f$ correction to \f$ H_{AB} \f$.
 */
 double Sigma2_AB(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
-                 const Coulomb::LkTable &Sk);
+                 const Coulomb::LkTable &Sk,
+                 const Coulomb::QkTable *qk = nullptr,
+                 const std::vector<double> &hk = {});
 
 /*!
   @brief Breit correction to Hab().
@@ -573,6 +580,8 @@ std::string Term_Symbol(int L, int two_S, int parity);
   @param Sk    Pointer to \f$ \Sigma_2 \f$ \f$ L^k \f$ table; ignored if nullptr.
   @param s1c   Pointer to derivative (dSigma/dE) correction for Sigma_1;
                ignored if nullptr. See @ref Sigma1Correction.
+  @param hk    Average S^k/Q^k ratios; if non-empty, diagrams with no stored
+               S^k use S^k = hk[k]*Q^k. See @ref MBPT::average_hk.
   @return Full CI Hamiltonian matrix in the CSF basis.
 */
 LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
@@ -580,7 +589,8 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
                                      const Coulomb::QkTable &qk,
                                      const Coulomb::WkTable *Bk = nullptr,
                                      const Coulomb::LkTable *Sk = nullptr,
-                                     const Sigma1Correction *s1c = nullptr);
+                                     const Sigma1Correction *s1c = nullptr,
+                                     const std::vector<double> &hk = {});
 
 /*!
   @brief Constructs the CI Hamiltonian matrix from a set of integral tables.

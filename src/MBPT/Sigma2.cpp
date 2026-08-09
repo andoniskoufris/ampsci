@@ -530,25 +530,4 @@ std::vector<double> average_hk(const Coulomb::LkTable &Sk,
   return hk;
 }
 
-//==============================================================================
-void extrapolate_Sk(Coulomb::LkTable &Sk, const Coulomb::QkTable &qk,
-                    const std::vector<double> &hk,
-                    const std::vector<DiracSpinor> &external, int max_k) {
-
-  const auto extrap = [&qk, &hk](int k, const DiracSpinor &v,
-                                 const DiracSpinor &w, const DiracSpinor &x,
-                                 const DiracSpinor &y) {
-    const auto h = k < (int)hk.size() ? hk[std::size_t(k)] : 0.0;
-    return h * qk.Q(k, v, w, x, y);
-  };
-  const auto Qk_SR = [](int k, const DiracSpinor &v, const DiracSpinor &w,
-                        const DiracSpinor &x, const DiracSpinor &y) {
-    return Coulomb::Qk_abcd_SR(k, v, w, x, y);
-  };
-
-  // fill() only computes entries not already in the table, so the
-  // calculated integrals are untouched
-  Sk.fill(external, extrap, Qk_SR, max_k);
-}
-
 } // namespace MBPT
