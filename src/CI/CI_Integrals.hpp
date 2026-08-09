@@ -47,6 +47,28 @@ namespace CI {
 */
 double corrected_Sigma(double Sigma, double dSigma, double dE);
 
+/*!
+  @brief Resummed shift of a \f$ \Sigma_2 \f$ integral to a new reference
+  energy E0 (Brillouin-Wigner denominators).
+  @details
+  \f$ S^k \to (S^k)^2 / (S^k - \delta E_0\, dS^k/dE_0) \f$, the same
+  resummation as @ref corrected_Sigma. Exact for a single energy denominator
+  (each term is \f$ N/(D + \delta E_0) \f$), so it holds up much better than
+  the linear expansion when \f$ \delta E_0 \f$ is a sizeable fraction of the
+  denominator.
+
+  Unlike @ref corrected_Sigma there is no guard against the correction
+  enhancing \f$ |S^k| \f$: for \f$ \Sigma_2 \f$ the shift legitimately goes
+  either way. The only guard is on crossing the pole (the denominator
+  changing sign), where the expansion is meaningless.
+
+  @param Sk    Integral \f$ S^k \f$, evaluated at the reference E0.
+  @param dSk   Derivative \f$ dS^k/dE_0 \f$, at the same reference.
+  @param dE0   Shift from the reference, \f$ E_0 - E_0^{\rm ref} \f$.
+  @return Shifted \f$ S^k \f$.
+*/
+double corrected_Sk(double Sk, double dSk, double dE0);
+
 //==============================================================================
 /*!
   @brief Derivative (dSigma/dE) correction data for the one-body Sigma_1
@@ -146,6 +168,11 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
   @param Bk             Pointer to Breit table; ignored if nullptr.
   @param Sk             Pointer to \f$ \Sigma_2 \f$ table; ignored if nullptr.
   @param hk             Average S^k/Q^k ratios; see @ref MBPT::average_hk.
+  @param dSk            Pointer to the dS^k/dE0 table (Brillouin-Wigner
+                        Sigma_2); ignored if nullptr. Sigma_2 is shifted to
+                        the current E0 each pass, so both corrections move
+                        together as E0 converges.
+  @param E0_sigma2      Reference E0 that @p Sk and @p dSk were tabulated at.
   @param outstream      Stream for the per-pass output.
   @return CI Hamiltonian matrix, built with the converged E0.
 */
@@ -153,6 +180,7 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
   PsiJPi *psi, const Sigma1Correction &s1c, const Coulomb::meTable<double> &h1,
   const Coulomb::QkTable &qk, const Coulomb::WkTable *Bk = nullptr,
   const Coulomb::LkTable *Sk = nullptr, const std::vector<double> &hk = {},
+  const Coulomb::LkTable *dSk = nullptr, double E0_sigma2 = 0.0,
   std::ostream &outstream = std::cout);
 
 //==============================================================================
@@ -190,6 +218,12 @@ struct Integrals {
   //! extrapolated beyond the cis2 basis. Diagrams with no stored S^k then
   //! use S^k = hk[k] * Q^k. See MBPT::average_hk
   std::vector<double> hk{};
+  //! Energy derivatives dS^k/dE0 of the Sigma_2 integrals; empty unless the
+  //! Brillouin-Wigner (E0-dependent) Sigma_2 correction is included.
+  //! See CI::corrected_Sk
+  Coulomb::LkTable dSk{};
+  //! Reference E0 that Sk and dSk were tabulated at (Brillouin-Wigner)
+  double E0_sigma2{0.0};
   //! Derivative (dSigma/dE) correction for Sigma_1; empty if not included
   Sigma1Correction s1_corr{};
 
@@ -263,7 +297,8 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
                    DiracSpinor::Index w, DiracSpinor::Index x,
                    DiracSpinor::Index y, int twoJ,
                    const Coulomb::QkTable *qk = nullptr,
-                   const std::vector<double> &hk = {});
+                   const std::vector<double> &hk = {},
+                   const Coulomb::LkTable *dSk = nullptr, double dE0 = 0.0);
 
 /*!
   @brief Antisymmetrised two-body Breit matrix element in the coupled CSF
@@ -321,7 +356,8 @@ double Hab(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
 double Sigma2_AB(const CI::CSF2 &A, const CI::CSF2 &B, int twoJ,
                  const Coulomb::LkTable &Sk,
                  const Coulomb::QkTable *qk = nullptr,
-                 const std::vector<double> &hk = {});
+                 const std::vector<double> &hk = {},
+                 const Coulomb::LkTable *dSk = nullptr, double dE0 = 0.0);
 
 /*!
   @brief Breit correction to Hab().
@@ -616,15 +652,19 @@ std::string Term_Symbol(int L, int two_S, int parity);
                ignored if nullptr. See @ref Sigma1Correction.
   @param hk    Average S^k/Q^k ratios; if non-empty, diagrams with no stored
                S^k use S^k = hk[k]*Q^k. See @ref MBPT::average_hk.
+  @param dSk   Pointer to the dS^k/dE0 table; ignored if nullptr. If given,
+               each stored S^k is shifted to the target E0. See
+               @ref CI::corrected_Sk.
+  @param dE0   Shift of the target E0 from the one Sk was tabulated at.
   @return Full CI Hamiltonian matrix in the CSF basis.
 */
-LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi,
-                                     const Coulomb::meTable<double> &h1,
-                                     const Coulomb::QkTable &qk,
-                                     const Coulomb::WkTable *Bk = nullptr,
-                                     const Coulomb::LkTable *Sk = nullptr,
-                                     const Sigma1Correction *s1c = nullptr,
-                                     const std::vector<double> &hk = {});
+LinAlg::Matrix<double>
+construct_Hci(const PsiJPi &psi, const Coulomb::meTable<double> &h1,
+              const Coulomb::QkTable &qk, const Coulomb::WkTable *Bk = nullptr,
+              const Coulomb::LkTable *Sk = nullptr,
+              const Sigma1Correction *s1c = nullptr,
+              const std::vector<double> &hk = {},
+              const Coulomb::LkTable *dSk = nullptr, double dE0 = 0.0);
 
 /*!
   @brief Constructs the CI Hamiltonian matrix from a set of integral tables.

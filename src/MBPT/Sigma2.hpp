@@ -8,9 +8,10 @@
 
 namespace MBPT {
 
-/*! @brief Type of energy denominators: DFK, RS, Fermi, Fermi0
+/*! @brief Type of energy denominators: DFK, BW, RS, Fermi, Fermi0
 
  - DFK    : Dzuba-Flambaum-Kozlov convention (Brillouin-Wigner-like, with the target-state energy approximated by the lowest configuration). The external leg belonging to the target state is evaluated at the Fermi level (lowest state for its kappa in excited spectrum); the external leg appearing in the intermediate state keeps its actual orbital energy. Retains state dependence, with no danger of accidental enhancement.
+ - BW     : Brillouin-Wigner: the denominator is E0 minus the energy of the intermediate state, where E0 is the total valence energy of the target CI level. The target-state leg of DFK is replaced by (E0 - e_s), where e_s is the other valence orbital in that diagram's intermediate state. DFK is this with E0 approximated by the leading configuration, E0 -> e_bar_target + e_s. Requires E0.
  - RS     : Use actual orbital energies for both external legs. May be danger of accidental enhancement.
  - Fermi  : Both external legs evaluated at the Fermi level for their kappa.
  - Fermi0 : As above, but assume Fermi level for all kappas the same. These often cancel, so there is no (excited-excited) term in denominator (except diagram d). Fine, since the remaining core-excited always dominates.
@@ -18,11 +19,12 @@ namespace MBPT {
 In each case, each diagram is averaged with its bra-ket partner,
 0.5*(1/de + 1/de'), so that S^k (and hence the CI matrix) is symmetric.
 This is the Hermitian effective Hamiltonian, correct to
-this order in PT. For Fermi0 the two partners coincide.
+this order in PT. For Fermi0 and BW the two partners coincide identically
+(BW uses the target energy for both bra and ket), so the average does nothing.
 
 Energy for internal legs (hole-particle) always actual orbtials.
 */
-enum class Denominators { RS, Fermi, Fermi0, DFK };
+enum class Denominators { RS, Fermi, Fermi0, DFK, BW };
 
 //! Returns string representation of Denominators enum
 std::string parse_Denominators(Denominators d);
@@ -105,6 +107,8 @@ split_basis(const std::vector<DiracSpinor> &basis, double E_Fermi,
   @param denominators Energy denominator convention: see \ref MBPT::Denominators.
   @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
                       Missing (or empty) implies 1.0 (no screening).
+  @param E0           Total valence energy of the target CI level; used only
+                      by Denominators::BW.
 
   @return \f$ S^k_{vwxy} \f$.
 */
@@ -114,7 +118,7 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
                const std::vector<DiracSpinor> &excited,
                const Angular::SixJTable &SixJ,
                Denominators denominators = Denominators::DFK,
-               const std::vector<double> &fk = {});
+               const std::vector<double> &fk = {}, double E0 = 0.0);
 
 /*!
   @brief Selection rule for \f$ S^k_{vwxy} \f$.
@@ -226,6 +230,7 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   @param denominators             DFK, RS, Fermi, Fermi0: see \ref MBPT::Denominators
   @param no_new_integrals         If true, only reads existing intergals; no new computation.
   @param fk                       Screening factors; fk[k] scales the k-th Coulomb line.
+  @param E0                       Target-level valence energy; used only by Denominators::BW.
 
   @note no_new_integrals - if we _know_ all required integrals are already in the 
   file to be read in, saves time.
@@ -239,7 +244,7 @@ double e_bar(int kappa_v, const std::vector<DiracSpinor> &excited);
   const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
   const Coulomb::QkTable &qk, int max_k, bool exclude_wrong_parity_box,
   Denominators denominators, bool no_new_integrals = false,
-  const std::vector<double> &fk = {});
+  const std::vector<double> &fk = {}, double E0 = 0.0);
 
 /*!
   @brief Average Sigma_2 correction ratios, h_k, for each multipole k.
@@ -281,6 +286,8 @@ namespace Sigma2 {
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
   @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
+  @param E0           Target-level valence energy; used only by
+                      Denominators::BW.
 
   @return Diagrams a+b contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -290,7 +297,7 @@ double S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
                    const Angular::SixJTable &SixJ, Denominators denominators,
-                   const std::vector<double> &fk = {});
+                   const std::vector<double> &fk = {}, double E0 = 0.0);
 
 /*!
   @brief Diagram c1 contribution to the reduced two-body Sigma.
@@ -305,6 +312,8 @@ double S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
   @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
+  @param E0           Target-level valence energy; used only by
+                      Denominators::BW.
 
   @return Diagram c1 contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -314,7 +323,7 @@ double S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
                    const Angular::SixJTable &SixJ, Denominators denominators,
-                   const std::vector<double> &fk = {});
+                   const std::vector<double> &fk = {}, double E0 = 0.0);
 
 /*!
   @brief Diagram c2 contribution to the reduced two-body Sigma.
@@ -329,6 +338,8 @@ double S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
   @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
+  @param E0           Target-level valence energy; used only by
+                      Denominators::BW.
 
   @return Diagram c2 contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -338,7 +349,7 @@ double S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
                    const std::vector<DiracSpinor> &core,
                    const std::vector<DiracSpinor> &excited,
                    const Angular::SixJTable &SixJ, Denominators denominators,
-                   const std::vector<double> &fk = {});
+                   const std::vector<double> &fk = {}, double E0 = 0.0);
 
 /*!
   @brief Diagram d contribution to the reduced two-body Sigma.
@@ -353,6 +364,8 @@ double S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
   @param SixJ         6-j symbol table.
   @param denominators Energy denominator convention.
   @param fk           Screening factors; fk[k] scales the k-th Coulomb line.
+  @param E0           Target-level valence energy; used only by
+                      Denominators::BW.
 
   @return Diagram d contribution to \f$ S^k_{vwxy} \f$.
 */
@@ -362,7 +375,7 @@ double S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
                   const std::vector<DiracSpinor> &core,
                   const std::vector<DiracSpinor> &excited,
                   const Angular::SixJTable &SixJ, Denominators denominators,
-                  const std::vector<double> &fk = {});
+                  const std::vector<double> &fk = {}, double E0 = 0.0);
 
 } // namespace Sigma2
 

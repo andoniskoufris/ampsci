@@ -108,6 +108,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   @param hk           Average S^k/Q^k ratios, for extrapolating Sigma_2 beyond
                       the cis2 basis; empty for no extrapolation.
                       See @ref MBPT::average_hk.
+  @param dSk          Pointer to the dS^k/dE0 table (Brillouin-Wigner Sigma_2);
+                      ignored if nullptr. See @ref CI::corrected_Sk.
+  @param E0_sigma2    Reference E0 that Sk and dSk were tabulated at.
                       
   @return PsiJPi (@ref PsiJPi) containing the CI eigenvalues and expansion
   coefficients for the requested solutions.
@@ -120,6 +123,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               std::ostream &outstream = std::cout,
               const std::string &ci_fname = "",
               const Sigma1Correction *s1c = nullptr,
-              const std::vector<double> &hk = {});
+              const std::vector<double> &hk = {},
+              const Coulomb::LkTable *dSk = nullptr, double E0_sigma2 = 0.0);
 
 } // namespace CI

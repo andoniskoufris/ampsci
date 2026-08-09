@@ -76,13 +76,28 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "file already has higher-k terms, they will be included. Set negative "
      "(or very large) to include all k. [8]"},
     {"denominators",
-     "'DFK', 'RS', 'Fermi', 'Fermi0'. Denominators used in Sigma2 matrix "
+     "'DFK', 'BW', 'RS', 'Fermi', 'Fermi0'. Denominators used in Sigma2 matrix "
      "elements. DFK (Dzuba-Flambaum-Kozlov): target-state legs use the lowest "
      "excited state of their kappa, intermediate-state legs use actual "
-     "energies. RS uses actual energies for all external legs, Fermi uses the "
+     "energies. BW (Brillouin-Wigner): the denominator is E0 minus the energy "
+     "of the intermediate state, where E0 is the total valence energy of the "
+     "target level; DFK is this with E0 taken from the leading configuration. "
+     "RS uses actual energies for all external legs, Fermi uses the "
      "lowest excited state for each kappa (both legs), Fermi0 uses lowest "
      "excited state for all kappas (and thus cancels in all except diagram "
      "'d'). Applies to Sigma_2 only. [DFK]"},
+    {"derivative_correction_sigma2",
+     "Include the E0 dependence of the Sigma_2 matrix elements. Sets the "
+     "denominators to 'BW', tabulates S^k and its derivative dS^k/dE0 at a "
+     "reference E0, then shifts each S^k to the E0 of the (J, parity) being "
+     "solved: S^k -> S^k*S^k/(S^k - dE0*dS^k/dE0). This doubles the Sigma_2 "
+     "calculation time and stores a second sk file. Requires "
+     "derivative_correction (which is what finds E0). [false]"},
+    {"E0_sigma2",
+     "Reference E0 (au) that the Sigma_2 integrals are tabulated at, when "
+     "derivative_correction_sigma2 is set. The shift to each J/pi is resummed, "
+     "so this need not be accurate, but the closer it is the less work the "
+     "resummation does. [2*(lowest orbital energy)]"},
     {"derivative_correction",
      "Include the derivative (dSigma/dE) correction to the Sigma_1 matrix "
      "elements: Sigma -> Sigma*Sigma/(Sigma - dE*dSigma/dE), with dE = E0 - "
@@ -102,6 +117,10 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "At_b_hash.sk.abf, where At is atomic symbol + 'identity', b is the s2 "
      "(internal) basis, and hash encodes other settings that changes the "
      "integrals. Set to 'false' to disable read/write."},
+    {"dsk_file",
+     "As sk_file, but for the second Sigma_2 table used by "
+     "derivative_correction_sigma2. Default is At_b_hash.dsk.abf. nb: it holds "
+     "S^k at the shifted E0; the derivative is formed from it after reading."},
     {"bk_file", "Filename for storing two-body Breit integrals. By default, is "
                 "~ At.bk, where At is atomic symbol + 'identity'. Set to "
                 "'false' to disable read/write."},
@@ -249,9 +268,6 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     input.get("cis2_basis", std::to_string(N_max_core + 3) + "spdf");
   const auto cis2_basis = CI::basis_subset(ci_sp_basis, cis2_basis_string);
 
-  const auto denominators_str = input.get("denominators", "DFK"s);
-  const auto denominators = MBPT::parse_Denominators(denominators_str);
-
   // Screening factors for Sigma_2 (fk[k] scales k-th Coulomb line)
   const auto fk = input.get("fk", std::vector<double>{});
 
@@ -261,6 +277,33 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
   // Derivative (dSigma/dE) correction for Sigma_1
   const auto derivative_correction = input.get("derivative_correction", false);
+
+  // E0 (Brillouin-Wigner) dependence of Sigma_2. E0 comes from the Sigma_1
+  // iteration, so that correction is required
+  auto derivative_correction_sigma2 =
+    input.get("derivative_correction_sigma2", false);
+  if (derivative_correction_sigma2 && !derivative_correction) {
+    std::cout << "\nWarning: derivative_correction_sigma2 requires "
+                 "derivative_correction (which finds E0): not including\n";
+    derivative_correction_sigma2 = false;
+  }
+
+  const auto denominators_str =
+    input.get("denominators", derivative_correction_sigma2 ? "BW"s : "DFK"s);
+  auto denominators = MBPT::parse_Denominators(denominators_str);
+  if (derivative_correction_sigma2 && denominators != MBPT::Denominators::BW) {
+    std::cout << "\nNote: derivative_correction_sigma2 requires BW "
+                 "denominators: over-riding denominators = "
+              << denominators_str << "\n";
+    denominators = MBPT::Denominators::BW;
+  }
+
+  // Reference E0 that the Sigma_2 integrals are tabulated at. Without the
+  // derivative, BW just uses this fixed E0 for every level
+  const auto E0_sigma2 =
+    denominators == MBPT::Denominators::BW ?
+      input.get("E0_sigma2", 2.0 * DiracSpinor::min_En(ci_sp_basis)) :
+      0.0;
 
   //----------------------------------------------------------------------------
 
@@ -462,17 +505,21 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   common_settings += ";";
 
   Coulomb::LkTable Sk;
+  // dS^k/dE0; empty unless derivative_correction_sigma2
+  Coulomb::LkTable dSk;
   // Average S^k/Q^k ratios, for extrapolating Sigma_2 beyond cis2_basis
   std::vector<double> hk;
   if (include_Sigma2) {
 
     // Here, write basis info into filename, since these are _internal_ lines!
-    const auto sk_settings = common_settings +
-                             MBPT::parse_Denominators(denominators) + ";" +
-                             (exclude_wrong_parity_box ? "xb" : "") + ";";
-    const auto Sk_filename = input.get(
-      "sk_file", wf.identity() + "_" + DiracSpinor::state_config(excited_s2) +
-                   "_" + qip::hash_string(sk_settings) + ".sk.abf");
+    const auto sk_settings =
+      common_settings + MBPT::parse_Denominators(denominators) + ";" +
+      (exclude_wrong_parity_box ? "xb" : "") + ";" +
+      (derivative_correction_sigma2 ? std::to_string(E0_sigma2) + ";" : "");
+    const auto sk_basename = wf.identity() + "_" +
+                             DiracSpinor::state_config(excited_s2) + "_" +
+                             qip::hash_string(sk_settings);
+    const auto Sk_filename = input.get("sk_file", sk_basename + ".sk.abf");
 
     std::cout << (no_new_integralsQ ? "\nRead" : "\nCalculate")
               << " two-body MBPT integrals: Σ^k_abcd\n";
@@ -490,9 +537,40 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
     std::cout << std::flush;
 
+    if (denominators == MBPT::Denominators::BW) {
+      fmt::print("Brillouin-Wigner Σ_2: tabulated at E0 = {:.8f} au{}\n",
+                 E0_sigma2,
+                 derivative_correction_sigma2 ?
+                   ", with dΣ^k/dE0 for the shift to each J/pi" :
+                   " (fixed: no dΣ^k/dE0)");
+    }
+
     Sk = MBPT::calculate_Sk(Sk_filename, cis2_basis, core_s2, excited_s2, qk,
                             max_k_Coulomb, exclude_wrong_parity_box,
-                            denominators, no_new_integralsQ, fk);
+                            denominators, no_new_integralsQ, fk, E0_sigma2);
+
+    if (derivative_correction_sigma2) {
+      // dS^k/dE0, by finite difference in E0. The denominators are exactly
+      // linear in E0, so the only error is the (second-order) curvature of
+      // the sum, which the resummation in CI::corrected_Sk accounts for.
+      // nb: the file holds S^k(E0 + delta); it is turned into the derivative
+      // here, after reading, so a re-read gives the same thing.
+      constexpr auto delta_E0 = 0.01;
+      const auto dSk_filename = input.get("dsk_file", sk_basename + ".dsk.abf");
+      std::cout << "\nCalculate Σ^k_abcd at E0 + " << delta_E0
+                << " au, for dΣ^k/dE0\n"
+                << std::flush;
+      dSk = MBPT::calculate_Sk(dSk_filename, cis2_basis, core_s2, excited_s2,
+                               qk, max_k_Coulomb, exclude_wrong_parity_box,
+                               denominators, no_new_integralsQ, fk,
+                               E0_sigma2 + delta_E0);
+      // Both tables have the same entries (same fill), so this is safe
+      for (std::size_t k = 0; k < dSk->size(); ++k) {
+        for (auto &[index, value] : dSk->at(k)) {
+          value = (value - Sk.Q(int(k), index)) / delta_E0;
+        }
+      }
+    }
 
     if (extrapolate_sigma2) {
       // Store the <hk> average ratios.
@@ -539,11 +617,14 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     ci_settings += "dSdE;";
   }
   if (include_Sigma2) {
-    ci_settings += "s2;" + MBPT::parse_Denominators(denominators) + ";" +
-                   DiracSpinor::state_config(s2_basis) + ";" +
-                   DiracSpinor::state_config(cis2_basis) + ";" +
-                   (exclude_wrong_parity_box ? "xb" : "") + ";" +
-                   (extrapolate_sigma2 ? "ex" : "") + ";";
+    ci_settings +=
+      "s2;" + MBPT::parse_Denominators(denominators) + ";" +
+      (derivative_correction_sigma2 ? "bw" + std::to_string(E0_sigma2) + ";" :
+                                      "") +
+      DiracSpinor::state_config(s2_basis) + ";" +
+      DiracSpinor::state_config(cis2_basis) + ";" +
+      (exclude_wrong_parity_box ? "xb" : "") + ";" +
+      (extrapolate_sigma2 ? "ex" : "") + ";";
   }
   if (!Bk.emptyQ()) {
     ci_settings +=
@@ -570,7 +651,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       levels.at(i) =
         run_CI(ci_sp_basis, twoj, pi, num_solutions, all_below_cm, h1, qk, Bk,
                Sk, include_Sigma2, print_details, read_only, std::cout,
-               ci_fname, s1_corr.empty() ? nullptr : &s1_corr, hk);
+               ci_fname, s1_corr.empty() ? nullptr : &s1_corr, hk,
+               dSk.emptyQ() ? nullptr : &dSk, E0_sigma2);
     }
   }
 
@@ -649,6 +731,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   out.integrals.qk = std::move(qk);
   out.integrals.Bk = std::move(Bk);
   out.integrals.Sk = std::move(Sk);
+  out.integrals.dSk = std::move(dSk);
+  out.integrals.E0_sigma2 = E0_sigma2;
   out.integrals.hk = std::move(hk);
   out.integrals.s1_corr = std::move(s1_corr);
 
@@ -664,7 +748,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
               const Coulomb::WkTable &Bk, const Coulomb::LkTable &Sk,
               bool include_Sigma2, bool print_details, bool read_only,
               std::ostream &outstream, const std::string &ci_fname,
-              const Sigma1Correction *s1c, const std::vector<double> &hk) {
+              const Sigma1Correction *s1c, const std::vector<double> &hk,
+              const Coulomb::LkTable *dSk, double E0_sigma2) {
 
   auto printJ = [](int twoj) {
     return twoj % 2 == 0 ? std::to_string(twoj / 2) :
@@ -720,7 +805,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     // that we do not use.
     LinAlg::Matrix<double> Hci;
     if (s1c != nullptr) {
-      Hci = CI::iterate_E0(&psi, *s1c, h1, qk, br_ptr, s2_ptr, hk, outstream);
+      Hci = CI::iterate_E0(&psi, *s1c, h1, qk, br_ptr, s2_ptr, hk, dSk,
+                           E0_sigma2, outstream);
     } else {
       // No correction (or iteration disabled): single matrix
       Hci = CI::construct_Hci(psi, h1, qk, br_ptr, s2_ptr, s1c, hk);

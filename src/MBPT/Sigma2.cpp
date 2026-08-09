@@ -19,6 +19,8 @@ std::string parse_Denominators(Denominators d) {
     return "Fermi0";
   case Denominators::DFK:
     return "DFK";
+  case Denominators::BW:
+    return "BW";
   }
   assert(false);
   return "Error";
@@ -32,6 +34,8 @@ Denominators parse_Denominators(std::string_view s) {
     return Denominators::Fermi;
   if (qip::ci_compare(s, "Fermi0"))
     return Denominators::Fermi0;
+  if (qip::ci_compare(s, "BW"))
+    return Denominators::BW;
   return Denominators::DFK;
 }
 
@@ -40,8 +44,12 @@ Denominators parse_Denominators(std::string_view s) {
 // where "target" is the external leg carrying the target-state energy, and
 // "int" is the external leg appearing in the intermediate state.
 // The _bar energies are the Fermi-level values (e_bar) for each leg's kappa.
+// For BW, the target-state energy is not a single orbital energy: the whole
+// denominator is E0 - E_intermediate, so the target leg is replaced by
+// (E0 - es), where es is the _other_ valence orbital in the intermediate
+// state of this diagram.
 static double leg_de(Denominators denominators, double et_bar, double et,
-                     double ei_bar, double ei) {
+                     double ei_bar, double ei, double es, double E0) {
   switch (denominators) {
   case Denominators::RS:
     return et - ei;
@@ -51,6 +59,8 @@ static double leg_de(Denominators denominators, double et_bar, double et,
     return 0.0;
   case Denominators::DFK:
     return et_bar - ei;
+  case Denominators::BW:
+    return (E0 - es) - ei;
   }
   assert(false);
   return 0.0;
@@ -117,16 +127,20 @@ double Sk_vwxy(int k, const DiracSpinor &v, const DiracSpinor &w,
                const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
                const std::vector<DiracSpinor> &excited,
                const Angular::SixJTable &SixJ, Denominators denominators,
-               const std::vector<double> &fk) {
+               const std::vector<double> &fk, double E0) {
   using namespace Sigma2;
 
   if (!Sk_vwxy_SR(k, v, w, x, y))
     return 0.0;
 
-  return S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk) +
-         S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk) +
-         S_Sigma2_c2(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk) +
-         S_Sigma2_d(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk);
+  return S_Sigma2_ab(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk,
+                     E0) +
+         S_Sigma2_c1(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk,
+                     E0) +
+         S_Sigma2_c2(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk,
+                     E0) +
+         S_Sigma2_d(k, v, w, x, y, qk, core, excited, SixJ, denominators, fk,
+                    E0);
 }
 
 //==============================================================================
@@ -139,7 +153,7 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
                            const std::vector<DiracSpinor> &excited,
                            const Angular::SixJTable &SixJ,
                            Denominators denominators,
-                           const std::vector<double> &fk) {
+                           const std::vector<double> &fk, double E0) {
 
   // overall selectrion rule tested outside
 
@@ -159,10 +173,13 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
   // diagram a: D has (e_x - e_v) [target x, intermediate v];
   //            its bra-ket partner has (e_w - e_y)
   // diagram b: D has (e_y - e_w); its bra-ket partner has (e_v - e_x)
-  const auto de_a1 = leg_de(denominators, x0, x.en(), v0, v.en());
-  const auto de_a2 = leg_de(denominators, w0, w.en(), y0, y.en());
-  const auto de_b1 = leg_de(denominators, y0, y.en(), w0, w.en());
-  const auto de_b2 = leg_de(denominators, v0, v.en(), x0, x.en());
+  // The intermediate state of diagram a is {v, y, n, a-hole}, and of
+  // diagram b is {x, w, n, a-hole}: the last argument is the valence orbital
+  // that is not the intermediate leg (only used for BW)
+  const auto de_a1 = leg_de(denominators, x0, x.en(), v0, v.en(), y.en(), E0);
+  const auto de_a2 = leg_de(denominators, w0, w.en(), y0, y.en(), v.en(), E0);
+  const auto de_b1 = leg_de(denominators, y0, y.en(), w0, w.en(), x.en(), E0);
+  const auto de_b2 = leg_de(denominators, v0, v.en(), x0, x.en(), w.en(), E0);
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -217,7 +234,7 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
                            const std::vector<DiracSpinor> &excited,
                            const Angular::SixJTable &SixJ,
                            Denominators denominators,
-                           const std::vector<double> &fk) {
+                           const std::vector<double> &fk, double E0) {
 
   // overall selectrion rule tested outside
 
@@ -238,9 +255,9 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
   // External-leg parts of the energy denominators:
   // c1's own denominator has (e_y - e_v) [target y, intermediate v];
   // its bra-ket partner (c1 of the reversed element, same numerator)
-  // has (e_w - e_x)
-  const auto de_1 = leg_de(denominators, y0, y.en(), v0, v.en());
-  const auto de_2 = leg_de(denominators, w0, w.en(), x0, x.en());
+  // has (e_w - e_x). The intermediate state is {x, v, n, a-hole}
+  const auto de_1 = leg_de(denominators, y0, y.en(), v0, v.en(), x.en(), E0);
+  const auto de_2 = leg_de(denominators, w0, w.en(), x0, x.en(), v.en(), E0);
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -287,7 +304,7 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
                            const std::vector<DiracSpinor> &excited,
                            const Angular::SixJTable &SixJ,
                            Denominators denominators,
-                           const std::vector<double> &fk) {
+                           const std::vector<double> &fk, double E0) {
 
   // overall selectrion rule tested outside
 
@@ -307,9 +324,10 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
 
   // External-leg parts of the energy denominators:
   // c2's denominator has (e_x - e_w) [target x, intermediate w];
-  // its HC partner has (e_v - e_y)
-  const auto de_1 = leg_de(denominators, x0, x.en(), w0, w.en());
-  const auto de_2 = leg_de(denominators, v0, v.en(), y0, y.en());
+  // its HC partner has (e_v - e_y). The intermediate state is
+  // {w, y, n, a-hole}
+  const auto de_1 = leg_de(denominators, x0, x.en(), w0, w.en(), y.en(), E0);
+  const auto de_2 = leg_de(denominators, v0, v.en(), y0, y.en(), w.en(), E0);
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -357,7 +375,7 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
                           const std::vector<DiracSpinor> &excited,
                           const Angular::SixJTable &SixJ,
                           Denominators denominators,
-                          const std::vector<double> &fk) {
+                          const std::vector<double> &fk, double E0) {
 
   // screening factors
   auto Fk = [&fk](int l) {
@@ -373,11 +391,15 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
   const auto y0 = e_bar(y.kappa(), excited);
   const auto e0 = DiracSpinor::min_En(excited);
 
+  // The intermediate state of diagram d holds all four valence orbitals
+  // (plus the two holes), so BW gives (e_v + e_w + e_x + e_y) - E0
+  const auto e_vwxy = v.en() + w.en() + x.en() + y.en();
+
   // Here, "Fermi0" cancellation doesn't happen: valence energies remain.
   // Own denominator has -(e_v + e_w); bra-ket partner has -(e_x + e_y)
   // Both external legs are target-state legs, so DFK coincides with Fermi.
-  const auto pair_en = [denominators, e0](double ea_bar, double ea,
-                                          double eb_bar, double eb) {
+  const auto pair_en = [denominators, e0, e_vwxy, E0](
+                         double ea_bar, double ea, double eb_bar, double eb) {
     switch (denominators) {
     case Denominators::RS:
       return ea + eb;
@@ -386,6 +408,8 @@ double Sigma2::S_Sigma2_d(int k, const DiracSpinor &v, const DiracSpinor &w,
       return ea_bar + eb_bar;
     case Denominators::Fermi0:
       return 2.0 * e0;
+    case Denominators::BW:
+      return e_vwxy - E0;
     }
     assert(false);
     return 0.0;
@@ -443,7 +467,7 @@ Coulomb::LkTable calculate_Sk(const std::string &filename,
                               const Coulomb::QkTable &qk, int max_k,
                               bool exclude_wrong_parity_box,
                               Denominators denominators, bool no_new_integrals,
-                              const std::vector<double> &fk) {
+                              const std::vector<double> &fk, double E0) {
 
   Coulomb::LkTable Sk;
 
@@ -456,7 +480,7 @@ Coulomb::LkTable calculate_Sk(const std::string &filename,
                                const DiracSpinor &w, const DiracSpinor &x,
                                const DiracSpinor &y) {
     return MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited, sjt, denominators,
-                         fk);
+                         fk, E0);
   };
   const auto Sk_selection_rule = [&](int k, const DiracSpinor &v,
                                      const DiracSpinor &w, const DiracSpinor &x,

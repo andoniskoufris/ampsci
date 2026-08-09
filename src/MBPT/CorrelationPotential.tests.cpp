@@ -552,8 +552,40 @@ TEST_CASE("MBPT: Sigma2", "[MBPT][Sigma2][CI][unit]") {
                                               SixJ, MBPT::Denominators::DFK);
             REQUIRE(dfk2 == Approx(dfk1));
             REQUIRE(dfk3 == Approx(dfk1));
+
+            // BW denominators: same symmetries, for an arbitrary E0
+            const auto E0_test = -0.5;
+            const double bw1 =
+              MBPT::Sk_vwxy(k, v, w, x, y, qk, core, excited, SixJ,
+                            MBPT::Denominators::BW, {}, E0_test);
+            const double bw2 =
+              MBPT::Sk_vwxy(k, w, v, y, x, qk, core, excited, SixJ,
+                            MBPT::Denominators::BW, {}, E0_test);
+            const double bw3 =
+              MBPT::Sk_vwxy(k, x, y, v, w, qk, core, excited, SixJ,
+                            MBPT::Denominators::BW, {}, E0_test);
+            REQUIRE(bw2 == Approx(bw1));
+            REQUIRE(bw3 == Approx(bw1));
           }
         }
+      }
+    }
+  }
+
+  // For a diagonal element, S^k_vwvw, setting E0 to the energy of that pair
+  // makes every BW denominator equal to the RS one: BW is
+  // E0 - (intermediate valence energies), and RS is what that becomes when
+  // E0 = e_v + e_w. (Non-trivial for diagrams c1, c2 and d, whose external
+  // parts do not vanish for a diagonal element.)
+  for (const auto &v : wf.valence()) {
+    for (const auto &w : wf.valence()) {
+      const auto E0 = v.en() + w.en();
+      for (int k = 0; k <= kmax; ++k) {
+        const double s_bw = MBPT::Sk_vwxy(k, v, w, v, w, qk, core, excited,
+                                          SixJ, MBPT::Denominators::BW, {}, E0);
+        const double s_rs = MBPT::Sk_vwxy(k, v, w, v, w, qk, core, excited,
+                                          SixJ, MBPT::Denominators::RS);
+        REQUIRE(s_bw == Approx(s_rs));
       }
     }
   }
