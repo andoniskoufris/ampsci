@@ -163,7 +163,7 @@ struct ConfigInfo {
 
 //==============================================================================
 /*!
-  @brief Container for CI solutions in a single (J, parity) sector.
+  @brief Container for CI solutions in a single (J, parity) block.
   @details
   Holds the complete set of configuration state functions and the results of
   the CI diagonalisation for a fixed total angular momentum J and parity.
@@ -237,7 +237,7 @@ public:
   //! Set configuration info for the ith solution (must be called manually after solve())
   void update_config_info(std::size_t i, const ConfigInfo &info);
 
-  //! Full list of CSFs spanning this (J, parity) sector
+  //! Full list of CSFs spanning this (J, parity) block
   const std::vector<CSF2> &CSFs() const;
 
   //! Returns reference to the ith CSF
@@ -252,10 +252,10 @@ public:
   //! CI coefficient for the ith solution corresponding to the jth CSF
   double coef(std::size_t i, std::size_t j) const;
 
-  //! Parity of the sector (+/-1)
+  //! Parity of the block (+/-1)
   int parity() const;
 
-  //! Twice the total angular momentum 2J for this sector
+  //! Twice the total angular momentum 2J for this block
   int twoJ() const;
 
   //! Number of CI solutions currently stored
@@ -265,12 +265,12 @@ public:
   const ConfigInfo &info(std::size_t i) const;
 
   /*!
-    @brief Reads or writes CI solutions (energies, eigenvectors) to/from a multi-sector binary file.
+    @brief Reads or writes CI solutions (energies, eigenvectors) to/from a multi-block binary file.
     @details
-    A single file holds multiple sectors, one per (twoJ, parity) pair.
-    Each sector is self-describing: (twoJ, pi, num_csfs, num_solutions, E[num_csfs], M[num_csfs x num_csfs]).
+    A single file holds multiple blocks, one per (twoJ, parity) pair.
+    Each block is self-describing: (twoJ, pi, num_csfs, num_solutions, E[num_csfs], M[num_csfs x num_csfs]).
     Energies and eigenvectors are always stored at full num_csfs size (zero-padded
-    if only a partial solve was done), so sector size is determined from num_csfs
+    if only a partial solve was done), so block size is determined from num_csfs
     alone, enabling O(N) scan and in-place overwrite.
 
     The CSF basis (m_CSFs) is not touched; it must be constructed via the normal
@@ -279,12 +279,12 @@ public:
 
     ConfigInfo is not stored -- call update_config_info() after reading if needed.
 
-    On read: scans sectors until matching (twoJ, pi) is found, verifies num_csfs,
-    reads num_solutions, E, and M; returns false if sector not found or num_csfs
+    On read: scans blocks until matching (twoJ, pi) is found, verifies num_csfs,
+    reads num_solutions, E, and M; returns false if block not found or num_csfs
     mismatches.
 
-    On write: if the sector already exists and num_csfs matches, overwrites it
-    in-place using @ref IO::FRW::update. If it is a new sector, appends it to
+    On write: if the block already exists and num_csfs matches, overwrites it
+    in-place using @ref IO::FRW::update. If it is a new block, appends it to
     the end of the file -- no rewrite of existing data.
 
     @note No settings are stored in the file: the filename identifies the
@@ -295,7 +295,7 @@ public:
     @param rw         @ref IO::FRW::read to read; @ref IO::FRW::write to write.
     @param outstream  Output stream for progress/notes.
 
-    @return True on success; false if the file does not exist (read), the sector
+    @return True on success; false if the file does not exist (read), the block
             is not found (read), or num_csfs mismatches.
   */
   bool read_write(const std::string &fname, IO::FRW::RoW rw,

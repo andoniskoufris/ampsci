@@ -191,7 +191,7 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
 
   //----------------------------------------------------------------------------
   // Static polarisability of the ground state (all K), and the dynamic case,
-  // for which s carries -omega. The only intermediate sector is J=1 odd, so
+  // for which s carries -omega. The only intermediate block is J=1 odd, so
   // the direct sum over its complete CI spectrum is the reference
   {
     CI::PsiJPi Psi_1o(2, -1, ints.ci_basis);

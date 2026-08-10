@@ -11,7 +11,7 @@ namespace MBPT {
 /*! @brief Type of energy denominators: DFK, BW, RS, Fermi, Fermi0
 
  - DFK    : Dzuba-Flambaum-Kozlov convention (Brillouin-Wigner-like, with the target-state energy approximated by the lowest configuration). The external leg belonging to the target state is evaluated at the Fermi level (lowest state for its kappa in excited spectrum); the external leg appearing in the intermediate state keeps its actual orbital energy. Retains state dependence, with no danger of accidental enhancement.
- - BW     : Brillouin-Wigner: the denominator is E0 minus the energy of the intermediate state, where E0 is the total valence energy of the target CI level. The target-state leg of DFK is replaced by (E0 - e_s), where e_s is the other valence orbital in that diagram's intermediate state. DFK is this with E0 approximated by the leading configuration, E0 -> e_bar_target + e_s. Requires E0.
+ - BW     : Brillouin-Wigner: the denominator is E0 - E_intermediate, where E0 is the total valence energy of the target CI level, and E_intermediate is the total zeroth-order energy of the many-body state between the two Coulomb vertices: the sum of orbital energies of the particles present, minus the holes (e.g., diagram 'a': E_int = e_v + e_y + e_n - e_a). In practice, the target-state leg of DFK is replaced by (E0 - e_s), where e_s is the other valence orbital in that diagram's intermediate state. DFK is this with E0 approximated by the leading configuration, E0 -> e_bar_target + e_s. Requires E0.
  - RS     : Use actual orbital energies for both external legs. May be danger of accidental enhancement.
  - Fermi  : Both external legs evaluated at the Fermi level for their kappa.
  - Fermi0 : As above, but assume Fermi level for all kappas the same. These often cancel, so there is no (excited-excited) term in denominator (except diagram d). Fine, since the remaining core-excited always dominates.
@@ -31,6 +31,46 @@ std::string parse_Denominators(Denominators d);
 
 //! Parses string to Denominators enum (case-insensitive); returns DFK if unrecognised
 Denominators parse_Denominators(std::string_view s);
+
+/*!
+  @brief External-leg part of a Sigma_2 energy denominator (diagrams a, b,
+  c1, c2).
+  @details
+  Each of these diagrams has denominator (e_a - e_n) + leg_de, where a/n are
+  the internal hole/excited states (always actual energies), and leg_de is
+  the contribution of the two external legs, (e_target - e_intermediate).
+  The "target" leg is the external leg whose energy slot represents the
+  target-state energy; the "intermediate" leg is the external leg that is
+  part of the intermediate state (the state between the two Coulomb
+  vertices). Which energy fills each slot depends on the \ref Denominators
+  mode:
+
+  - RS     : et - ei (actual orbital energies)
+  - Fermi  : et_bar - ei_bar (Fermi-level energies, see \ref e_bar)
+  - Fermi0 : 0 (the legs cancel)
+  - DFK    : et_bar - ei
+  - BW     : (E0 - es) - ei. The target slot is not a single orbital
+             energy: the whole denominator is E0 - E_intermediate, with
+             E_int = es + ei + e_n - e_a, so the target slot becomes
+             (E0 - es), where es is the other valence orbital in the
+             intermediate state.
+
+  Diagram d has all four valence orbitals in its intermediate state and is
+  handled separately (see \ref Sigma2::S_Sigma2_d).
+
+  @param denominators Denominator mode; see \ref MBPT::Denominators.
+  @param et_bar  Fermi-level energy (e_bar of its kappa) of the target leg.
+  @param et      Actual orbital energy of the target leg.
+  @param ei_bar  Fermi-level energy of the intermediate-state leg.
+  @param ei      Actual orbital energy of the intermediate-state leg.
+  @param es      Energy of the other valence orbital in the intermediate
+                 state (the remaining external leg); used only by BW.
+  @param E0      Total valence energy of the target CI level; used only by
+                 BW.
+  @return External-leg part of the energy denominator.
+*/
+double leg_de(Denominators denominators, double et_bar, double et,
+              double ei_bar, double ei, double es, double E0);
 
 /*!
   @brief Splits the basis into the core (holes) and excited states.

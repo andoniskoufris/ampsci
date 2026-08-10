@@ -78,7 +78,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   @param ci_sp_basis  Single-particle basis states spanning the CI space.
   @param twoJ         Twice the total angular momentum, 2J (must be a
                       non-negative even integer for two-electron systems).
-  @param parity       Parity of the sector: +1 (even) or -1 (odd).
+  @param parity       Parity of the block: +1 (even) or -1 (odd).
   @param num_solutions Number of lowest eigenstates to find. Ignored if
                        @p all_below_cm is set. Pass 0 to find all solutions.
   @param all_below_cm If set, find all eigenstates with total energy below this

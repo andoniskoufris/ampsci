@@ -35,7 +35,9 @@ namespace CI {
   \f$ \Sigma(\epsilon_0 + \delta E) \approx \Sigma + \delta E \, d\Sigma/dE \f$.
 
   Guard: if the corrected value exceeds \f$ |\Sigma| \f$, then
-  \f$ \delta E \, (d\Sigma/dE) \f$ is approaching \f$ \Sigma \f$, where the
+  \f$ \delta E \, (d\Sigma/dE) \f$ is approaching \f$ \Sigma \f$ - the pole
+  of the resummed (Pade) form, at
+  \f$ \delta E = \Sigma / (d\Sigma/dE) \f$ - where the
   expression diverges; the correction is distrusted, and the uncorrected
   \f$ \Sigma \f$ is returned.
 
@@ -59,8 +61,10 @@ double corrected_Sigma(double Sigma, double dSigma, double dE);
 
   Unlike @ref corrected_Sigma there is no guard against the correction
   enhancing \f$ |S^k| \f$: for \f$ \Sigma_2 \f$ the shift legitimately goes
-  either way. The only guard is on crossing the pole (the denominator
-  changing sign), where the expansion is meaningless.
+  either way. The only guard is on crossing the pole of the resummed form,
+  at \f$ \delta E_0 = S^k / (dS^k/dE_0) \f$ (detected by the denominator
+  changing sign), beyond which the expansion is meaningless: the unshifted
+  \f$ S^k \f$ is returned there.
 
   @param Sk    Integral \f$ S^k \f$, evaluated at the reference E0.
   @param dSk   Derivative \f$ dS^k/dE_0 \f$, at the same reference.
@@ -671,6 +675,14 @@ construct_Hci(const PsiJPi &psi, const Coulomb::meTable<double> &h1,
   @details
   Overload of construct_Hci() taking the tables as @ref Integrals; the Breit
   and \f$ \Sigma_2 \f$ corrections are included if those tables are non-empty.
+
+  If the iterative (dSigma/dE) correction is included, the reference energy
+  E0 (which also sets the Sigma_2 BW shift, if present) belongs to this
+  (J, parity) block: the lowest solved energy of @p psi is used if it has
+  solutions; otherwise the stored fallback is used, which is the
+  ground-state energy of the CI run. Blocks never solved directly - e.g.,
+  the target block of a mixed state - thus have their corrections evaluated
+  at the run's ground-state energy; the difference is higher order.
 
   @param psi   CI solution container holding the CSF basis and J/parity.
   @param ints  Integral tables, e.g., from Wavefunction::CI_integrals().

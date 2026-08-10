@@ -203,7 +203,7 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
   }
 
   //-----------------------------------------------------------------------
-  // Multiple (J, pi) sectors in one ci solutions file
+  // Multiple (J, pi) blocks in one ci solutions file
 
   {
     const auto fname = "deleteme_" + qip::random_string(3) + ".ci.abf";
@@ -211,7 +211,7 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
     CI::PsiJPi psi_a{0, +1, t_basis};
     psi_a.set_solution(-1.0, LinAlg::Vector<double>(psi_a.CSFs().size()));
     REQUIRE(psi_a.read_write(fname, IO::FRW::write, std::cout));
-    // second sector is appended; the first must survive
+    // second block is appended; the first must survive
     CI::PsiJPi psi_b{2, +1, t_basis};
     psi_b.set_solution(-0.5, LinAlg::Vector<double>(psi_b.CSFs().size()));
     REQUIRE(psi_b.read_write(fname, IO::FRW::write, std::cout));
@@ -221,7 +221,7 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
     CI::PsiJPi read_b{2, +1, t_basis};
     REQUIRE(read_b.read_write(fname, IO::FRW::read, std::cout));
     REQUIRE(read_b.energy(0) == Approx(-0.5));
-    // a sector that was never written:
+    // a block that was never written:
     CI::PsiJPi read_c{0, -1, t_basis};
     REQUIRE(!read_c.read_write(fname, IO::FRW::read, std::cout));
   }
@@ -267,6 +267,47 @@ TEST_CASE("CI: derivative correction", "[CI][unit]") {
   // -0.1 - (-0.5)*(0.02) = -0.09, so |Sig^2/denom| = 0.111 > 0.1
   REQUIRE(CI::corrected_Sigma(-0.1, 0.02, -0.5) ==
           Approx(-0.1).margin(1.0e-14));
+
+  //-----------------------------------------------------------------------
+  // corrected_Sk: formula and pole guard
+
+  // Sk = 0: no shift
+  REQUIRE(CI::corrected_Sk(0.0, 0.1, 0.5) == 0.0);
+
+  // dE0 = 0: Sk unchanged (Sk^2/Sk = Sk)
+  REQUIRE(CI::corrected_Sk(-0.1, 0.05, 0.0) == Approx(-0.1).margin(1.0e-14));
+
+  // Exact resummed value: Sk*Sk/(Sk - dE0*dSk)
+  REQUIRE(CI::corrected_Sk(-0.1, -0.02, -0.5) ==
+          Approx(0.01 / -0.11).margin(1.0e-14));
+
+  // Unlike corrected_Sigma, enhancement is allowed:
+  // 0.1 - 0.5*0.05 = 0.075 (same sign as Sk): |corrected| = 0.133 > 0.1
+  REQUIRE(CI::corrected_Sk(0.1, 0.05, 0.5) ==
+          Approx(0.01 / 0.075).margin(1.0e-14));
+
+  // Small dE0: matches linear expansion, Sk + dE0*dSk
+  {
+    const auto dE0 = 1.0e-4;
+    const auto lin = -0.1 + dE0 * 0.05;
+    REQUIRE(CI::corrected_Sk(-0.1, 0.05, dE0) == Approx(lin).margin(1.0e-8));
+  }
+
+  // Exact for a single denominator: Sk = N/D, dSk = -N/D^2
+  // => corrected = N/(D + dE0)
+  {
+    const auto N = 0.35, D = -1.2, dE0 = 0.4;
+    const auto Sk = N / D;
+    const auto dSk = -N / (D * D);
+    REQUIRE(CI::corrected_Sk(Sk, dSk, dE0) ==
+            Approx(N / (D + dE0)).margin(1.0e-14));
+  }
+
+  // Pole guard: resummed denominator changes sign (dE0 past the pole at
+  // Sk/dSk = 2.0): return unshifted
+  REQUIRE(CI::corrected_Sk(0.1, 0.05, 3.0) == Approx(0.1).margin(1.0e-14));
+  // Exactly at the pole:
+  REQUIRE(CI::corrected_Sk(0.1, 0.05, 2.0) == Approx(0.1).margin(1.0e-14));
 
   //-----------------------------------------------------------------------
   // Sigma1Correction::delta

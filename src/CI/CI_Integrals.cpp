@@ -107,7 +107,7 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
   };
 
   // S^k, shifted to the target-level E0 if the derivative table is given
-  const auto Sk_of =
+  const auto get_Sk =
     [&Sk, dSk, dE0, &extrap](int k, DiracSpinor::Index a, DiracSpinor::Index b,
                              DiracSpinor::Index c, DiracSpinor::Index d) {
       if (!Sk.contains(k, a, b, c, d)) {
@@ -126,7 +126,7 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
     const auto sjs = Angular::sixj_2(tjv, tjw, twoJ, tjy, tjx, 2 * k);
     if (sjs == 0.0)
       continue;
-    const auto Sk_abcd = Sk_of(k, v, w, x, y);
+    const auto Sk_abcd = get_Sk(k, v, w, x, y);
     const auto s = Angular::neg1pow_2(tjv + tjx + 2 * k + twoJ);
     out += s * sjs * Sk_abcd;
   }
@@ -149,7 +149,7 @@ double CSF2_Sigma2(const Coulomb::LkTable &Sk, DiracSpinor::Index v,
     const auto sjs = Angular::sixj_2(tjv, tjw, twoJ, tjx, tjy, 2 * k);
     if (sjs == 0.0)
       continue;
-    const auto Sk_abdc = Sk_of(k, v, w, y, x);
+    const auto Sk_abdc = get_Sk(k, v, w, y, x);
     const auto s = Angular::neg1pow_2(tjv + tjx + 2 * k);
     out += s * sjs * Sk_abdc;
   }
@@ -235,7 +235,8 @@ double corrected_Sigma(double Sigma, double dSigma, double dE) {
     return Sigma;
   }
   const auto Sigma_c = Sigma * Sigma / denom;
-  // If the correction enhances |Sigma|, dE*dSigma is approaching Sigma,
+  // The resummed (Pade) form has a pole at dE = Sigma/dSigma. If the
+  // correction enhances |Sigma|, dE*dSigma is approaching Sigma (the pole),
   // where the formula diverges: distrust, return uncorrected Sigma
   return std::abs(Sigma_c) > std::abs(Sigma) ? Sigma : Sigma_c;
 }
@@ -246,8 +247,11 @@ double corrected_Sk(double Sk, double dSk, double dE0) {
     return 0.0;
   }
   const auto denom = Sk - dE0 * dSk;
-  // Sign change means dE0 has carried us past the pole of the resummed form,
-  // where it says nothing: return the unshifted value
+  // The resummed (Pade) form has a single pole, at dE0 = Sk/dSk. For a
+  // single-denominator term it is the physical degeneracy (the intermediate
+  // state crossing E0); for the actual multi-term sum, once dE0 crosses the
+  // nearest pole the one-pole form no longer approximates anything. A sign
+  // change of the denominator means we are past it: return unshifted value
   if (denom * Sk <= 0.0) {
     return Sk;
   }
@@ -349,23 +353,23 @@ iterate_E0(PsiJPi *psi, const Sigma1Correction &s1c,
 
   // E0 belongs to this (J, parity), but the correction tables are shared
   // between them: work on a local copy. Only E0 changes between passes.
-  auto s1_sector = s1c;
+  auto s1_block = s1c;
 
   // E0 = 0.0 means "not set": start from the lowest zeroth-order configuration
   // (two electrons in the lowest orbital)
-  if (s1_sector.E0 == 0.0) {
+  if (s1_block.E0 == 0.0) {
     auto e_min = 0.0;
-    for (const auto &orbital : s1_sector.en) {
+    for (const auto &orbital : s1_block.en) {
       if (orbital.second < e_min) {
         e_min = orbital.second;
       }
     }
-    s1_sector.E0 = 2.0 * e_min;
+    s1_block.E0 = 2.0 * e_min;
   }
 
   fmt::print(outstream,
              "Iterating E0 for dSigma/dE correction (initial: {:.8f} au):\n",
-             s1_sector.E0);
+             s1_block.E0);
   outstream << std::flush;
 
   // First pass: build Hci at the current E0, and diagonalise for the lowest
@@ -375,20 +379,20 @@ iterate_E0(PsiJPi *psi, const Sigma1Correction &s1c,
   // value of the new Hci in the (unchanged) state: first-order perturbation
   // theory in the change to Hci. Building Hci is N^2; diagonalising is N^3,
   // so this is much cheaper than re-solving each pass.
-  auto Hci = construct_Hci(*psi, h1, qk, Bk, Sk, &s1_sector, hk, dSk,
-                           dE0_s2(s1_sector.E0));
+  auto Hci = construct_Hci(*psi, h1, qk, Bk, Sk, &s1_block, hk, dSk,
+                           dE0_s2(s1_block.E0));
   psi->solve(Hci, 1);
   const auto c = psi->coefs(0);
 
-  auto delta = psi->energy(0) - s1_sector.E0;
-  s1_sector.E0 = psi->energy(0);
+  auto delta = psi->energy(0) - s1_block.E0;
+  s1_block.E0 = psi->energy(0);
   fmt::print(outstream, "  it {:2}: E0 = {:.8f} au (eps = {:.1e})\n", 1,
-             s1_sector.E0, delta / s1_sector.E0);
+             s1_block.E0, delta / s1_block.E0);
   outstream << std::flush;
 
   for (int it = 2; it <= max_iterations && std::abs(delta) >= eps_E0; ++it) {
-    Hci = construct_Hci(*psi, h1, qk, Bk, Sk, &s1_sector, hk, dSk,
-                        dE0_s2(s1_sector.E0));
+    Hci = construct_Hci(*psi, h1, qk, Bk, Sk, &s1_block, hk, dSk,
+                        dE0_s2(s1_block.E0));
 
     // <c|Hci|c>; c is normalised
     double E0_new = 0.0;
@@ -401,10 +405,10 @@ iterate_E0(PsiJPi *psi, const Sigma1Correction &s1c,
       E0_new += c[i] * row;
     }
 
-    delta = E0_new - s1_sector.E0;
-    s1_sector.E0 = E0_new;
+    delta = E0_new - s1_block.E0;
+    s1_block.E0 = E0_new;
     fmt::print(outstream, "  it {:2}: E0 = {:.8f} au (eps = {:.1e})\n", it,
-               s1_sector.E0, delta / s1_sector.E0);
+               s1_block.E0, delta / s1_block.E0);
     outstream << std::flush;
     if (it == max_iterations && std::abs(delta) >= eps_E0) {
       outstream << "Warning: E0 iteration did not converge\n";
@@ -847,13 +851,13 @@ LinAlg::Matrix<double> construct_Hci(const PsiJPi &psi, const Integrals &ints) {
     return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, nullptr, ints.hk);
   }
   // E0 is per (J, parity): if psi has been solved, it is just the lowest
-  // energy of this sector. Otherwise, fall back to the stored E0.
-  auto s1_sector = ints.s1_corr;
+  // energy of this block. Otherwise, fall back to the stored E0.
+  auto s1_block = ints.s1_corr;
   if (psi.num_solutions() > 0) {
-    s1_sector.E0 = psi.energy(0);
+    s1_block.E0 = psi.energy(0);
   }
-  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, &s1_sector, ints.hk, dSk,
-                       s1_sector.E0 - ints.E0_sigma2);
+  return construct_Hci(psi, ints.h1, ints.qk, Bk, Sk, &s1_block, ints.hk, dSk,
+                       s1_block.E0 - ints.E0_sigma2);
 }
 
 } // namespace CI

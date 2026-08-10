@@ -40,16 +40,13 @@ Denominators parse_Denominators(std::string_view s) {
 }
 
 //==============================================================================
-// External-leg part of a Sigma_2 energy denominator: (e_target - e_int),
-// where "target" is the external leg carrying the target-state energy, and
-// "int" is the external leg appearing in the intermediate state.
-// The _bar energies are the Fermi-level values (e_bar) for each leg's kappa.
-// For BW, the target-state energy is not a single orbital energy: the whole
-// denominator is E0 - E_intermediate, so the target leg is replaced by
-// (E0 - es), where es is the _other_ valence orbital in the intermediate
-// state of this diagram.
-static double leg_de(Denominators denominators, double et_bar, double et,
-                     double ei_bar, double ei, double es, double E0) {
+// External-leg part of a Sigma_2 energy denominator; see Sigma2.hpp for the
+// full description of the modes and parameters. Full denominator is
+// (e_a - e_n) + leg_de. For BW, the whole denominator is E0 - E_intermediate,
+// where E_intermediate = es + ei + e_n - e_a is the total energy of the state
+// between the two Coulomb vertices; hence the target slot becomes (E0 - es).
+double leg_de(Denominators denominators, double et_bar, double et,
+              double ei_bar, double ei, double es, double E0) {
   switch (denominators) {
   case Denominators::RS:
     return et - ei;
@@ -169,17 +166,21 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
   const auto x0 = e_bar(x.kappa(), excited);
   const auto y0 = e_bar(y.kappa(), excited);
 
-  // External-leg parts of the energy denominators:
-  // diagram a: D has (e_x - e_v) [target x, intermediate v];
-  //            its bra-ket partner has (e_w - e_y)
-  // diagram b: D has (e_y - e_w); its bra-ket partner has (e_v - e_x)
-  // The intermediate state of diagram a is {v, y, n, a-hole}, and of
-  // diagram b is {x, w, n, a-hole}: the last argument is the valence orbital
-  // that is not the intermediate leg (only used for BW)
-  const auto de_a1 = leg_de(denominators, x0, x.en(), v0, v.en(), y.en(), E0);
-  const auto de_a2 = leg_de(denominators, w0, w.en(), y0, y.en(), v.en(), E0);
-  const auto de_b1 = leg_de(denominators, y0, y.en(), w0, w.en(), x.en(), E0);
-  const auto de_b2 = leg_de(denominators, v0, v.en(), x0, x.en(), w.en(), E0);
+  // External-leg parts of the energy denominators (full denominator is
+  // (e_a - e_n) + de_ext); _hc is that of the bra-ket partner:
+  // diagram a: (e_x - e_v) [target x, intermediate v]; partner: (e_w - e_y)
+  // diagram b: (e_y - e_w); partner: (e_v - e_x)
+  // The intermediate state of diagram a is {v, y, n, a}, and of diagram b is
+  // {x, w, n, a}: the es argument is the valence orbital that is not the
+  // intermediate leg (only used for BW)
+  const auto de_ext_a =
+    leg_de(denominators, x0, x.en(), v0, v.en(), y.en(), E0);
+  const auto de_ext_a_hc =
+    leg_de(denominators, w0, w.en(), y0, y.en(), v.en(), E0);
+  const auto de_ext_b =
+    leg_de(denominators, y0, y.en(), w0, w.en(), x.en(), E0);
+  const auto de_ext_b_hc =
+    leg_de(denominators, v0, v.en(), x0, x.en(), w.en(), E0);
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -191,9 +192,9 @@ double Sigma2::S_Sigma2_ab(int k, const DiracSpinor &v, const DiracSpinor &w,
       // with the external part of the denominator negated, and vice versa].
       // Gives symmetric CI matrix; correct to this order.
       const auto inv_de_a =
-        0.5 * (1.0 / (de_an + de_a1) + 1.0 / (de_an + de_a2));
+        0.5 * (1.0 / (de_an + de_ext_a) + 1.0 / (de_an + de_ext_a_hc));
       const auto inv_de_b =
-        0.5 * (1.0 / (de_an + de_b1) + 1.0 / (de_an + de_b2));
+        0.5 * (1.0 / (de_an + de_ext_b) + 1.0 / (de_an + de_ext_b_hc));
 
       // A diagrams:
       const auto qk_vnxa = qk.Q(k, v, n, x, a);
@@ -252,12 +253,14 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
   const auto x0 = e_bar(x.kappa(), excited);
   const auto y0 = e_bar(y.kappa(), excited);
 
-  // External-leg parts of the energy denominators:
+  // External-leg parts of the energy denominators (full denominator is
+  // (e_a - e_n) + de_ext):
   // c1's own denominator has (e_y - e_v) [target y, intermediate v];
   // its bra-ket partner (c1 of the reversed element, same numerator)
-  // has (e_w - e_x). The intermediate state is {x, v, n, a-hole}
-  const auto de_1 = leg_de(denominators, y0, y.en(), v0, v.en(), x.en(), E0);
-  const auto de_2 = leg_de(denominators, w0, w.en(), x0, x.en(), v.en(), E0);
+  // has (e_w - e_x). The intermediate state is {x, v, n, a}
+  const auto de_ext = leg_de(denominators, y0, y.en(), v0, v.en(), x.en(), E0);
+  const auto de_ext_hc =
+    leg_de(denominators, w0, w.en(), x0, x.en(), v.en(), E0);
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -274,7 +277,8 @@ double Sigma2::S_Sigma2_c1(int k, const DiracSpinor &v, const DiracSpinor &w,
 
       const auto de_an = a.en() - n.en();
       // Hermitise: average with bra-ket partner (see S_Sigma2_ab)
-      const auto inv_de = 0.5 * (1.0 / (de_an + de_1) + 1.0 / (de_an + de_2));
+      const auto inv_de =
+        0.5 * (1.0 / (de_an + de_ext) + 1.0 / (de_an + de_ext_hc));
 
       for (int u = u0; u <= u1; u += 2) {
         const auto l0_SixJ = l0; // allow += 2
@@ -322,12 +326,13 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
     Angular::neg1pow_2(v.twoj() + w.twoj() + x.twoj() + y.twoj() + 2 * k) *
     (2.0 * k + 1.0);
 
-  // External-leg parts of the energy denominators:
+  // External-leg parts of the energy denominators (full denominator is
+  // (e_a - e_n) + de_ext):
   // c2's denominator has (e_x - e_w) [target x, intermediate w];
-  // its HC partner has (e_v - e_y). The intermediate state is
-  // {w, y, n, a-hole}
-  const auto de_1 = leg_de(denominators, x0, x.en(), w0, w.en(), y.en(), E0);
-  const auto de_2 = leg_de(denominators, v0, v.en(), y0, y.en(), w.en(), E0);
+  // its HC partner has (e_v - e_y). The intermediate state is {w, y, n, a}
+  const auto de_ext = leg_de(denominators, x0, x.en(), w0, w.en(), y.en(), E0);
+  const auto de_ext_hc =
+    leg_de(denominators, v0, v.en(), y0, y.en(), w.en(), E0);
 
   double sum = 0.0;
   for (const auto &a : core) {
@@ -345,7 +350,8 @@ double Sigma2::S_Sigma2_c2(int k, const DiracSpinor &v, const DiracSpinor &w,
 
       const auto de_an = a.en() - n.en();
       // Hermitianise: average with HC partner
-      const auto inv_de = 0.5 * (1.0 / (de_an + de_1) + 1.0 / (de_an + de_2));
+      const auto inv_de =
+        0.5 * (1.0 / (de_an + de_ext) + 1.0 / (de_an + de_ext_hc));
 
       for (int u = u0; u <= u1; u += 2) {
         const auto l0_SixJ = l0; // allow += 2

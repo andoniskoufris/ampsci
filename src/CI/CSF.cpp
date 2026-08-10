@@ -293,15 +293,15 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
 
   std::size_t nc = m_CSFs.size();
 
-  // Bytes of one J/Pi sector: num_solutions + E[nc] + M[nc*nc]
-  const auto sector_bytes = [](std::size_t n) {
+  // Bytes of one J/Pi block: num_solutions + E[nc] + M[nc*nc]
+  const auto block_bytes = [](std::size_t n) {
     return sizeof(std::size_t) + (n + n * n) * sizeof(double);
   };
-  // Bytes of one sector's prefix: twoJ + pi + num_csfs
+  // Bytes of one block's prefix: twoJ + pi + num_csfs
   constexpr std::size_t prefix_bytes = 2 * sizeof(int) + sizeof(std::size_t);
 
-  // Write this sector's solutions (num_solutions, E, M) to an open stream
-  const auto write_jpi_sector = [&](std::fstream &f) {
+  // Write this block's solutions (num_solutions, E, M) to an open stream
+  const auto write_jpi_block = [&](std::fstream &f) {
     rw_binary(f, IO::FRW::write, m_num_solutions);
     // Energies: always nc doubles (zero-pad if partial solve)
     std::vector<double> E(nc, 0.0);
@@ -325,7 +325,7 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
     return false;
   }
 
-  // Scan file for matching (twoJ, pi) sector; record its offset if found
+  // Scan file for matching (twoJ, pi) block; record its offset if found
   std::streamoff match_offset = -1;
   std::size_t match_num_csfs = 0;
   if (IO::FRW::file_exists(fname)) {
@@ -344,7 +344,7 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
         match_num_csfs = num_csfs;
         break;
       }
-      f.seekg(static_cast<std::streamoff>(sector_bytes(num_csfs)),
+      f.seekg(static_cast<std::streamoff>(block_bytes(num_csfs)),
               std::ios::cur);
     }
   }
@@ -390,7 +390,7 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
   }
 
   if (match_offset >= 0) {
-    // Sector exists: overwrite in-place (payload size fixed by num_csfs)
+    // Block exists: overwrite in-place (payload size fixed by num_csfs)
     if (match_num_csfs != nc) {
       outstream << "\nCannot write to " << fname << ": CSF count mismatch "
                 << "(file has " << match_num_csfs << ", expected " << nc
@@ -400,9 +400,9 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
     std::fstream f;
     IO::FRW::open_binary(f, fname, IO::FRW::update);
     f.seekp(match_offset + static_cast<std::streamoff>(prefix_bytes));
-    write_jpi_sector(f);
+    write_jpi_block(f);
   } else {
-    // New sector: append prefix + payload at end of file
+    // New block: append prefix + payload at end of file
     std::fstream f;
     IO::FRW::open_binary(f, fname, IO::FRW::update);
     if (!f) {
@@ -410,7 +410,7 @@ bool PsiJPi::read_write(const std::string &fname, IO::FRW::RoW rw,
     }
     f.seekp(0, std::ios::end);
     rw_binary(f, IO::FRW::write, m_twoj, m_pi, nc);
-    write_jpi_sector(f);
+    write_jpi_block(f);
   }
 
   return true;
