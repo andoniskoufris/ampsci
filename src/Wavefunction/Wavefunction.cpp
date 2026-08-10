@@ -517,7 +517,7 @@ void Wavefunction::formSigma(
   const std::vector<double> &etak, bool read_write, const std::string &in_fname,
   bool FeynmanQ, bool ScreeningQ, bool hole_particleQ, int lmax, double omre,
   double w0, double wratio, const std::optional<IO::InputBlock> &ek,
-  const std::string &ladder_file) {
+  const std::string &ladder_file, bool derivative) {
   if (core().empty() || !m_HF)
     return;
 
@@ -555,7 +555,7 @@ void Wavefunction::formSigma(
     file_name, &*m_HF, m_basis, r0, rmax, std::size_t(stride), nmin_core,
     method, include_G, include_Breit_b2, n_max_breit,
     MBPT::FeynmanOptions{screening, hp, lmax, omre, w0, wratio}, calculate_fk,
-    fk, etak, ladder_file);
+    fk, etak, ladder_file, derivative);
 
   std::cout << "\n";
 

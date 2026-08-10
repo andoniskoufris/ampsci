@@ -369,7 +369,10 @@ Wavefunction ampsci(const IO::InputBlock &input) {
       "Include ladder correlation potential (Sigma_L), as produced by the "
       "Ladder{} block; read in and included into Sigma (stored separately; "
       "scaled by same lambda). Give the .sl filename, or 'true' to use the "
-      "default filename: <Identity>.sl.abf. [false]"}});
+      "default filename: <Identity>.sl.abf. [false]"},
+     {"derivative",
+      "Also calculate the energy derivative of Sigma, dSigma/dE, by central "
+      "difference (step 0.01 au) of the full Sigma [false]"}});
 
   const bool do_brueckner = input.getBlock({"Correlations"}) != std::nullopt;
   const auto n_min_core = input.get({"Correlations"}, "n_min_core", 1);
@@ -442,6 +445,10 @@ Wavefunction ampsci(const IO::InputBlock &input) {
   const auto fk = input.get({"Correlations"}, "fk", std::vector<double>{});
   const auto etak = input.get({"Correlations"}, "eta", std::vector<double>{});
 
+  // Also form dSigma/dE (for CI iterative_correction)
+  const auto sigma_derivative =
+    input.get({"Correlations"}, "derivative", false);
+
   // Ladder correlation potential file (produced by the Ladder{} block):
   // ladder = true; uses the default filename; or give the filename directly
   const auto t_ladder = input.get({"Correlations"}, "ladder", ""s);
@@ -457,7 +464,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
                  include_G, include_Breit, n_max_Breit, lambda_k, fk, etak,
                  sigma_readwrite, sigma_filename, sigma_Feynman,
                  sigma_Screening, hole_particle, sigma_lmax, sigma_omre, w0,
-                 wratio, ek_Sig, ladder_file);
+                 wratio, ek_Sig, ladder_file, sigma_derivative);
   }
 
   // Solve Brueckner orbitals (optionally, fit Sigma to exp energies)

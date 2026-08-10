@@ -11,10 +11,12 @@
 #include "fmt/ostream.hpp"
 #include <algorithm>
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -279,6 +281,54 @@ double Sigma1Correction::delta_h1(DiracSpinor::Index a, DiracSpinor::Index b,
 }
 
 //==============================================================================
+bool Sigma1Correction::read_write(const std::string &fname, IO::FRW::RoW rw) {
+  using IO::FRW::rw_binary;
+  const bool readQ = (rw == IO::FRW::read);
+
+  if (readQ && !IO::FRW::file_exists(fname)) {
+    return false;
+  }
+
+  std::fstream f;
+  IO::FRW::open_binary(f, fname, rw);
+  if (!f) {
+    return false;
+  }
+
+  // Each container: size, then (key, value) pairs.
+  // nb: E0 is not stored: it belongs to a single (J, parity) and is set at
+  // solve time (see iterate_E0)
+  const auto rw_map = [&f, rw, readQ](auto *map) {
+    using Map = std::decay_t<decltype(*map)>;
+    auto size = map->size();
+    rw_binary(f, rw, size);
+    if (readQ) {
+      map->clear();
+      for (std::size_t i = 0; i < size; ++i) {
+        typename Map::key_type key{};
+        typename Map::mapped_type value{};
+        rw_binary(f, rw, key, value);
+        map->insert({key, value});
+      }
+    } else {
+      for (auto &[key, value] : *map) {
+        auto t_key = key;
+        rw_binary(f, rw, t_key, value);
+      }
+    }
+  };
+
+  rw_map(S1.operator->());
+  rw_map(dS1.operator->());
+  rw_map(&e_sigma);
+  rw_map(&en);
+
+  // A file holding empty tables is treated as a failed read: downstream,
+  // empty() means "no correction"
+  return !readQ || !empty();
+}
+
+//==============================================================================
 Sigma1Correction
 calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
                           const std::vector<DiracSpinor> &s1_basis_core,
@@ -332,6 +382,50 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
       }
     }
     bar.update();
+  }
+  return corr;
+}
+
+//==============================================================================
+Sigma1Correction
+calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
+                          const MBPT::CorrelationPotential &Sigma) {
+  // nb: E0 is left at 0.0 (not set): it belongs to a single (J, parity), and
+  // is found by iterate_E0()
+  Sigma1Correction corr;
+
+  for (const auto &v : ci_basis) {
+    corr.en[v.nk_index()] = v.en();
+    // e_sigma: the energy Sigma was actually formed at (first of each kappa;
+    // same entry SigmaFv falls back to for basis states)
+    const auto Sig = Sigma.get(v.kappa());
+    if (Sig != nullptr) {
+      corr.e_sigma.insert({v.kappa(), Sig->en});
+    }
+  }
+
+  for (const auto &w : ci_basis) {
+    // Identical to the Sigma_1 part of the h1 table (lambda + ladder
+    // included); derivative matches the same Sigma entry (no ladder)
+    const auto S_w = Sigma.SigmaFv(w);
+    const auto dS_w = Sigma.dSigmaFv(w);
+
+    for (const auto &v : ci_basis) {
+      if (w > v)
+        continue;
+      if (w.kappa() != v.kappa())
+        continue;
+
+      const auto S0 = v * S_w;
+      const auto dS = v * dS_w;
+      corr.S1.add(v, w, S0);
+      corr.dS1.add(v, w, dS);
+      // Add symmetric partner:
+      if (v != w) {
+        corr.S1.add(w, v, S0);
+        corr.dS1.add(w, v, dS);
+      }
+    }
   }
   return corr;
 }

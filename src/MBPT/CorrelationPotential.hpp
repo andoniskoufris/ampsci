@@ -68,17 +68,22 @@ class CorrelationPotential {
   std::vector<SigmaData> m_Sigma_L{};
   std::string m_ladder_file{};
 
+  // Energy derivative, dSigma/dE (central difference; see m_delta_en).
+  // Formed alongside Sigma when m_form_derivative is set; appended to the
+  // sigma file (older files simply have none)
+  bool m_form_derivative{false};
+  std::vector<SigmaData> m_dSigma{};
+  static constexpr double m_delta_en = 0.01;
+
 public:
-  CorrelationPotential(const std::string &fname, const HF::HartreeFock *vHF,
-                       const std::vector<DiracSpinor> &basis, double r0,
-                       double rmax, std::size_t stride, int n_min_core,
-                       SigmaMethod method, bool include_g = false,
-                       bool include_Breit_b2 = false, int n_max_breit = 0,
-                       const FeynmanOptions &Foptions = {},
-                       bool calculate_fk = true,
-                       const std::vector<double> &fk = {},
-                       const std::vector<double> &etak = {},
-                       const std::string &ladder_file = "");
+  CorrelationPotential(
+    const std::string &fname, const HF::HartreeFock *vHF,
+    const std::vector<DiracSpinor> &basis, double r0, double rmax,
+    std::size_t stride, int n_min_core, SigmaMethod method,
+    bool include_g = false, bool include_Breit_b2 = false, int n_max_breit = 0,
+    const FeynmanOptions &Foptions = {}, bool calculate_fk = true,
+    const std::vector<double> &fk = {}, const std::vector<double> &etak = {},
+    const std::string &ladder_file = "", bool form_derivative = false);
 
   // // not thread safe!
   // void formSigma(int kappa, double en, int n = 0) {}
@@ -97,6 +102,26 @@ public:
   //! @details If Sigma for kappa_v doesn't exist, returns |0>.
   DiracSpinor SigmaFv(const DiracSpinor &Fv) const;
   DiracSpinor operator()(const DiracSpinor &Fv) const { return SigmaFv(Fv); }
+
+  //! True if any dSigma/dE matrices are present (see form_derivative)
+  bool has_derivative() const { return !m_dSigma.empty(); }
+
+  //! Pointer to dSigma/dE data for given kappa (and n); nullptr if not present
+  const SigmaData *get_derivative(int kappa, int n = 0) const;
+
+  /*!
+    @brief Returns lambda * dSigma/dE |Fv>; returns |0> if no derivative
+    exists for this kappa.
+    @details
+    The energy derivative of Sigma, formed by central finite difference
+    alongside Sigma itself (option form_derivative), so it corresponds to the
+    actual method used (Goldstone/Feynman, screening, etc.). Scaled by the
+    same lambda as the base Sigma.
+
+    @note The ladder correction (Sigma_L) has no energy derivative: it is
+          included in SigmaFv() but not here.
+  */
+  DiracSpinor dSigmaFv(const DiracSpinor &Fv) const;
 
   //! Stores scaling factors, lambda, for each kappa (Sigma -> lamda*Sigma)
   void scale_Sigma(const std::vector<double> &lambdas);
@@ -119,16 +144,24 @@ public:
 
   void write(const std::string &fname) { read_write(fname, IO::FRW::write); }
 
+  //! Pointer to the stored Sigma data (matrix, energy formed at, lambda) for
+  //! given kappa (and n); nullptr if not present
+  const SigmaData *get(int kappa, int n = 0) const;
+
 private:
   bool read_write(const std::string &fname, IO::FRW::RoW rw);
   void setup_Feynman();
   std::vector<double> calculate_fk(double ev, const DiracSpinor &v) const;
   std::vector<double> calculate_etak(double ev, const DiracSpinor &v) const;
-  const SigmaData *get(int kappa, int n = 0) const;
   const SigmaData *get_ladder(int kappa, int n = 0) const;
 
   GMatrix formSigma_F(int kappa, double ev, const DiracSpinor *Fv = nullptr);
   GMatrix formSigma_G(int kappa, double ev, const DiracSpinor *Fv = nullptr);
+
+  // Forms dSigma/dE for given kappa by central finite difference (step
+  // m_delta_en) of the full Sigma; stores in m_dSigma
+  void form_derivative(int kappa, double ev, int n,
+                       const DiracSpinor *Fv = nullptr);
 
 public:
   CorrelationPotential &operator=(const CorrelationPotential &) = default;

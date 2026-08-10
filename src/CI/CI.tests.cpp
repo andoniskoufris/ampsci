@@ -7,6 +7,7 @@
 #include "Wavefunction/Wavefunction.hpp"
 #include "catch2/catch.hpp"
 #include "qip/Random.hpp"
+#include <cstdio>
 
 //==============================================================================
 TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
@@ -357,4 +358,97 @@ TEST_CASE("CI: derivative correction", "[CI][unit]") {
 
   // Default (empty) correction:
   REQUIRE(CI::Sigma1Correction{}.empty());
+
+  //-----------------------------------------------------------------------
+  // read_write round-trip
+
+  const auto ds1_fname = "deleteme_" + qip::random_string(3) + ".ds1.abf";
+  REQUIRE(corr.read_write(ds1_fname, IO::FRW::write));
+
+  CI::Sigma1Correction corr2;
+  corr2.E0 = corr.E0; // E0 is not stored (per J/pi; set at solve time)
+  REQUIRE(corr2.read_write(ds1_fname, IO::FRW::read));
+
+  REQUIRE(corr2.S1.getv(ia, ib) == corr.S1.getv(ia, ib));
+  REQUIRE(corr2.dS1.getv(ib, ib) == corr.dS1.getv(ib, ib));
+  REQUIRE(corr2.e_sigma == corr.e_sigma);
+  REQUIRE(corr2.en == corr.en);
+  REQUIRE(corr2.delta_h1(ia, ia, ib) == corr.delta_h1(ia, ia, ib));
+
+  // Missing file: read fails
+  REQUIRE(!CI::Sigma1Correction{}.read_write("deleteme_no_such_file.abf",
+                                             IO::FRW::read));
+  std::remove(ds1_fname.c_str());
+}
+
+//==============================================================================
+// Tests the Sigma_1 correction tables built from a correlation potential
+// holding dSigma/dE, against the second-order (qk-route) tables
+TEST_CASE("CI: dSdE from correlation potential", "[CI][integration]") {
+
+  std::cout << "CI, dSigma/dE correction tables from correlation potential\n";
+
+  Wavefunction wf({800, 1.0e-5, 40.0, 10.0, "loglinear"},
+                  {"Na", -1, "pointlike"}, 1.0);
+  wf.solve_core("HartreeFock", "[Ne]", std::nullopt, 1.0e-7);
+  wf.solve_valence("3sp");
+  wf.formBasis(SplineBasis::Parameters("12spd", 25, 7, 1.0e-3, 1.0e-3, 30.0));
+
+  // Goldstone correlation potential, with dSigma/dE (derivative = true);
+  // written to file for the round-trip check below
+  const auto sig_fname = "deleteme_" + qip::random_string(3) + ".s2.abf";
+  wf.formSigma(1, 1.0e-4, 30.0, 2, false, false, false, 0, {}, {}, {}, true,
+               sig_fname, false, false, false, 6, -0.2, 0.01, 1.5, std::nullopt,
+               "", true);
+  REQUIRE(wf.Sigma() != nullptr);
+  REQUIRE(wf.Sigma()->has_derivative());
+
+  // Tables from the correlation potential:
+  const auto ci_basis =
+    CI::basis_subset(wf.basis(), "5sp", wf.coreConfiguration());
+  const auto corr_CP = CI::calculate_dSdE_correction(ci_basis, *wf.Sigma());
+  REQUIRE(!corr_CP.empty());
+
+  // Same tables via the second-order qk route:
+  Coulomb::QkTable qk;
+  const auto yk = Coulomb::YkTable(wf.basis());
+  qk.fill(wf.basis(), yk, 8, false);
+  const auto [core_s1, excited_s1] =
+    MBPT::split_basis(wf.basis(), wf.FermiLevel(), 1);
+  const auto corr_G =
+    CI::calculate_dSdE_correction(ci_basis, core_s1, excited_s1, qk);
+
+  // Same physics (both 2nd-order Goldstone), different machinery (sub-grid
+  // matrix application vs direct basis sums): agree to sub-grid accuracy
+  std::cout << "     S1(CP)      S1(qk)      dS1(CP)     dS1(qk)\n";
+  for (const auto &v : ci_basis) {
+    const auto S_cp = corr_CP.S1.getv(v, v);
+    const auto S_g = corr_G.S1.getv(v, v);
+    const auto dS_cp = corr_CP.dS1.getv(v, v);
+    const auto dS_g = corr_G.dS1.getv(v, v);
+    fmt::print("{:4s} {:+.8f} {:+.8f} {:+.7f} {:+.7f}\n", v.shortSymbol(), S_cp,
+               S_g, dS_cp, dS_g);
+    REQUIRE(S_cp == Approx(S_g).epsilon(0.05).margin(1.0e-6));
+    REQUIRE(dS_cp == Approx(dS_g).epsilon(0.05).margin(1.0e-5));
+  }
+
+  // e_sigma: energy Sigma was formed at (HF valence) vs first ci-basis state
+  // (basis approximates HF): close, not identical
+  for (const auto &[kappa, e_cp] : corr_CP.e_sigma) {
+    REQUIRE(e_cp == Approx(corr_G.e_sigma.at(kappa)).epsilon(1.0e-3));
+  }
+
+  //-----------------------------------------------------------------------
+  // Round-trip: dSigma/dE read back from the sigma file
+
+  const MBPT::CorrelationPotential Sig2(sig_fname, wf.vHF(), wf.basis(), 1.0e-4,
+                                        30.0, 2, 1,
+                                        MBPT::SigmaMethod::Goldstone);
+  REQUIRE(Sig2.has_derivative());
+  for (const auto &v : ci_basis) {
+    REQUIRE(v * Sig2.dSigmaFv(v) ==
+            Approx(v * wf.Sigma()->dSigmaFv(v)).margin(1.0e-12));
+  }
+
+  std::remove(sig_fname.c_str());
 }

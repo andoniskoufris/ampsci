@@ -93,13 +93,13 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "'d'). Applies to Sigma_2 only. [DFK]"},
     {"iterative_correction",
      "Include the derivative (dSigma/dE) correction to the Sigma_1 matrix "
-     "elements: Sigma -> Sigma*Sigma/(Sigma - dE*dSigma/dE), with dE = E0 - "
-     "E_sigma(kappa) - e_spectator (energy of the other electron in the "
-     "CSF). Restores the configuration dependence lost by evaluating Sigma_1 "
-     "at a fixed energy. "
-     " The reference energy E0 is the lowest energy of each J/pi, and is found "
+     "elements. Restores the configuration dependence lost by evaluating "
+     "Sigma_1 at a fixed energy. "
+     "The reference energy E0 is the lowest energy of each J/pi, and is found "
      "iteratively. With denominators = BW, the same E0 also shifts the "
-     "Sigma_2 matrix elements (see denominators). [false]"},
+     "Sigma_2 matrix elements (see denominators). "
+     "Prefer calculating dSigma/dE in the Correlations block (option "
+     "derivative) which is much faster, and can include all-orders [false]"},
     {"qk_file",
      "Filename for storing two-body Coulomb integrals. By default, is "
      "~ At.qk, where At is atomic symbol + 'identity'. Set to 'false' to "
@@ -113,6 +113,12 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "As sk_file, but for the second Sigma_2 table used when denominators = "
      "BW. Default is At_b_hash.dsk.abf. nb: it holds "
      "S^k at the shifted E0; the derivative is formed from it after reading."},
+    {"ds1_file",
+     "Filename for storing the Sigma_1 derivative-correction tables "
+     "(iterative_correction). Default: At_b_hash.ds1.abf, where b is the s1 "
+     "(internal) basis, and hash encodes other settings that change the "
+     "tables. Not used if the Correlations block provides dSigma/dE (option "
+     "derivative). Set to 'false' to disable read/write."},
     {"bk_file", "Filename for storing two-body Breit integrals. By default, is "
                 "~ At.bk, where At is atomic symbol + 'identity'. Set to "
                 "'false' to disable read/write."},
@@ -343,6 +349,13 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
   //----------------------------------------------------------------------------
 
+  // The correlation potential holds dSigma/dE matrices (Correlations option
+  // `derivative`): build the Sigma_1 correction tables directly from it -
+  // consistent with the actual Sigma (any method), and no Sigma_1 qk
+  // integrals or Goldstone tabulation needed
+  const bool CP_derivative = iterative_correction && include_Sigma1 &&
+                             wf.Sigma() && wf.Sigma()->has_derivative();
+
   // Lookup table; stores all qk's
   Coulomb::QkTable qk;
   // Often, we don't need to calculate new integrals.
@@ -391,8 +404,12 @@ Solutions configuration_interaction(const IO::InputBlock &input,
         };
 
       // Then, add those required for Sigma_1 (unless we have matrix!)
-      // (With matrix, still required if calculating derivative correction)
-      if (include_Sigma1 && (!wf.Sigma() || iterative_correction)) {
+      // (With matrix, still required if calculating derivative correction -
+      // except when the matrix supplies dSigma/dE itself: CP_derivative)
+      const bool need_s1_qk =
+        include_Sigma1 &&
+        (!wf.Sigma() || (iterative_correction && !CP_derivative));
+      if (need_s1_qk) {
         const auto temp_basis = qip::merge(core_s1, excited_s1);
         std::cout << "and: " << DiracSpinor::state_config(temp_basis)
                   << " (for MBPT)\n"
@@ -402,8 +419,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
       }
 
       // Then, add those required for Sigma_2 (unless we already did Sigma_1)
-      if (include_Sigma2 &&
-          !(include_Sigma1 && (!wf.Sigma() || iterative_correction))) {
+      if (include_Sigma2 && !need_s1_qk) {
         const auto temp_basis = qip::merge(core_s2, excited_s2);
         std::cout << "and: " << DiracSpinor::state_config(temp_basis)
                   << " (for MBPT)\n"
@@ -447,8 +463,44 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   if (iterative_correction && include_Sigma1) {
     std::cout << "\nIncluding derivative (dSigma/dE) correction for Sigma_1\n";
     std::cout << std::flush;
-    s1_corr =
-      CI::calculate_dSdE_correction(ci_sp_basis, core_s1, excited_s1, qk);
+
+    if (CP_derivative) {
+      // Tables directly from the correlation potential (fast; no file cache
+      // needed): consistent with the actual Sigma, whatever the method
+      std::cout << "Using Sigma and dSigma/dE from the correlation potential ("
+                << wf.Sigma()->method_string() << ")\n";
+      s1_corr = CI::calculate_dSdE_correction(ci_sp_basis, *wf.Sigma());
+    } else {
+
+      // Second-order (Goldstone) tables, from the qk integrals.
+      // Filename encodes everything that changes the tables (cf. sk_file):
+      // the ci basis (which pairs + e_sigma convention), the s1 internal
+      // lines, and the Coulomb-integral settings
+      const auto ds1_settings = DiracSpinor::state_config(ci_sp_basis) + ";" +
+                                DiracSpinor::state_config(core_s1) + ";" +
+                                std::to_string(n_min_core) + ";" +
+                                std::to_string(max_k_Coulomb) + ";";
+      const auto ds1_basename = wf.identity() + br_string + "_" +
+                                DiracSpinor::state_config(excited_s1) + "_" +
+                                qip::hash_string(ds1_settings);
+      const auto ds1_filename =
+        input.get("ds1_file", ds1_basename + ".ds1.abf");
+
+      const auto read_ds1 = ds1_filename != "false" &&
+                            s1_corr.read_write(ds1_filename, IO::FRW::read);
+      if (read_ds1) {
+        std::cout << "Read Sigma_1 correction tables from " << ds1_filename
+                  << "\n";
+      } else {
+        s1_corr =
+          CI::calculate_dSdE_correction(ci_sp_basis, core_s1, excited_s1, qk);
+        if (ds1_filename != "false") {
+          std::cout << "Writing Sigma_1 correction tables to " << ds1_filename
+                    << "\n";
+          s1_corr.read_write(ds1_filename, IO::FRW::write);
+        }
+      }
+    }
     std::cout << std::flush;
   }
 
@@ -614,7 +666,9 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     ci_settings += wf.Sigma()->method_string() + ";";
   }
   if (!s1_corr.empty()) {
-    ci_settings += "dSdE;";
+    // Tag the source: CP-provided (all-orders) tables differ from the
+    // second-order Goldstone ones
+    ci_settings += CP_derivative ? "dSdE-CP;" : "dSdE;";
   }
   if (include_Sigma2) {
     ci_settings +=
@@ -897,7 +951,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
       if (twoJ != 0) {
         outstream << "   gJ = " << gJ << "\n";
       }
-      fmt::print(outstream, "   <L^2> = {:.4f}, <S^2> = {:.4f}\n", L2, S2);
+      // fmt::print(outstream, "   <L^2> = {:.4f}, <S^2> = {:.4f}\n", L2, S2);
       fmt::print(outstream, "   L_eff = {:.4f}, S_eff = {:.4f}\n", LSeff(L2),
                  LSeff(S2));
     }

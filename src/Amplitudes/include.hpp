@@ -3,3 +3,4 @@
 #include "Amplitudes/MatrixElements.hpp"
 #include "Amplitudes/Normalisation.hpp"
 #include "Amplitudes/SecondOrder.hpp"
+#include "Amplitudes/SecondOrderCI.hpp"

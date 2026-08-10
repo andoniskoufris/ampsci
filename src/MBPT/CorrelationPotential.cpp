@@ -23,7 +23,8 @@ CorrelationPotential::CorrelationPotential(
   std::size_t stride, int n_min_core, SigmaMethod method, bool include_g,
   bool include_Breit_b2, int n_max_breit, const FeynmanOptions &Foptions,
   bool calculate_fk, const std::vector<double> &fk,
-  const std::vector<double> &etak, const std::string &ladder_file)
+  const std::vector<double> &etak, const std::string &ladder_file,
+  bool form_derivative)
   : m_HF(vHF),
     m_basis(basis),
     m_r0(r0),
@@ -41,7 +42,8 @@ CorrelationPotential::CorrelationPotential(
     m_fk(fk),
     m_etak(etak),
     m_fname(fname),
-    m_ladder_file(ladder_file) {
+    m_ladder_file(ladder_file),
+    m_form_derivative(form_derivative) {
 
   std::cout << "\nConstruct Correlation Potential\n";
 
@@ -152,6 +154,10 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
     auto de = Fv ? *Fv * (it->Sigma * *Fv) : 0.0;
     fmt::print("Have Sigma: kappa = {:>2}, en = {:+.5f}, de = {:+.5e}\n",
                it->kappa, it->en, de);
+    // May still need the derivative (e.g., Sigma read from an older file)
+    if (m_form_derivative && !get_derivative(kappa, it->n)) {
+      form_derivative(kappa, it->en, it->n, Fv);
+    }
     return;
   }
   if (Fv) {
@@ -166,6 +172,30 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
                                               formSigma_G(kappa, ev, Fv);
 
   m_Sigmas.push_back({kappa, ev, std::move(S), n, 1.0});
+
+  if (m_form_derivative && !get_derivative(kappa, n)) {
+    form_derivative(kappa, ev, n, Fv);
+  }
+}
+
+//==============================================================================
+void CorrelationPotential::form_derivative(int kappa, double ev, int n,
+                                           const DiracSpinor *Fv) {
+  fmt::print("Form dSigma/dE for kappa={} at e = {:.4f} (central difference)\n",
+             kappa, ev);
+  auto Sp = m_method == SigmaMethod::Feynman ?
+              formSigma_F(kappa, ev + m_delta_en, Fv) :
+              formSigma_G(kappa, ev + m_delta_en, Fv);
+  const auto Sm = m_method == SigmaMethod::Feynman ?
+                    formSigma_F(kappa, ev - m_delta_en, Fv) :
+                    formSigma_G(kappa, ev - m_delta_en, Fv);
+  Sp -= Sm;
+  Sp *= (1.0 / (2.0 * m_delta_en));
+  if (Fv) {
+    const auto dde = *Fv * (Sp * *Fv);
+    fmt::print("  d(de)/dE({}) = {:+.5f}\n", Fv->shortSymbol(), dde);
+  }
+  m_dSigma.push_back({kappa, ev, std::move(Sp), n, 1.0});
 }
 
 //==============================================================================
@@ -417,6 +447,10 @@ const SigmaData *CorrelationPotential::get_ladder(int kappa, int n) const {
   return find_Sigma(m_Sigma_L, kappa, n);
 }
 
+const SigmaData *CorrelationPotential::get_derivative(int kappa, int n) const {
+  return find_Sigma(m_dSigma, kappa, n);
+}
+
 //==============================================================================
 const GMatrix *CorrelationPotential::getSigma(int kappa, int n) const {
   const auto Sig = get(kappa, n);
@@ -442,6 +476,17 @@ DiracSpinor CorrelationPotential::SigmaFv(const DiracSpinor &Fv) const {
   // lambda (from base Sigma) scales both the base and ladder parts
   const auto lambda = Sv ? Sv->lambda : 1.0;
   return lambda * SF;
+}
+
+//==============================================================================
+DiracSpinor CorrelationPotential::dSigmaFv(const DiracSpinor &Fv) const {
+  const auto dSv = get_derivative(Fv.kappa(), Fv.n());
+  if (!dSv) {
+    return 0.0 * Fv;
+  }
+  // same lambda as the base Sigma (nb: ladder has no derivative)
+  const auto lambda = getLambda(Fv.kappa(), Fv.n());
+  return lambda * (dSv->Sigma * Fv);
 }
 
 //==============================================================================
@@ -562,6 +607,36 @@ bool CorrelationPotential::read_write(const std::string &fname,
     }
   }
 
+  // dSigma/dE matrices. This block was appended to the format later: older
+  // files simply end here, and hold no derivatives
+  const bool have_deriv_block =
+    rw == IO::FRW::write || iofs.peek() != std::fstream::traits_type::eof();
+  if (have_deriv_block) {
+    std::size_t num_dSigma = rw == IO::FRW::write ? m_dSigma.size() : 0;
+    rw_binary(iofs, rw, num_dSigma);
+    for (std::size_t iS = 0; iS < num_dSigma; ++iS) {
+      if (rw == IO::FRW::read) {
+        m_dSigma.push_back(
+          {0, 0.0,
+           GMatrix{m_i0, m_stride, m_size, m_includeG, m_HF->grid_sptr()}, 0,
+           1.0});
+      }
+      auto &Sig = m_dSigma.at(iS);
+      rw_binary(iofs, rw, Sig.kappa, Sig.en, Sig.n);
+      auto &Gk = Sig.Sigma;
+      for (auto i = 0ul; i < m_size; ++i) {
+        for (auto j = 0ul; j < m_size; ++j) {
+          rw_binary(iofs, rw, Gk.ff(i, j));
+          if (m_includeG) {
+            rw_binary(iofs, rw, Gk.fg(i, j));
+            rw_binary(iofs, rw, Gk.gf(i, j));
+            rw_binary(iofs, rw, Gk.gg(i, j));
+          }
+        }
+      }
+    }
+  }
+
   std::cout << "done.\n";
   if (rw == IO::FRW::read) {
     std::cout << "Read Sigma from file: " << fname << "\n";
@@ -609,6 +684,9 @@ void CorrelationPotential::print_info() const {
     fmt::print("kappa = {:>2}, ev = {:+.5f}", Sig.kappa, Sig.en);
     if (std::abs(Sig.lambda - 1.0) > 1.0e-8) {
       fmt::print(" : scaled with λ = {:.5f}", Sig.lambda);
+    }
+    if (get_derivative(Sig.kappa, Sig.n)) {
+      fmt::print(" (with dSigma/dE)");
     }
     std::cout << "\n";
   }

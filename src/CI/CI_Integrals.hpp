@@ -124,6 +124,21 @@ struct Sigma1Correction {
   */
   [[nodiscard]] double delta_h1(DiracSpinor::Index a, DiracSpinor::Index b,
                                 DiracSpinor::Index spectator) const;
+
+  /*!
+    @brief Reads or writes the correction tables to/from a binary file.
+    @details
+    Stores S1, dS1, e_sigma, and en. E0 is not stored: it belongs to a single
+    (J, parity) and is set at solve time (see @ref iterate_E0). On read, the
+    existing tables are replaced.
+
+    @note No settings are stored in the file: the filename identifies the
+          calculation (cf. @ref PsiJPi::read_write).
+
+    @return True on success; false if the file does not exist or cannot be
+            opened (read), or holds no tables.
+  */
+  bool read_write(const std::string &fname, IO::FRW::RoW rw);
 };
 
 /*!
@@ -147,6 +162,32 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
                           const std::vector<DiracSpinor> &s1_basis_core,
                           const std::vector<DiracSpinor> &s1_basis_excited,
                           const Coulomb::QkTable &qk);
+
+/*!
+  @brief Builds the Sigma_1 derivative-correction tables directly from a
+  correlation potential that holds dSigma/dE matrices.
+  @details
+  Fills S1 from the actual Sigma of the correlation potential
+  (via CorrelationPotential::SigmaFv - so it matches the Sigma_1 in the h1
+  table exactly, whatever the method: Goldstone, Feynman, all-orders), and
+  dS1 from its stored dSigma/dE matrices (see the Correlations option
+  `derivative`). Much faster than the qk-table overload (matrix
+  applications only), and consistent with the all-orders Sigma.
+
+  The reference energies e_sigma are taken from the stored Sigma data (the
+  energy each Sigma matrix was formed at, first entry of each kappa).
+
+  @param ci_basis  Basis states for which table entries are needed.
+  @param Sigma     Correlation potential; must hold dSigma/dE matrices
+                   (see CorrelationPotential::has_derivative()).
+  @return Filled Sigma1Correction tables (E0 left unset; see @ref iterate_E0).
+
+  @note The ladder part (Sigma_L) is included in S1 (via SigmaFv) but has no
+        energy derivative, so it is absent from dS1.
+*/
+[[nodiscard]] Sigma1Correction
+calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
+                          const MBPT::CorrelationPotential &Sigma);
 
 /*!
   @brief Finds the reference energy E0 for the dSigma/dE correction, for a
