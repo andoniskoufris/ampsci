@@ -81,7 +81,9 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
       "end [false]"},
      {"include_loops", "Include the loop diagrams into the ladder diagram "
                        "iterations. Does so without overcounting diagrams "
-                       "already in the correlation potential method [false]"}});
+                       "already in the correlation potential method [false]"},
+     {"coupled_cluster_expr", "Evaluates L2 and L3 with the coupled-cluster "
+                              "form of the expressions [false]"}});
   // If we are just requesting 'help', don't run:
   if (input.has_option("help")) {
     return;
@@ -98,6 +100,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto max_k = input.get("max_k", 8);
   const auto include_L4 = input.get("include_L4", false);
   const auto include_loops = input.get("include_loops", false);
+  const auto CC_expr = input.get("coupled_cluster_expr", false);
 
   // Method for Sigma_L: projection (single |v>, ladder basis, full basis),
   // Dzuba (no projection: rescale Sigma(2) terms by L/Q), or direct (no
@@ -261,6 +264,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
                      max_k, true);
   if (include_loops) {
     MBPT::fill_Sk_mnib(&sk, qk, excited, holes, core_and_val, max_k, false);
+    sk_next = sk;
   }
   // could probably have some information about the loop integrals here too
   const auto n_lk_after = lk.count();
@@ -268,11 +272,15 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
     fmt::print("Calculated {} new Lk integrals\n", n_lk_after - n_lk_initial);
     lk.summary();
     lk.write(Lk_file);
+    // ???? Should probably do this based on if there are new Sk integrals
+    // rather than Lk integrals
+    if (include_loops) {
+      sk.write(Sk_file);
+    }
   } else {
     std::cout << "No new Lk integrals required\n";
   }
   lk_next = lk;
-  sk_next = sk;
 
   // convert to inverse cm
   const auto icm = PhysConst::Hartree_invcm;
@@ -295,10 +303,12 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "\ncore it:" << it << "\n";
     if (!include_loops) {
       MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, holes, include_L4, sjt,
-                           &lk, a_damp, true);
+                           &lk, a_damp, true, CC_expr);
     } else {
       MBPT::update_Lk_mnib_loops(&lk_next, qk, sk, excited, holes, holes,
                                  include_L4, sjt, &lk, a_damp, true);
+      // because de^{(l)} does not depend on the next iteration's Sk's, can I move this to after the break statement below, or does this miss out on the final loop diagrams that we would need for the valence iterations?
+      // in theory, I think that we should iterate the loops such that the Lk coefficients are all of the same order in perturbation theory
       std::cout << "\nUpdating loop integrals for core states:\n";
       MBPT::update_Sk_mnib(&sk_next, qk, excited, holes, holes, &sk, a_damp,
                            true);
@@ -338,7 +348,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "\nvalence it:" << it << "\n";
     if (!include_loops) {
       MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, unconverged_valence,
-                           include_L4, sjt, &lk, a_damp, true);
+                           include_L4, sjt, &lk, a_damp, true, CC_expr);
     } else {
       MBPT::update_Lk_mnib_loops(&lk_next, qk, sk, excited, holes,
                                  unconverged_valence, include_L4, sjt, &lk,
@@ -346,13 +356,11 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
       std::cout << "\nUpdating loop integrals for valence states:\n";
       MBPT::update_Sk_mnib(&sk_next, qk, excited, holes, unconverged_valence,
                            &sk, a_damp, true);
-    }
-    lk = lk_next;
-    lk.write(Lk_file);
-    if (include_loops) {
       sk = sk_next;
       sk.write(Sk_file);
     }
+    lk = lk_next;
+    lk.write(Lk_file);
 
     for (std::size_t i = 0; i < valence.size(); ++i) {
       const auto &v = valence[i];

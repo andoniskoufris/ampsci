@@ -117,12 +117,20 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
               const std::vector<DiracSpinor> &excited, bool include_L4,
               const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
-              std::optional<double> e_i, std::optional<double> e_m) {
+              std::optional<double> e_i, std::optional<double> e_m,
+              const bool CC_expr) {
 
   // nb: i energy enters only L1 and L3; m energy only L2 and L4
-  const auto L123 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i) +
-                    L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                    L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  auto L123 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i);
+  // + L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+  // L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+
+  L123 += CC_expr ?
+            -1.0 * (L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) +
+                    L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i)) :
+            L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+              L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+
   // Optionally include "4th" ladder diagram
   // nb: L4 not fully checked!
   if (include_L4)
@@ -1974,7 +1982,7 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                     const std::vector<DiracSpinor> &update_i, bool include_L4,
                     const Angular::SixJTable &sjt,
                     const Coulomb::LkTable *const lk_prev, double a_damp,
-                    bool print) {
+                    bool print, const bool CC_expr) {
 
   const auto basis = qip::merge(core, excited);
 
@@ -1982,7 +1990,8 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
   const auto Lk_function = [&](int k, const DiracSpinor &m,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
-    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, lk_prev);
+    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, lk_prev,
+                  {}, {}, CC_expr);
   };
 
   // Empty update_i => update everything.

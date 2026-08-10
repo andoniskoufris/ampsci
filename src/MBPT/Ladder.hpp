@@ -41,7 +41,8 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const std::vector<DiracSpinor> &excited, bool include_L4,
               const Angular::SixJTable &SJ,
               const Coulomb::LkTable *const Lk = nullptr,
-              std::optional<double> e_i = {}, std::optional<double> e_m = {});
+              std::optional<double> e_i = {}, std::optional<double> e_m = {},
+              const bool CC_expr = false);
 
 /*!
   @brief Particle--particle ladder diagram L1.
@@ -482,7 +483,7 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                     const std::vector<DiracSpinor> &update_i, bool include_L4,
                     const Angular::SixJTable &sjt,
                     const Coulomb::LkTable *const lk_prev, double a_damp,
-                    bool print);
+                    bool print, const bool CC_expr = false);
 
 /*!
   @brief Second-order (or ladder) correction to the valence energy.
