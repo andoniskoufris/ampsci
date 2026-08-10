@@ -44,6 +44,9 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
                      {-2.13100096, -2.12092003}};
   std::vector gj{
     std::vector{0.0, 0.0}, {1.9999, 1.9999}, {0.0, 0.0}, {1.5, 1.0}};
+  // Terms: {1S0, 1S0}, {3S1, 3S1}, {3P0, 3P0}, {3P1, 1P1}
+  std::vector L2{std::vector{0.0, 0.0}, {0.0, 0.0}, {2.0, 2.0}, {2.0, 2.0}};
+  std::vector S2{std::vector{0.0, 0.0}, {2.0, 2.0}, {2.0, 2.0}, {2.0, 0.0}};
 
   for (std::size_t i = 0; i < CIWFs.size(); ++i) {
     const auto &ci_wf = CIWFs.at(i);
@@ -52,6 +55,8 @@ TEST_CASE("CI: Configuration Interaction unit tests", "[CI][unit]") {
     for (std::size_t j = 0ul; j < ci_wf.num_solutions(); ++j) {
       REQUIRE(ci_wf.energy(j) == Approx(energy[i][j]).epsilon(1.0e-2));
       REQUIRE(ci_wf.info(j).gJ == Approx(gj[i][j]).epsilon(1.0e-2));
+      REQUIRE(ci_wf.info(j).L2 == Approx(L2[i][j]).margin(0.05));
+      REQUIRE(ci_wf.info(j).S2 == Approx(S2[i][j]).margin(0.05));
     }
   }
 

@@ -790,6 +790,31 @@ std::pair<int, int> Term_S_L(int l1, int l2, int twoJ, double gJ_target) {
 }
 
 //==============================================================================
+std::pair<int, int> Term_S_L_from_expectation(double L2, double S2, int twoJ) {
+  // Nearest (S, L) consistent with J; for two electrons, S = 0 or 1.
+  // L limit: generous; l1 + l2 for any realistic CI basis
+  constexpr int max_L = 16;
+
+  int best_L = -1;
+  int best_S = 0;
+  double best_del = 1.0e30;
+  for (int S = 0; S <= 1; ++S) {
+    for (int L = 0; L <= max_L; ++L) {
+      if (twoJ > 2 * (L + S) || twoJ < 2 * std::abs(L - S))
+        continue;
+      const auto del =
+        std::abs(L * (L + 1.0) - L2) + std::abs(S * (S + 1.0) - S2);
+      if (del < best_del) {
+        best_del = del;
+        best_L = L;
+        best_S = S;
+      }
+    }
+  }
+  return {best_S, best_L};
+}
+
+//==============================================================================
 std::string Term_Symbol(int two_J, int L, int two_S, int parity) {
   return two_J % 2 == 0 ?
            fmt::format("{}^{}{}_{}", two_S + 1, AtomData::L_symbol(L),

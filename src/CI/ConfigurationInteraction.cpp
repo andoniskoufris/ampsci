@@ -685,7 +685,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
     for (std::size_t i = 0; i < Psi_Jpi.num_solutions(); ++i) {
 
-      const auto [config, pc, gJ, L, twoS] = Psi_Jpi.info(i);
+      const auto &[config, pc, gJ, L, twoS, L2, S2] = Psi_Jpi.info(i);
+      (void)L2, (void)S2;
       const auto iL = (int)std::round(L);
       const auto itwoS = (int)std::round(twoS);
 
@@ -860,8 +861,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
                  psi.energy(i) * PhysConst::Hartree_invcm,
                  (psi.energy(i) - E0) * PhysConst::Hartree_invcm);
 
-    // l's of the leading configuration (for gJ)
-    int l1{-1}, l2{-1};
+    // Leading configuration:
     std::size_t max_j = 0;
     double max_cj = 0.0;
     for (std::size_t j = 0ul; j < N_CSFs; ++j) {
@@ -869,8 +869,6 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
       if (cj > max_cj) {
         max_cj = cj;
         max_j = j;
-        l1 = Angular::nkindex_to_l(psi.CSF(j).state(0));
-        l2 = Angular::nkindex_to_l(psi.CSF(j).state(1));
       }
       if (cj > minimum_percentage && print_details) {
         fmt::print(outstream, "   {:<6s} {:5.3f}%\n", psi.CSF(j).config(true),
@@ -891,14 +889,23 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
     // Calculate g-factors, for line identification. Only defined for J!=0
     const double gJ = twoJ != 0 ? tjs * m1AA_R / (0.5 * twoJ) : 0.0;
 
-    // Determine Term Symbol, from g-factor
-    const auto [S, L] = CI::Term_S_L(l1, l2, twoJ, gJ);
+    // <L^2> and <S^2> of the CI state (non-rel limit): measure LS-purity
+    const auto [L2, S2] = CI::expectation_L2S2(psi.coefs(i), psi.CSFs(), twoJ);
+
+    // Determine Term Symbol, from <L^2> and <S^2>
+    const auto [S, L] = CI::Term_S_L_from_expectation(L2, S2, twoJ);
+    const auto LSeff = [](double x) {
+      return 0.5 * (std::sqrt(1.0 + 4.0 * x) - 1.0);
+    };
 
     if (print_details) {
       outstream << "   --------------\n";
       if (twoJ != 0) {
         outstream << "   gJ = " << gJ << "\n";
       }
+      fmt::print(outstream, "   <L^2> = {:.4f}, <S^2> = {:.4f}\n", L2, S2);
+      fmt::print(outstream, "   L_eff = {:.4f}, S_eff = {:.4f}\n", LSeff(L2),
+                 LSeff(S2));
     }
 
     // maximum relativistic config, into non-relativistic notation:
@@ -919,7 +926,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
       outstream << "\n";
     }
 
-    psi.update_config_info(i, {config, pc, gJ, 1.0 * L, 2.0 * S});
+    psi.update_config_info(i, {config, pc, gJ, 1.0 * L, 2.0 * S, L2, S2});
   }
 
   return psi;

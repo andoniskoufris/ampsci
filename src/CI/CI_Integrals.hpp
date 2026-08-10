@@ -635,6 +635,22 @@ double RME_CSF2(const CI::CSF2 &X, int twoJX, const CI::CSF2 &V, int twoJV,
 */
 std::pair<int, int> Term_S_L(int l1, int l2, int twoJ, double gJ_target);
 
+/*!
+  @brief Determines the (S, L) term for a two-electron state from the
+  expectation values of L^2 and S^2.
+  @details
+  Returns the (S, L) pair, subject to the triangle condition with J, that
+  minimises the combined distance |L(L+1) - @p L2| + |S(S+1) - @p S2|.
+  For a mixed state, this is the nearest (dominant) term; the purity is
+  indicated by @p L2, @p S2 themselves. See @ref expectation_L2S2.
+
+  @param L2    Expectation value of L^2.
+  @param S2    Expectation value of S^2.
+  @param twoJ  Twice the total angular momentum 2J.
+  @return Best-fit {S, L} pair.
+*/
+std::pair<int, int> Term_S_L_from_expectation(double L2, double S2, int twoJ);
+
 //! Returns spectroscopic term symbol string, e.g. "3P_1"
 std::string Term_Symbol(int two_J, int L, int two_S, int parity);
 //! Returns term symbol without the J subscript, e.g. "3P"

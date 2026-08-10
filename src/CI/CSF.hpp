@@ -105,6 +105,72 @@ std::vector<CSF2> form_CSFs(int twoJ, int parity,
 
 //==============================================================================
 /*!
+  @brief jj -> LS recoupling amplitude for an antisymmetrised two-electron CSF.
+  @details
+  Returns the amplitude of the antisymmetrised jj-coupled CSF
+  \f$ |\{(n_1 l_1 j_1)(n_2 l_2 j_2)\}; J\rangle \f$ (orbitals in stored,
+  i.e., sorted, order) onto the antisymmetrised LS-coupled state
+  \f$ |\{(n_1 l_1)(n_2 l_2)\} L S; J\rangle \f$ of the same non-relativistic
+  configuration:
+
+  \f[
+    A(L,S) = \eta \sqrt{[j_1][j_2][L][S]}
+    \begin{Bmatrix} l_1 & l_2 & L \\ 1/2 & 1/2 & S \\ j_1 & j_2 & J \end{Bmatrix}
+  \f]
+
+  Taken in the non-relativistic limit: the radial orbitals of
+  \f$ j = l \pm 1/2 \f$ are treated as identical (overlap = 1).
+
+  For a common non-relativistic shell (\f$ n_1 = n_2 \f$, \f$ l_1 = l_2 \f$)
+  only L+S even terms exist (Pauli). When additionally \f$ j_1 \neq j_2 \f$
+  the L+S odd components cancel in the antisymmetrisation and the even ones
+  carry \f$ \eta = \sqrt{2} \f$; otherwise \f$ \eta = 1 \f$.
+  In all cases \f$ \sum_{LS} A^2 = 1 \f$.
+
+  @param n1,l1,twoj1  Quantum numbers of the first stored orbital.
+  @param n2,l2,twoj2  Quantum numbers of the second stored orbital.
+  @param L,S          Total orbital and spin angular momenta of the LS term.
+  @param twoJ         Twice the total angular momentum 2J.
+  @return Recoupling amplitude A(L,S); zero if forbidden.
+
+  @note The sign convention follows the stored (sorted) orbital order; since
+        nk_index sorting keeps the (n, l) order identical for all CSFs of one
+        non-relativistic configuration, relative signs between such CSFs are
+        consistent.
+*/
+double LS_amplitude(int n1, int l1, int twoj1, int n2, int l2, int twoj2, int L,
+                    int S, int twoJ);
+
+/*!
+  @brief Expectation values of L^2 and S^2 for a two-electron CI state.
+  @details
+  Recouples each CSF to LS coupling (see @ref LS_amplitude) and accumulates,
+  per non-relativistic configuration g,
+  \f$ B_g(L,S) = \sum_{I \in g} c_I A_I(L,S) \f$, giving
+
+  \f[
+    \langle L^2 \rangle = \sum_{g,L,S} B_g(L,S)^2 \, L(L+1), \qquad
+    \langle S^2 \rangle = \sum_{g,L,S} B_g(L,S)^2 \, S(S+1).
+  \f]
+
+  These are expectation values of the CI state, not eigenvalues: deviation
+  from L(L+1), S(S+1) measures the LS-purity of the state.
+
+  @param coefs  CI expansion coefficients (one per CSF).
+  @param csfs   The CSF basis (matching @p coefs).
+  @param twoJ   Twice the total angular momentum 2J.
+  @return Pair {<L^2>, <S^2>}.
+
+  @note Non-relativistic limit: radial overlaps between j = l +- 1/2 orbitals
+        are set to 1, so for a normalised state the total LS weight is exactly
+        1 and no renormalisation is required.
+*/
+std::pair<double, double>
+expectation_L2S2(const LinAlg::View<const double> &coefs,
+                 const std::vector<CSF2> &csfs, int twoJ);
+
+//==============================================================================
+/*!
   @brief Identifies one CI level: its (J, parity), and which solution.
   @details
   The standard text form is `J{+,-}:index`, e.g., `2+:3` is the fourth solution
@@ -159,6 +225,10 @@ struct ConfigInfo {
   double L{-1.0};
   //! Twice the approximate spin S (-1 if not assigned)
   double twoS{-1.0};
+  //! Expectation value of L^2 for the CI state (-1 if not computed)
+  double L2{-1.0};
+  //! Expectation value of S^2 for the CI state (-1 if not computed)
+  double S2{-1.0};
 };
 
 //==============================================================================

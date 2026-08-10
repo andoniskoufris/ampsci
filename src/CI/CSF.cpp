@@ -7,7 +7,9 @@
 #include <array>
 #include <cassert>
 #include <cctype>
+#include <cmath>
 #include <iostream>
+#include <map>
 
 namespace CI {
 
@@ -194,6 +196,76 @@ std::vector<CSF2> form_CSFs(int twoJ, int parity,
   }
 
   return CSFs;
+}
+
+//==============================================================================
+double LS_amplitude(int n1, int l1, int twoj1, int n2, int l2, int twoj2, int L,
+                    int S, int twoJ) {
+
+  const bool same_nl = (n1 == n2 && l1 == l2);
+
+  // Same non-rel shell: only L+S even terms exist (Pauli)
+  if (same_nl && (L + S) % 2 != 0)
+    return 0.0;
+
+  // Same shell, different j: L+S odd components cancel in the
+  // antisymmetrisation; the surviving even part carries sqrt(2)
+  const double eta = (same_nl && twoj1 != twoj2) ? std::sqrt(2.0) : 1.0;
+
+  const auto factor =
+    std::sqrt(double((twoj1 + 1) * (twoj2 + 1) * (2 * L + 1) * (2 * S + 1)));
+
+  return eta * factor *
+         Angular::ninej_2(2 * l1, 2 * l2, 2 * L, 1, 1, 2 * S, twoj1, twoj2,
+                          twoJ);
+}
+
+//==============================================================================
+std::pair<double, double>
+expectation_L2S2(const LinAlg::View<const double> &coefs,
+                 const std::vector<CSF2> &csfs, int twoJ) {
+  assert(coefs.size() == csfs.size());
+
+  // L^2 and S^2 are diagonal in the LS-coupled basis, and (in the non-rel
+  // limit) only connect CSFs of the same non-rel configuration {n1l1, n2l2}.
+  // Accumulate B(L,S) = sum_I c_I * A_I(L,S) per configuration, keyed by
+  // {n1, l1, n2, l2, L, S}. Stored (sorted) orbital order is consistent
+  // across the CSFs of one configuration, so signs are consistent.
+  std::map<std::array<int, 6>, double> B{};
+
+  for (std::size_t i = 0; i < csfs.size(); ++i) {
+    const auto ci = coefs[i];
+    if (ci == 0.0)
+      continue;
+    const auto [n1, k1] = Angular::index_to_nk(csfs[i].state(0));
+    const auto [n2, k2] = Angular::index_to_nk(csfs[i].state(1));
+    const auto l1 = Angular::l_k(k1);
+    const auto l2 = Angular::l_k(k2);
+    const auto twoj1 = Angular::twoj_k(k1);
+    const auto twoj2 = Angular::twoj_k(k2);
+
+    for (int S = 0; S <= 1; ++S) {
+      for (int L = std::abs(l1 - l2); L <= l1 + l2; ++L) {
+        if (twoJ > 2 * (L + S) || twoJ < 2 * std::abs(L - S))
+          continue;
+        const auto A = LS_amplitude(n1, l1, twoj1, n2, l2, twoj2, L, S, twoJ);
+        if (A != 0.0) {
+          B[{n1, l1, n2, l2, L, S}] += ci * A;
+        }
+      }
+    }
+  }
+
+  double L2 = 0.0;
+  double S2 = 0.0;
+  for (const auto &[key, b] : B) {
+    const auto L = key[4];
+    const auto S = key[5];
+    L2 += b * b * L * (L + 1.0);
+    S2 += b * b * S * (S + 1.0);
+  }
+
+  return {L2, S2};
 }
 
 //==============================================================================
