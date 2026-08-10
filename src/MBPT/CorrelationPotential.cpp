@@ -571,6 +571,39 @@ bool CorrelationPotential::read_write(const std::string &fname,
 }
 
 //==============================================================================
+std::string CorrelationPotential::method_string() const {
+  std::string out = m_method == SigmaMethod::Feynman ? "Feynman" : "Goldstone";
+  if (m_method == SigmaMethod::Feynman) {
+    const auto scr = m_Foptions.screening == Screening::include;
+    const auto hp = m_Foptions.hole_particle == HoleParticle::include;
+    if (scr && hp) {
+      out += ", all-order";
+    } else {
+      if (scr) {
+        out += "+scr";
+      }
+      if (m_Foptions.hole_particle != HoleParticle::exclude) {
+        out += hp ? "+hp" : "+hp0";
+      }
+    }
+  }
+  if (!m_ladder_file.empty()) {
+    out += ", ladder";
+  }
+  // Fitting (scaling) factors: rounded values, so stable across runs
+  std::string lams;
+  for (const auto &Sig : m_Sigmas) {
+    if (std::abs(Sig.lambda - 1.0) > 1.0e-8) {
+      lams += fmt::format("{}={:.4f},", Sig.kappa, Sig.lambda);
+    }
+  }
+  if (!lams.empty()) {
+    out += ", fitted: " + lams;
+  }
+  return out;
+}
+
+//==============================================================================
 void CorrelationPotential::print_info() const {
   for (const auto &Sig : m_Sigmas) {
     fmt::print("kappa = {:>2}, ev = {:+.5f}", Sig.kappa, Sig.en);

@@ -328,10 +328,12 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
       std::cout << "Including Σ_2 correction to Coulomb integrals up to: "
                 << DiracSpinor::state_config(cis2_basis) << "\n";
+      if (extrapolate_sigma2) {
+        std::cout << "(and extrapolating beyond using hk=<Sk/Qk>)\n";
+      }
       if (exclude_wrong_parity_box) {
         std::cout
           << "Excluding the Σ_2 diagrams that have the 'wrong' parity\n";
-        std::cout << "(Unless they were already calculated in sk file)\n";
       }
       std::cout << "Using: " << MBPT::parse_Denominators(denominators)
                 << " denominators\n";
@@ -605,6 +607,11 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   std::string ci_settings = common_settings;
   if (include_Sigma1) {
     ci_settings += "s1;" + DiracSpinor::state_config(s1_basis) + ";";
+  }
+  // Sigma_1 method identity (method, screening, ladder, lambda scaling):
+  // catches Correlation Potential changes not otherwise encoded
+  if (include_Sigma1 && wf.Sigma()) {
+    ci_settings += wf.Sigma()->method_string() + ";";
   }
   if (!s1_corr.empty()) {
     ci_settings += "dSdE;";
