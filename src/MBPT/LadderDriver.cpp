@@ -261,7 +261,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto n_lk_initial = lk.count();
   MBPT::fill_Lk_mnib(&lk, qk, excited, holes, core_and_val, include_L4, sjt,
-                     max_k, true);
+                     max_k, true, CC_expr);
   if (include_loops) {
     MBPT::fill_Sk_mnib(&sk, qk, excited, holes, core_and_val, max_k, false);
     sk_next = sk;

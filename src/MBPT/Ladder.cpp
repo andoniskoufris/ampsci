@@ -1128,7 +1128,8 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                   const std::vector<DiracSpinor> &excited,
                   const std::vector<DiracSpinor> &core,
                   const std::vector<DiracSpinor> &i_orbs, bool include_L4,
-                  const Angular::SixJTable &sjt, int max_k, bool print) {
+                  const Angular::SixJTable &sjt, int max_k, bool print,
+                  const bool CC_expr) {
 
   // const double a_damp = 0.35;
   // const double b_damp = 1.0 - a_damp;
@@ -1188,7 +1189,8 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
   const auto Lk_function = [&](int k, const DiracSpinor &m,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
-    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, nullptr);
+    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, nullptr,
+                  {}, {}, true);
   };
 
   lk->fill(basis, Lk_function, Lk_SR, kmax, print);

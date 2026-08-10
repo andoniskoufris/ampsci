@@ -450,7 +450,7 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                   const std::vector<DiracSpinor> &core,
                   const std::vector<DiracSpinor> &i_orbs, bool include_L4,
                   const Angular::SixJTable &sjt, int max_k = -1,
-                  bool print = true);
+                  bool print = true, const bool CC_expr = false);
 
 /*!
   @brief Updates the ladder integral table with L(Q,Q) -> L(Q,Q+L)
