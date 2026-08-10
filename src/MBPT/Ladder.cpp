@@ -1190,7 +1190,7 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
     return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, nullptr,
-                  {}, {}, true);
+                  {}, {}, CC_expr);
   };
 
   lk->fill(basis, Lk_function, Lk_SR, kmax, print);
