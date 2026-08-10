@@ -9,9 +9,12 @@
 #include "Wavefunction/DiracSpinor.hpp"
 #include "fmt/format.hpp"
 #include "fmt/ostream.hpp"
+#include <algorithm>
 #include <cassert>
 #include <iostream>
+#include <map>
 #include <ostream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -303,6 +306,7 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
     }
   }
 
+  qip::ProgressBar bar(ci_basis.size());
 #pragma omp parallel for schedule(dynamic)
   for (auto iv = 0ul; iv < ci_basis.size(); ++iv) {
     const auto &v = ci_basis[iv];
@@ -327,6 +331,7 @@ calculate_dSdE_correction(const std::vector<DiracSpinor> &ci_basis,
         *corr.dS1.get(w, v) = dS;
       }
     }
+    bar.update();
   }
   return corr;
 }
@@ -746,6 +751,26 @@ double RME_CSF2(const CI::CSF2 &X, int twoJX, const CI::CSF2 &V, int twoJV,
     sum += f * sj * t * s;
   }
   return sum;
+}
+
+//==============================================================================
+std::pair<std::string, double>
+leading_config(const LinAlg::View<const double> &coefs,
+               const std::vector<CSF2> &csfs) {
+  assert(coefs.size() == csfs.size());
+
+  // Total |c|^2 of each non-rel configuration (summed over its rel. CSFs):
+  std::map<std::string, double> nr_configs{};
+  for (std::size_t j = 0; j < csfs.size(); ++j) {
+    nr_configs[csfs.at(j).config(false)] += coefs[j] * coefs[j];
+  }
+
+  const auto max_it = std::max_element(
+    nr_configs.begin(), nr_configs.end(),
+    [](const auto &a, const auto &b) { return a.second < b.second; });
+
+  return max_it != nr_configs.end() ? std::pair{max_it->first, max_it->second} :
+                                      std::pair{std::string{}, 0.0};
 }
 
 //==============================================================================

@@ -445,7 +445,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // Derivative (dSigma/dE) correction for Sigma_1
   CI::Sigma1Correction s1_corr;
   if (iterative_correction && include_Sigma1) {
-    std::cout << "Including derivative (dSigma/dE) correction for Sigma_1\n";
+    std::cout << "\nIncluding derivative (dSigma/dE) correction for Sigma_1\n";
     std::cout << std::flush;
     s1_corr =
       CI::calculate_dSdE_correction(ci_sp_basis, core_s1, excited_s1, qk);
@@ -850,7 +850,6 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
   print_details = print_details && print_details_tmp && !read_only;
   const double minimum_percentage = 5.0; // min % to print
 
-  // XXX nb: sometimes get's non-rel config wrong! (not a big issue)
   for (std::size_t i = 0; i < N_CSFs && i < psi.num_solutions(); ++i) {
 
     const auto pi = parity == 1 ? '+' : '-';
@@ -861,18 +860,13 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
                  psi.energy(i) * PhysConst::Hartree_invcm,
                  (psi.energy(i) - E0) * PhysConst::Hartree_invcm);
 
-    // Leading configuration:
-    std::size_t max_j = 0;
-    double max_cj = 0.0;
-    for (std::size_t j = 0ul; j < N_CSFs; ++j) {
-      const auto cj = 100.0 * std::pow(psi.coef(i, j), 2);
-      if (cj > max_cj) {
-        max_cj = cj;
-        max_j = j;
-      }
-      if (cj > minimum_percentage && print_details) {
-        fmt::print(outstream, "   {:<6s} {:5.3f}%\n", psi.CSF(j).config(true),
-                   cj);
+    if (print_details) {
+      for (std::size_t j = 0ul; j < N_CSFs; ++j) {
+        const auto cj = 100.0 * std::pow(psi.coef(i, j), 2);
+        if (cj > minimum_percentage) {
+          fmt::print(outstream, "   {:<6s} {:5.3f}%\n", psi.CSF(j).config(true),
+                     cj);
+        }
       }
     }
 
@@ -908,17 +902,8 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
                  LSeff(S2));
     }
 
-    // maximum relativistic config, into non-relativistic notation:
-    const auto config = psi.CSF(max_j).config(false);
-
-    // Percentage of that non-relativistic config*
-    double pc = 0.0;
-    for (std::size_t j = 0; j < N_CSFs; ++j) {
-      if (psi.CSF(j).config(false) == config) {
-        pc += psi.coef(i, j) * psi.coef(i, j);
-      }
-    }
-    // * technically, might not be maximum non-rel config.. realistically, fine
+    // Leading non-relativistic configuration, and its |c|^2 weight:
+    const auto [config, pc] = CI::leading_config(psi.coefs(i), psi.CSFs());
 
     if (print_details) {
       fmt::print(outstream, "   {:<6s} {}\n", config,

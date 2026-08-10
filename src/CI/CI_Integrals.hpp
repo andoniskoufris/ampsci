@@ -621,6 +621,20 @@ double RME_CSF2(const CI::CSF2 &X, int twoJX, const CI::CSF2 &V, int twoJV,
                 const Coulomb::meTable<double> &h, int K_rank);
 
 /*!
+  @brief Leading non-relativistic configuration of a CI state.
+  @details
+  Sums |c|^2 over the relativistic CSFs belonging to each non-relativistic
+  configuration, and returns the configuration with the largest total weight.
+
+  @param coefs  CI expansion coefficients (one per CSF).
+  @param csfs   The CSF basis (matching @p coefs).
+  @return Pair {configuration label (non-rel notation), total |c|^2 weight}.
+*/
+std::pair<std::string, double>
+leading_config(const LinAlg::View<const double> &coefs,
+               const std::vector<CSF2> &csfs);
+
+/*!
   @brief Determines the best-fit (S, L) term for a two-electron state by
   matching the g-factor.
   @details
