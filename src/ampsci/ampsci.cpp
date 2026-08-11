@@ -328,6 +328,11 @@ Wavefunction ampsci(const IO::InputBlock &input) {
                   "Must be in same order as valence states"},
      {"lambda_kappa",
       "Scaling factors for Sigma. Must be in same order as valence states"},
+     {"separate_lambda",
+      "Do not average the fitted scaling factors (lambda) over "
+      "fine-structure pairs. By default, after fitting to experiment "
+      "(fitTo_cm), the lambdas of each j = l -/+ 1/2 pair are "
+      "averaged, so the pair share an identical lambda. [false]"},
      {"filename",
       "Filename to read/write correlation potential (Sigma) to/from. "
       "true => use default filename: <identity>.sX.abf, where X details "
@@ -441,6 +446,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
     input.get({"Correlations"}, "fitTo_cm", std::vector<double>{});
   const auto lambda_k =
     input.get({"Correlations"}, "lambda_kappa", std::vector<double>{});
+  const auto separate_lambda =
+    input.get({"Correlations"}, "separate_lambda", false);
 
   const auto fk = input.get({"Correlations"}, "fk", std::vector<double>{});
   const auto etak = input.get({"Correlations"}, "eta", std::vector<double>{});
@@ -472,7 +479,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
     std::cout << '\n';
     IO::ChronoTimer time("Brueckner");
     if (!fit_energies.empty())
-      wf.fitSigma_hfBrueckner(valence, fit_energies);
+      wf.fitSigma_hfBrueckner(valence, fit_energies, separate_lambda);
     else
       wf.hartreeFockBrueckner();
   }

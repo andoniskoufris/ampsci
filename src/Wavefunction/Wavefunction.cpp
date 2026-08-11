@@ -614,8 +614,9 @@ void Wavefunction::hartreeFockBrueckner(const bool print) {
 }
 
 //==============================================================================
-void Wavefunction::fitSigma_hfBrueckner(
-  const std::string &, const std::vector<double> &fit_energies) {
+void Wavefunction::fitSigma_hfBrueckner(const std::string &,
+                                        const std::vector<double> &fit_energies,
+                                        bool separate_lambda) {
   std::cout << "Fitting Sigma for lowest valence states:\n" << std::flush;
 
   const auto max_its = 30;
@@ -662,6 +663,36 @@ void Wavefunction::fitSigma_hfBrueckner(
     std::cout << "\n";
   }
   std::cout << "\n";
+
+  // Average the fitted lambdas over each fine-structure pair (same n and l):
+  // the pair then share an identical lambda
+  if (!separate_lambda) {
+    bool printed = false;
+    const auto num_fitted = std::min(fit_energies.size(), m_valence.size());
+    for (auto i = 0ul; i < num_fitted; ++i) {
+      const auto &Fv = m_valence[i];
+      const auto l = Fv.l();
+      // Take the j = l - 1/2 state (kappa = +l); find its j = l + 1/2 partner
+      if (Fv.kappa() != l || l == 0)
+        continue;
+      const auto partner =
+        std::find_if(m_valence.cbegin(), m_valence.cbegin() + long(num_fitted),
+                     [&Fv, l](const auto &Fw) {
+                       return Fw.n() == Fv.n() && Fw.kappa() == -(l + 1);
+                     });
+      if (partner == m_valence.cbegin() + long(num_fitted))
+        continue;
+      const auto average_lambda =
+        0.5 * (m_Sigma->getLambda(Fv.kappa(), Fv.n()) +
+               m_Sigma->getLambda(partner->kappa(), partner->n()));
+      m_Sigma->scale_Sigma(average_lambda, Fv.kappa(), Fv.n());
+      m_Sigma->scale_Sigma(average_lambda, partner->kappa(), partner->n());
+      if (!printed) {
+        std::cout << "Averaging lambda for fine structure pairs\n\n";
+        printed = true;
+      }
+    }
+  }
 
   hartreeFockBrueckner(true);
 }

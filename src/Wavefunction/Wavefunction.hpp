@@ -279,9 +279,12 @@ public:
   //! existing valence states
   void hartreeFockBrueckner(const bool print = true);
 
-  //! First, fits Sigma to energies, then forms fitted Brueckner orbitals
+  //! First, fits Sigma to energies, then forms fitted Brueckner orbitals.
+  //! By default, fitted lambdas are averaged over each fine-structure pair
+  //! (same n and l); separate_lambda = true keeps them separate
   void fitSigma_hfBrueckner(const std::string &valence_list,
-                            const std::vector<double> &fit_energies);
+                            const std::vector<double> &fit_energies,
+                            bool separate_lambda = false);
 
   //! OLD: deprecated
   void radiativePotential(QED::RadPot::Scale s, double rcut, double scale_rN,
