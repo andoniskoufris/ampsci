@@ -156,7 +156,9 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
                it->kappa, it->en, de);
     // May still need the derivative (e.g., Sigma read from an older file)
     if (m_form_derivative && !get_derivative(kappa, it->n)) {
-      form_derivative(kappa, it->en, it->n, Fv);
+      const auto fk_state = state_fk(it->en, Fv);
+      form_derivative(kappa, it->en, it->n, Fv, it->Sigma,
+                      fk_state ? &*fk_state : nullptr);
     }
     return;
   }
@@ -168,39 +170,71 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
     fmt::print("Form Σ for kappa={} at e = {:.4f}\n", kappa, ev);
   }
 
-  auto S = m_method == SigmaMethod::Feynman ? formSigma_F(kappa, ev, Fv) :
-                                              formSigma_G(kappa, ev, Fv);
+  // fk screening factors for this state: calculated once, here; the base
+  // Sigma and its derivative use the same values
+  const auto fk_state = state_fk(ev, Fv);
+  const auto fk_pointer = fk_state ? &*fk_state : nullptr;
+
+  auto S = m_method == SigmaMethod::Feynman ?
+             formSigma_F(kappa, ev, Fv, fk_pointer) :
+             formSigma_G(kappa, ev, Fv);
 
   m_Sigmas.push_back({kappa, ev, std::move(S), n, 1.0});
 
   if (m_form_derivative && !get_derivative(kappa, n)) {
-    form_derivative(kappa, ev, n, Fv);
+    form_derivative(kappa, ev, n, Fv, m_Sigmas.back().Sigma, fk_pointer);
   }
 }
 
 //==============================================================================
-void CorrelationPotential::form_derivative(int kappa, double ev, int n,
-                                           const DiracSpinor *Fv) {
-  fmt::print("Form dSigma/dE for kappa={} at e = {:.4f} (central difference)\n",
-             kappa, ev);
-  auto Sp = m_method == SigmaMethod::Feynman ?
-              formSigma_F(kappa, ev + m_delta_en, Fv) :
-              formSigma_G(kappa, ev + m_delta_en, Fv);
-  const auto Sm = m_method == SigmaMethod::Feynman ?
-                    formSigma_F(kappa, ev - m_delta_en, Fv) :
-                    formSigma_G(kappa, ev - m_delta_en, Fv);
-  Sp -= Sm;
-  Sp *= (1.0 / (2.0 * m_delta_en));
-  if (Fv) {
-    const auto dde = *Fv * (Sp * *Fv);
-    fmt::print("  d(de)/dE({}) = {:+.5f}\n", Fv->shortSymbol(), dde);
+std::optional<std::vector<double>>
+CorrelationPotential::state_fk(double ev, const DiracSpinor *Fv) {
+  const bool screening = m_Foptions.screening == Screening::include;
+  if (m_method != SigmaMethod::Feynman || !m_calculate_fk || !screening ||
+      Fv == nullptr) {
+    return std::nullopt;
   }
-  m_dSigma.push_back({kappa, ev, std::move(Sp), n, 1.0});
+  if (!m_Fy) {
+    setup_Feynman();
+  }
+  auto fk = calculate_fk(ev, *Fv);
+  std::cout << "  fk   = {";
+  for (const auto &each_fk : fk) {
+    printf("%.3f, ", each_fk);
+  }
+  std::cout << "}\n";
+  // If not stored, store first screening factors
+  if (m_fk.empty()) {
+    m_fk = fk;
+  }
+  return fk;
+}
+
+//==============================================================================
+void CorrelationPotential::form_derivative(
+  int kappa, double ev, int n, const DiracSpinor *Fv, const GMatrix &Sigma0,
+  const std::vector<double> *given_fk) {
+  fmt::print("  Form dSigma/dE for kappa={} at e = {:.4f}\n", kappa, ev);
+  // One extra Sigma evaluation, re-using the base Sigma and its fk.
+  // Print nothing for it: only the Sigma we actually use is reported
+  auto dS = m_method == SigmaMethod::Feynman ?
+              formSigma_F(kappa, ev + m_delta_en, Fv, given_fk, false) :
+              formSigma_G(kappa, ev + m_delta_en, Fv, false);
+  dS -= Sigma0;
+  dS *= (1.0 / m_delta_en);
+  // if (Fv) {
+  //   const auto dde = *Fv * (dS * *Fv);
+  //   fmt::print("  d(de)/dE({}) = {:+.5f}\n", Fv->shortSymbol(),
+  //              dde * PhysConst::Hartree_invcm);
+  // }
+  m_dSigma.push_back({kappa, ev, std::move(dS), n, 1.0});
 }
 
 //==============================================================================
 GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
-                                          const DiracSpinor *Fv) {
+                                          const DiracSpinor *Fv,
+                                          const std::vector<double> *given_fk,
+                                          bool print) {
 
   if (!m_Fy) {
     setup_Feynman();
@@ -208,15 +242,19 @@ GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
 
   std::vector<double> vfk;
 
-  // Calculate screening factors:
-  if (m_calculate_fk && m_Fy->screening()) {
+  if (given_fk != nullptr) {
+    // Screening factors already calculated for this state (see state_fk)
+    vfk = *given_fk;
+  } else if (m_calculate_fk && m_Fy->screening()) {
     assert(Fv != nullptr && "Cannot calculate fk without Fv");
     vfk = calculate_fk(ev, *Fv);
-    std::cout << "  fk   = {";
-    for (auto &e : vfk) {
-      printf("%.3f, ", e);
+    if (print) {
+      std::cout << "  fk   = {";
+      for (auto &e : vfk) {
+        printf("%.3f, ", e);
+      }
+      std::cout << "}\n";
     }
-    std::cout << "}\n";
     // If not stored, store first screening factors
     if (m_fk.empty()) {
       m_fk = vfk;
@@ -225,7 +263,7 @@ GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
     vfk = m_fk;
   }
 
-  if (Fv) {
+  if (Fv && print) {
     fmt::print("  de({}) = ", Fv->shortSymbol());
     std::cout << std::flush;
   }
@@ -233,7 +271,7 @@ GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
   auto Sd = m_Fy->Sigma_direct(kappa, ev);
 
   double deD{0.0};
-  if (Fv) {
+  if (Fv && print) {
     deD = (*Fv) * (Sd * *Fv);
     fmt::print("{:.2f} + ", deD * PhysConst::Hartree_invcm);
     std::cout << std::flush;
@@ -241,7 +279,7 @@ GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
 
   const auto Sx = m_Gold->Sigma_exchange(kappa, ev, vfk);
 
-  if (Fv) {
+  if (Fv && print) {
     const auto deX = (*Fv) * (Sx * *Fv);
     fmt::print("{:.2f} = {:.2f}\n", deX * PhysConst::Hartree_invcm,
                (deD + deX) * PhysConst::Hartree_invcm);
@@ -251,13 +289,17 @@ GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
   if (m_includeBreit_b2) {
     // nb: do some extra work to calculate it seperately (Qk and Pk)..
     // But, since selection rules are different, it's better this way
-    fmt::print("  de[B2]  = ");
-    std::cout << std::flush;
+    if (Fv && print) {
+      fmt::print("  de[B2]  = ");
+      std::cout << std::flush;
+    }
     const auto dS =
       m_Gold->dSigma_Breit2(kappa, ev, m_fk, m_etak, 99, m_n_max_breit);
-    const auto deB2 = (*Fv) * (dS * *Fv);
-    fmt::print("{:.2f}\n", deB2 * PhysConst::Hartree_invcm);
-    std::cout << std::flush;
+    if (Fv && print) {
+      const auto deB2 = (*Fv) * (dS * *Fv);
+      fmt::print("{:.2f}\n", deB2 * PhysConst::Hartree_invcm);
+      std::cout << std::flush;
+    }
     Sd += dS;
   }
 
@@ -323,7 +365,7 @@ CorrelationPotential::calculate_etak(double ev, const DiracSpinor &v) const {
 
 //==============================================================================
 GMatrix CorrelationPotential::formSigma_G(int kappa, double ev,
-                                          const DiracSpinor *Fv) {
+                                          const DiracSpinor *Fv, bool print) {
 
   // faster to calculate direct and exchange together;
   // ...but then you lose info on the relative contributions
@@ -340,7 +382,7 @@ GMatrix CorrelationPotential::formSigma_G(int kappa, double ev,
               m_Gold->Sigma_both(kappa, ev, m_fk, m_etak);
 
   double deD{0.0};
-  if (Fv) {
+  if (Fv && print) {
     deD = (*Fv) * (Sd * *Fv);
     fmt::print("  de({}) = {:.2f} ", Fv->shortSymbol(),
                deD * PhysConst::Hartree_invcm);
@@ -348,26 +390,30 @@ GMatrix CorrelationPotential::formSigma_G(int kappa, double ev,
 
   if (exchange_seperately) {
     const auto Sx = m_Gold->Sigma_exchange(kappa, ev, m_fk);
-    if (Fv) {
+    if (Fv && print) {
       const auto deX = (*Fv) * (Sx * *Fv);
       fmt::print("+ {:.2f} = {:.2f}\n", deX * PhysConst::Hartree_invcm,
                  (deD + deX) * PhysConst::Hartree_invcm);
     }
     Sd += Sx;
-  } else {
+  } else if (print) {
     std::cout << "\n" << std::flush;
   }
 
   if (m_includeBreit_b2) {
     // nb: do some extra work to calculate it seperately (Qk and Pk)..
     // But, since selection rules are different, it's better this way
-    fmt::print("  de[B2]  = ");
-    std::cout << std::flush;
+    if (Fv && print) {
+      fmt::print("  de[B2]  = ");
+      std::cout << std::flush;
+    }
     const auto dS =
       m_Gold->dSigma_Breit2(kappa, ev, m_fk, m_etak, 99, m_n_max_breit);
-    const auto deB2 = (*Fv) * (dS * *Fv);
-    fmt::print("{:.2f}\n", deB2 * PhysConst::Hartree_invcm);
-    std::cout << std::flush;
+    if (Fv && print) {
+      const auto deB2 = (*Fv) * (dS * *Fv);
+      fmt::print("{:.2f}\n", deB2 * PhysConst::Hartree_invcm);
+      std::cout << std::flush;
+    }
     Sd += dS;
   }
 

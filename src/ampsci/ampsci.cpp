@@ -376,7 +376,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
       "scaled by same lambda). Give the .sl filename, or 'true' to use the "
       "default filename: <Identity>.sl.abf. [false]"},
      {"derivative",
-      "Also calculate the energy derivative of Sigma, dSigma/dE, by central "
+      "Also calculate the energy derivative of Sigma, dSigma/dE, by forward "
       "difference (step 0.01 au) of the full Sigma [false]"}});
 
   const bool do_brueckner = input.getBlock({"Correlations"}) != std::nullopt;

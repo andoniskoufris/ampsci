@@ -68,7 +68,7 @@ class CorrelationPotential {
   std::vector<SigmaData> m_Sigma_L{};
   std::string m_ladder_file{};
 
-  // Energy derivative, dSigma/dE (central difference; see m_delta_en).
+  // Energy derivative, dSigma/dE (forward difference; see m_delta_en).
   // Formed alongside Sigma when m_form_derivative is set; appended to the
   // sigma file (older files simply have none)
   bool m_form_derivative{false};
@@ -113,10 +113,10 @@ public:
     @brief Returns lambda * dSigma/dE |Fv>; returns |0> if no derivative
     exists for this kappa.
     @details
-    The energy derivative of Sigma, formed by central finite difference
-    alongside Sigma itself (option form_derivative), so it corresponds to the
-    actual method used (Goldstone/Feynman, screening, etc.). Scaled by the
-    same lambda as the base Sigma.
+    The energy derivative of Sigma, formed by finite difference alongside
+    Sigma itself (option form_derivative), so it corresponds to the actual
+    method used (Goldstone/Feynman, screening, etc.). Scaled by the same
+    lambda as the base Sigma.
 
     @note The ladder correction (Sigma_L) has no energy derivative: it is
           included in SigmaFv() but not here.
@@ -159,13 +159,26 @@ private:
   std::vector<double> calculate_etak(double ev, const DiracSpinor &v) const;
   const SigmaData *get_ladder(int kappa, int n = 0) const;
 
-  GMatrix formSigma_F(int kappa, double ev, const DiracSpinor *Fv = nullptr);
-  GMatrix formSigma_G(int kappa, double ev, const DiracSpinor *Fv = nullptr);
+  // given_fk: screening factors to use (from state_fk); if nullptr,
+  // calculated internally (if applicable). print = false: silent (e.g., the
+  // extra evaluation for the derivative - only the used Sigma is reported)
+  GMatrix formSigma_F(int kappa, double ev, const DiracSpinor *Fv = nullptr,
+                      const std::vector<double> *given_fk = nullptr,
+                      bool print = true);
+  GMatrix formSigma_G(int kappa, double ev, const DiracSpinor *Fv = nullptr,
+                      bool print = true);
 
-  // Forms dSigma/dE for given kappa by central finite difference (step
-  // m_delta_en) of the full Sigma; stores in m_dSigma
-  void form_derivative(int kappa, double ev, int n,
-                       const DiracSpinor *Fv = nullptr);
+  // Calculates the fk screening factors for this state, once (with print;
+  // stores first set in m_fk). nullopt if not applicable (not
+  // Feynman-screening, fk given manually, or no Fv)
+  std::optional<std::vector<double>> state_fk(double ev, const DiracSpinor *Fv);
+
+  // Forms dSigma/dE for given kappa by forward finite difference (step
+  // m_delta_en): one extra Sigma evaluation at ev + delta, re-using the
+  // base Sigma matrix and the same fk; stores in m_dSigma
+  void form_derivative(int kappa, double ev, int n, const DiracSpinor *Fv,
+                       const GMatrix &Sigma0,
+                       const std::vector<double> *given_fk = nullptr);
 
 public:
   CorrelationPotential &operator=(const CorrelationPotential &) = default;
