@@ -1168,8 +1168,11 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
     if (!is_excited[m.nk_index()] || !is_excited[n.nk_index()])
       return false;
     // Require i to be in {i}, and b to be in core
-    if (!is_i_orb[i.nk_index()] || !is_core[b.nk_index()])
+    if (!is_i_orb[i.nk_index()])
       return false;
+    // relax the restriction that b is in the core for testing the regular LCCSD form of L2 & L3
+    // if (!is_core[b.nk_index()])
+    //   return false;
     const auto [k0, kI] = Coulomb::k_minmax_Q(m, n, i, b);
     return k >= k0 && k <= kI;
   };
@@ -2021,8 +2024,9 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
   };
   const auto filter = [&](const DiracSpinor &, const DiracSpinor &,
                           const DiracSpinor &i, const DiracSpinor &b) {
-    return (in(update_set, i) && in(core_set, b)) ||
-           (in(update_set, b) && in(core_set, i));
+    // return (in(update_set, i) && in(core_set, b)) ||
+    //        (in(update_set, b) && in(core_set, i));
+    return (in(update_set, i)) || (in(update_set, b) && in(core_set, i));
   };
 
   lk->update(basis, Lk_function, a_damp, print, filter);
