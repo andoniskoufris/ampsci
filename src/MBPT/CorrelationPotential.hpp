@@ -18,6 +18,8 @@ struct SigmaData {
   SpinorMatrix<double> Sigma;
   int n{0};
   double lambda{1.0};
+  //! fk screening factors used for this Sigma (empty if none)
+  std::vector<double> fk{};
 };
 
 enum class SigmaMethod { Goldstone, Feynman };
@@ -142,6 +144,22 @@ public:
   //! Fitting (scaling) factors as a string, "kappa=value," rounded to 4 dp;
   //! empty if none scaled. For file-cache keys (e.g., the ci-file hash).
   std::string lambda_string() const;
+
+  /*!
+    @brief Average of the stored fk screening factors over the lowest Sigma
+    of each l up to @p l_max; empty if none stored.
+    @details
+    For re-use of the Sigma_1 screening in Sigma_2 (CI), where there is one
+    effective fk per Coulomb line but no unique state: the low-l factors are
+    the relevant ones for the CI valence space (higher-l factors can differ
+    significantly, e.g., f/g at k = 0, but such states rarely contribute).
+    Weighted by l, not kappa: the fine-structure pair of each l is averaged
+    first, then the mean is taken over the ls (so s counts the same as p,
+    d, ...). Truncated to the shortest stored list.
+
+    @param l_max  Maximum l included in the average (CI uses 2: s, p, d).
+  */
+  std::vector<double> average_fk(int l_max = 2) const;
 
   //! Prints the sub-grid parameters to screen
   void print_subGrid() const;

@@ -141,8 +141,11 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                     "first. [false]"},
     {"print_details", "Condition to print details of each CI solution "
                       "(otherwise just prints summary) [true]"},
-    {"fk", "List of effective QPQ ~ fk Q screening factors; used for for Sigma "
-           "2 only. To screen Sigma1, using Feynman correlation potential"},
+    {"fk",
+     "Effective QPQ ~ fk Q screening factors for the Sigma_2 Coulomb lines. "
+     "Give an explicit list to use those values; set 'false' for no "
+     "screening (or 'fk = 1;'). "
+     "If blank (default), takes from correlation potential if it has them."},
     {"extrapolate_sigma2",
      "Extrapolate Sigma_2 to diagrams outside cis2_basis, using average "
      "correction ratios: S^k ~ h_k*Q^k, where h_k = <S^k/Q^k> is averaged over "
@@ -267,8 +270,20 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     input.get("cis2_basis", std::to_string(N_max_core + 3) + "spdf");
   const auto cis2_basis = CI::basis_subset(ci_sp_basis, cis2_basis_string);
 
-  // Screening factors for Sigma_2 (fk[k] scales k-th Coulomb line)
-  const auto fk = input.get("fk", std::vector<double>{});
+  // Screening factors for Sigma_2 (QPQ ~ fk*Q):
+  // - explicit list: used as given
+  // - fk = false; : no screening (fk = 1)
+  // - blank: if the correlation potential stores fk (Feynman screening),
+  //   use the average of the lowest s, p, and d factors
+  const auto fk_string = input.get("fk", std::string{});
+  const auto fk_false = qip::ci_compare(fk_string, "false");
+  auto fk =
+    fk_false ? std::vector<double>{} : input.get("fk", std::vector<double>{});
+  bool fk_from_Sigma = false;
+  if (fk.empty() && !fk_false && include_Sigma2 && wf.Sigma()) {
+    fk = wf.Sigma()->average_fk(2);
+    fk_from_Sigma = !fk.empty();
+  }
 
   // Extrapolate Sigma_2 (via average screening) for diagrams outside
   // cis2_basis
@@ -366,6 +381,22 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   // calculate nothing new
   const auto no_new_integralsQ =
     input.get("no_new_integrals", false) || read_only;
+
+  // With no_new_integrals (or read_only), an empty table is not an error
+  // (may be intended), but is usually a mistake (e.g., missing file): warn
+  const auto warn_if_empty = [no_new_integralsQ](std::size_t count,
+                                                 const std::string &name,
+                                                 const std::string &filename) {
+    if (no_new_integralsQ && count == 0) {
+      fmt2::warning();
+      fmt::print(": no_new_integrals (or read_only) is set, but no {} "
+                 "integrals were read (from: {}).\n"
+                 "They will NOT be calculated: zero {} integrals used!\n",
+                 name, filename, name);
+      std::cout << std::flush;
+    }
+  };
+
   {
     std::cout << (no_new_integralsQ ? "Read" : "Calculate")
               << " two-body Coulomb integrals: Q^k_abcd\n";
@@ -377,6 +408,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
     // Try to read from disk (may already have calculated Qk)
     qk.read(qk_filename);
     const auto existing = qk.count();
+    warn_if_empty(existing, "Coulomb Q^k", qk_filename);
 
     if (!no_new_integralsQ) {
       // Try to limit number of Coulomb integrals we calculate
@@ -536,6 +568,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
     Bk = CI::calculate_Bk(bk_filename, wf.vHF()->vBreit(), Breit_basis,
                           max_k_Coulomb, no_new_integralsQ);
+    warn_if_empty(Bk.count(), "Breit B^k", bk_filename);
   }
 
   //----------------------------------------------------------------------------
@@ -579,23 +612,28 @@ Solutions configuration_interaction(const IO::InputBlock &input,
 
     // output screening factors to check
     if (!fk.empty()) {
+      if (fk_from_Sigma) {
+        std::cout << "fk from correlation potential (average of lowest "
+                     "s, p, d)\n";
+      }
       std::cout << "Effective screening into Σ_2:\n fk = [";
       for (std::size_t i = 0; i < fk.size(); ++i) {
-        fmt::print("{:3f}{}", fk.at(i), i + 1 == fk.size() ? "]\n" : ", ");
+        fmt::print("{:.3f}{}", fk.at(i), i + 1 == fk.size() ? "]\n" : ", ");
       }
     }
 
     std::cout << std::flush;
 
     if (iterative_correction_sigma2) {
-      fmt::print("Brillouin-Wigner Σ_2: tabulated at E0 = {:.8f} au, with "
-                 "dΣ^k/dE0 for the shift to each J/pi\n",
+      fmt::print("Brillouin-Wigner Σ_2: at E0 = {:.4f} au, + "
+                 "dΣ^k/dE0 correction for each J/pi\n",
                  E0_sigma2);
     }
 
     Sk = MBPT::calculate_Sk(Sk_filename, cis2_basis, core_s2, excited_s2, qk,
                             max_k_Coulomb, exclude_wrong_parity_box,
                             denominators, no_new_integralsQ, fk, E0_sigma2);
+    warn_if_empty(Sk.count(), "Sigma_2 S^k", Sk_filename);
 
     if (iterative_correction_sigma2) {
       // dS^k/dE0, by finite difference in E0. The denominators are exactly
@@ -612,6 +650,7 @@ Solutions configuration_interaction(const IO::InputBlock &input,
                                qk, max_k_Coulomb, exclude_wrong_parity_box,
                                denominators, no_new_integralsQ, fk,
                                E0_sigma2 + delta_E0);
+      warn_if_empty(dSk.count(), "dSigma_2 (dsk)", dSk_filename);
       // Both tables have the same entries (same fill), so this is safe
       for (std::size_t k = 0; k < dSk->size(); ++k) {
         for (auto &[index, value] : dSk->at(k)) {

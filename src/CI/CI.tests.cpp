@@ -451,4 +451,35 @@ TEST_CASE("CI: dSdE from correlation potential", "[CI][integration]") {
   }
 
   std::remove(sig_fname.c_str());
+
+  //-----------------------------------------------------------------------
+  // fk stored alongside Sigma: storage, average_fk, and file round-trip
+
+  {
+    const auto fk_test = std::vector{0.7, 0.8, 0.9};
+    const auto fk_fname = "deleteme_" + qip::random_string(3) + ".s2.abf";
+    MBPT::CorrelationPotential Sig3(fk_fname, wf.vHF(), wf.basis(), 1.0e-4,
+                                    30.0, 4, 1, MBPT::SigmaMethod::Goldstone,
+                                    false, false, 0, {}, false, fk_test);
+    Sig3.formSigma(-1, -0.19, 3);
+    Sig3.formSigma(1, -0.11, 3);
+    REQUIRE(Sig3.get(-1) != nullptr);
+    REQUIRE(Sig3.get(-1)->fk == fk_test);
+    // both stored sets identical: average is exact
+    REQUIRE(Sig3.average_fk() == fk_test);
+    // l_max = 0: only the s set
+    REQUIRE(Sig3.average_fk(0) == fk_test);
+    Sig3.write(fk_fname);
+
+    const MBPT::CorrelationPotential Sig4(fk_fname, wf.vHF(), wf.basis(),
+                                          1.0e-4, 30.0, 4, 1,
+                                          MBPT::SigmaMethod::Goldstone);
+    REQUIRE(Sig4.get(-1) != nullptr);
+    REQUIRE(Sig4.get(-1)->fk == fk_test);
+    REQUIRE(Sig4.average_fk() == fk_test);
+    std::remove(fk_fname.c_str());
+  }
+
+  // No stored fk: average is empty
+  REQUIRE(wf.Sigma()->average_fk().empty());
 }

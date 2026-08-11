@@ -145,10 +145,10 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
   // 1. check if exists. If so, do nothing.
 
   const auto it =
-    std::find_if(m_Sigmas.cbegin(), m_Sigmas.cend(), [kappa, n](const auto &s) {
+    std::find_if(m_Sigmas.begin(), m_Sigmas.end(), [kappa, n](const auto &s) {
       return s.kappa == kappa && (s.n == n || n <= 0);
     });
-  if (it != m_Sigmas.cend()) {
+  if (it != m_Sigmas.end()) {
     // have sigma already!
     // print deets!
     auto de = Fv ? *Fv * (it->Sigma * *Fv) : 0.0;
@@ -157,6 +157,10 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
     // May still need the derivative (e.g., Sigma read from an older file)
     if (m_form_derivative && !get_derivative(kappa, it->n)) {
       const auto fk_state = state_fk(it->en, Fv);
+      // Backfill stored fk (e.g., Sigma read from an older file)
+      if (fk_state && it->fk.empty()) {
+        it->fk = *fk_state;
+      }
       form_derivative(kappa, it->en, it->n, Fv, it->Sigma,
                       fk_state ? &*fk_state : nullptr);
     }
@@ -180,6 +184,14 @@ void CorrelationPotential::formSigma(int kappa, double ev, int n,
              formSigma_G(kappa, ev, Fv);
 
   m_Sigmas.push_back({kappa, ev, std::move(S), n, 1.0});
+
+  // Record the fk actually used for this Sigma (calculated, or manual m_fk):
+  // stored with Sigma for re-use (e.g., Sigma_2 screening in CI)
+  if (fk_state) {
+    m_Sigmas.back().fk = *fk_state;
+  } else if (!m_fk.empty()) {
+    m_Sigmas.back().fk = m_fk;
+  }
 
   if (m_form_derivative && !get_derivative(kappa, n)) {
     form_derivative(kappa, ev, n, Fv, m_Sigmas.back().Sigma, fk_pointer);
@@ -215,6 +227,7 @@ void CorrelationPotential::form_derivative(
   int kappa, double ev, int n, const DiracSpinor *Fv, const GMatrix &Sigma0,
   const std::vector<double> *given_fk) {
   fmt::print("  Form dSigma/dE for kappa={} at e = {:.4f}\n", kappa, ev);
+  std::cout << std::flush;
   // One extra Sigma evaluation, re-using the base Sigma and its fk.
   // Print nothing for it: only the Sigma we actually use is reported
   auto dS = m_method == SigmaMethod::Feynman ?
@@ -683,6 +696,21 @@ bool CorrelationPotential::read_write(const std::string &fname,
     }
   }
 
+  // Per-Sigma fk screening factors, in m_Sigmas order (appended to the
+  // format later still: older files end before this block)
+  const bool have_fk_block =
+    rw == IO::FRW::write || iofs.peek() != std::fstream::traits_type::eof();
+  if (have_fk_block) {
+    std::size_t num_fk = rw == IO::FRW::write ? m_Sigmas.size() : 0;
+    rw_binary(iofs, rw, num_fk);
+    for (std::size_t iS = 0; iS < num_fk && iS < m_Sigmas.size(); ++iS) {
+      auto &Sig = m_Sigmas.at(iS);
+      int kappa = Sig.kappa;
+      rw_binary(iofs, rw, kappa, Sig.fk);
+      assert(kappa == Sig.kappa && "fk block out of sync with Sigmas");
+    }
+  }
+
   std::cout << "done.\n";
   if (rw == IO::FRW::read) {
     std::cout << "Read Sigma from file: " << fname << "\n";
@@ -712,6 +740,54 @@ std::string CorrelationPotential::method_string() const {
     out += ", ladder";
   }
   return out;
+}
+
+//==============================================================================
+std::vector<double> CorrelationPotential::average_fk(int l_max) const {
+  // Weighted by l, not kappa: average each l's fine-structure pair first,
+  // then take the mean over the ls (s counts the same as p, d, ...)
+  std::vector<std::vector<double>> per_l;
+  for (int l = 0; l <= l_max; ++l) {
+
+    std::vector<const std::vector<double> *> stored;
+    for (const auto kappa : {l, -(l + 1)}) {
+      if (kappa == 0)
+        continue;
+      const auto Sigma_kappa = get(kappa);
+      if (Sigma_kappa != nullptr && !Sigma_kappa->fk.empty()) {
+        stored.push_back(&Sigma_kappa->fk);
+      }
+    }
+    if (stored.empty())
+      continue;
+
+    auto size = stored.front()->size();
+    for (const auto &each : stored) {
+      size = std::min(size, each->size());
+    }
+    std::vector<double> fk_l(size, 0.0);
+    for (const auto &each : stored) {
+      for (std::size_t k = 0; k < size; ++k) {
+        fk_l[k] += (*each)[k] / double(stored.size());
+      }
+    }
+    per_l.push_back(std::move(fk_l));
+  }
+
+  if (per_l.empty()) {
+    return {};
+  }
+  auto size = per_l.front().size();
+  for (const auto &each : per_l) {
+    size = std::min(size, each.size());
+  }
+  std::vector<double> average(size, 0.0);
+  for (const auto &each : per_l) {
+    for (std::size_t k = 0; k < size; ++k) {
+      average[k] += each[k] / double(per_l.size());
+    }
+  }
+  return average;
 }
 
 //==============================================================================
