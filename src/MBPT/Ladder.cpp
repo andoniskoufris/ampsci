@@ -2026,7 +2026,7 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                           const DiracSpinor &i, const DiracSpinor &b) {
     // return (in(update_set, i) && in(core_set, b)) ||
     //        (in(update_set, b) && in(core_set, i));
-    return (in(update_set, i)) || (in(update_set, b) && in(core_set, i));
+    return (in(update_set, i)) || (in(update_set, b));
   };
 
   lk->update(basis, Lk_function, a_damp, print, filter);
