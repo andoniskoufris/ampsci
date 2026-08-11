@@ -135,9 +135,13 @@ public:
   //! Prints the scaling factors to screen
   void print_info() const;
 
-  //! Short string identifying the method, e.g., "Feynman, all-order" or
-  //! "Goldstone, screened, fitted". Intended for file-cache keys.
+  //! Short string identifying the method (main differences only), e.g.,
+  //! "Feynman, all-order" or "Goldstone". Intended for file-cache keys.
   std::string method_string() const;
+
+  //! Fitting (scaling) factors as a string, "kappa=value," rounded to 4 dp;
+  //! empty if none scaled. For file-cache keys (e.g., the ci-file hash).
+  std::string lambda_string() const;
 
   //! Prints the sub-grid parameters to screen
   void print_subGrid() const;

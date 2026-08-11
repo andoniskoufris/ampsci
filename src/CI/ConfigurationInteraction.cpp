@@ -150,7 +150,8 @@ Solutions configuration_interaction(const IO::InputBlock &input,
      "table, but NOT written to disk [true]"},
     {"exclude_wrong_parity_box",
      "Excludes the Sigma_2 box corrections that "
-     "have 'wrong' parity when calculating Sigma2 matrix elements. Note: If "
+     "have 'wrong' parity when calculating Sigma2 matrix elements (i.e., that "
+     "don't match the Q^k selection rules). Note: If "
      "existing sk file already has these, they will be included [false]"},
   });
 
@@ -660,10 +661,15 @@ Solutions configuration_interaction(const IO::InputBlock &input,
   if (include_Sigma1) {
     ci_settings += "s1;" + DiracSpinor::state_config(s1_basis) + ";";
   }
-  // Sigma_1 method identity (method, screening, ladder, lambda scaling):
-  // catches Correlation Potential changes not otherwise encoded
+  // Sigma_1 method identity (method, screening, ladder): catches Correlation
+  // Potential changes not otherwise encoded. Fitted lambdas (rounded) change
+  // the Hamiltonian too, but are kept out of method_string
   if (include_Sigma1 && wf.Sigma()) {
     ci_settings += wf.Sigma()->method_string() + ";";
+    const auto lambdas = wf.Sigma()->lambda_string();
+    if (!lambdas.empty()) {
+      ci_settings += lambdas + ";";
+    }
   }
   if (!s1_corr.empty()) {
     // Tag the source: CP-provided (all-orders) tables differ from the

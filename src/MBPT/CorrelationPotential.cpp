@@ -665,17 +665,19 @@ std::string CorrelationPotential::method_string() const {
   if (!m_ladder_file.empty()) {
     out += ", ladder";
   }
-  // Fitting (scaling) factors: rounded values, so stable across runs
-  std::string lams;
+  return out;
+}
+
+//==============================================================================
+std::string CorrelationPotential::lambda_string() const {
+  // Rounded values, so stable across runs
+  std::string lambdas;
   for (const auto &Sig : m_Sigmas) {
     if (std::abs(Sig.lambda - 1.0) > 1.0e-8) {
-      lams += fmt::format("{}={:.4f},", Sig.kappa, Sig.lambda);
+      lambdas += fmt::format("{}={:.4f},", Sig.kappa, Sig.lambda);
     }
   }
-  if (!lams.empty()) {
-    out += ", fitted: " + lams;
-  }
-  return out;
+  return lambdas;
 }
 
 //==============================================================================
