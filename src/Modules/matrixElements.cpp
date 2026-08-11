@@ -61,7 +61,9 @@ void matrixElements(const IO::InputBlock &input, const Wavefunction &wf);
   - Frequency-dependent operators, solved at each transition frequency or at a
     fixed value.
 
-  @note Requires CI wavefunctions to be computed (via the CI{} module).
+  @note Requires CI wavefunctions to be computed (via the CI{} module). The
+        single-particle basis is taken from the stored CI integrals (see
+        Wavefunction::CI_integrals), so it need not be re-listed here.
 */
 void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf);
 
@@ -300,9 +302,6 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
      {"operator", "e.g., E1, hfs (see ampsci -o for available operators)"},
      {"options{}", "options specific to operator"},
      {"rpa", "Method used for RPA: true(=TDHF), false, TDHF, basis, diagram"},
-     {"ci_basis",
-      "Re-list the CI basis used in CI{} for more efficient ME calculations "
-      "[20spdf]. Only matrix elements between these states included"},
      {"omega",
       "Text or number. Freq. for RPA (and freq. dependent operators). Put "
       "'each' to solve at correct frequency for each transition. [0.0]"},
@@ -357,6 +356,16 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
 
   IO::ChronoTimer t("CI_matrixElements");
 
+  // The CI basis, as used to construct the CI solutions.
+  // Only matrix elements between these states are required
+  const auto &ci_basis = wf.CI_integrals().ci_basis;
+  if (wf.CIwfs().empty() || ci_basis.empty()) {
+    fmt2::error();
+    std::cout << ": Requires CI solutions and the single-particle basis used "
+                 "to construct them. Include a CI{} block\n";
+    return;
+  }
+
   const auto oper = input.get<std::string>("operator", "");
   // Get optional 'options' for operator
   auto h_options = IO::InputBlock(oper, {});
@@ -405,11 +414,6 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     rpa_method_str = "false";
   auto rpa = ExternalField::make_rpa(rpa_method_str, h.get(), wf.vHF(), true,
                                      wf.basis(), wf.identity());
-
-  const auto basis_string =
-    input.get("ci_basis", DiracSpinor::state_config(wf.basis()));
-  const std::vector<DiracSpinor> ci_basis =
-    CI::basis_subset(wf.basis(), basis_string, wf.coreConfiguration());
 
   // SR+N is only meaningful between physical states, so it is applied only to
   // the low-n part of the CI basis

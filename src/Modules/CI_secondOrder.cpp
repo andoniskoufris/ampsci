@@ -253,8 +253,6 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
         "";
     std::cout << "\nIncluding structure radiation"
               << (sr_norm ? " and normalisation:\n" : " (no normalisation):\n");
-    std::cout << "Added to the single-particle matrix elements used in the "
-                 "amplitude, including the internal lines\n";
     fmt::print("Applied to CI basis states with n <= {}\n", sr_n_max);
     sr =
       MBPT::StructureRad(wf.basis(), wf.FermiLevel(), {n_min, n_max}, Qk_file);
