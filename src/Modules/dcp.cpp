@@ -1,3 +1,4 @@
+#include "Amplitudes/MatrixElements.hpp"
 #include "Coulomb/include.hpp"
 #include "DiracOperator/include.hpp"
 #include "ExternalField/include.hpp"
@@ -390,9 +391,9 @@ void dcp(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "\nCalculating DCP:\n";
   std::cout << "Filling tables.." << std::flush;
   const auto t_ce =
-    ExternalField::me_table(wf.basis(), t.get(), rpaQ ? &dVt : nullptr);
+    Amplitudes::me_table(wf.basis(), t.get(), rpaQ ? &dVt : nullptr);
   const auto s_ce =
-    ExternalField::me_table(wf.basis(), s.get(), rpaQ ? &dVs : nullptr);
+    Amplitudes::me_table(wf.basis(), s.get(), rpaQ ? &dVs : nullptr);
   std::cout << "..done\n" << std::flush;
 
   double cc1 =

@@ -581,7 +581,7 @@ inline double ReducedME(const PsiJPi &As, std::size_t iA, const PsiJPi &Bs,
   @param iA,iB   Solution indices within @p As and @p Bs.
   @param h       Lookup table of single-particle reduced matrix elements. It
                  must not already include the normalisation; build it with
-                 `sr_norm = false` (see ExternalField::me_table).
+                 `sr_norm = false` (see Amplitudes::me_table).
   @param f_norm  Table of the one-body norm defect; see @ref f_norm_table. If
                  empty, the correction is zero.
   @param K_rank  Rank of the tensor operator.

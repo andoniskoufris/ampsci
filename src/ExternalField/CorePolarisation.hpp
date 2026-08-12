@@ -2,11 +2,15 @@
 #include "DiracOperator/TensorOperator.hpp"
 #include "qip/String.hpp"
 #include <cassert>
+#include <memory>
 #include <string>
 #include <vector>
 class DiracSpinor;
 namespace DiracOperator {
 class TensorOperator;
+}
+namespace HF {
+class HartreeFock;
 }
 
 /*!
@@ -74,7 +78,8 @@ class TensorOperator;
   convergence. See Johnson et al., Phys. Rev. A 21, 409 (1980).
 
   Use @ref make_rpa to construct the appropriate object from a method string,
-  and @ref calcMatrixElements to compute matrix elements including the correction.
+  and Amplitudes::matrix_elements to compute matrix elements including the
+  correction.
 */
 namespace ExternalField {
 
@@ -227,5 +232,43 @@ public:
   CorePolarisation(const CorePolarisation &) = default;
   virtual ~CorePolarisation() = default;
 };
+
+//==============================================================================
+/*!
+  @brief Factory function to construct a core-polarisation (RPA) object.
+  @details
+  Parses @p method and returns a `std::unique_ptr<CorePolarisation>` of the
+  appropriate type. Returns nullptr if @p method is "none" or "false".
+
+  Supported methods (case-insensitive):
+  - `"TDHF"`: time-dependent Hartree-Fock (TDHF).
+  - `"basis"`: TDHF solved in a basis set.
+  - `"diagram"`: diagram RPA.
+  - `"none"`, `"false"`, `""`: no RPA; returns nullptr.
+
+  If the method string is not recognised, prints an error and defaults to none.
+
+  @param method    String specifying the RPA method (see above).
+  @param h         Pointer to the forward operator (\f$ t_+ \f$).
+  @param vhf       Pointer to the Hartree-Fock object (provides core potential).
+  @param print     If true, print a brief description of the chosen method.
+  @param basis     Basis set for basis/diagram methods (ignored for TDHF).
+  @param identity  Identifier string passed to DiagramRPA (e.g. for caching).
+  @param h_minus   Pointer to the backward operator (\f$ t_- \f$); if nullptr
+                   (default), @p h is used for both. See @ref TDHF constructor
+                   for when this is needed.
+
+  @return Unique pointer to the constructed CorePolarisation object, or
+          nullptr if RPA is disabled.
+
+  @warning An unrecognised @p method string triggers an error message and
+           falls through to no RPA rather than throwing.
+*/
+[[nodiscard]] std::unique_ptr<CorePolarisation>
+make_rpa(const std::string &method, const DiracOperator::TensorOperator *h,
+         const HF::HartreeFock *vhf, bool print = false,
+         const std::vector<DiracSpinor> &basis = {},
+         const std::string &identity = "",
+         const DiracOperator::TensorOperator *h_minus = nullptr);
 
 } // namespace ExternalField

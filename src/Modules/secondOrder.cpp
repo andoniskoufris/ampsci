@@ -1,10 +1,11 @@
 #include "Amplitudes/SecondOrder.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "Angular/include.hpp"
 #include "CI/SecondOrder.hpp"
 #include "Coulomb/meTable.hpp"
 #include "DiracOperator/GenerateOperator.hpp"
+#include "ExternalField/CorePolarisation.hpp"
 #include "ExternalField/TDHF.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/StructureRad.hpp"
 #include "Modules/Modules.hpp"
@@ -377,11 +378,11 @@ void secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
         std::cout << "Fill matrix element tables..." << std::flush;
         const std::vector<DiracSpinor> legs{Fa, Fb};
         sr->solve_core(ht.get(), rpa_t.get());
-        t_me = ExternalField::me_table(legs, spectrum, ht.get(), rpa_t.get(),
-                                       &*sr, omega, sr_n_max, sr_norm);
+        t_me = Amplitudes::me_table(legs, spectrum, ht.get(), rpa_t.get(), &*sr,
+                                    omega, sr_n_max, sr_norm);
         sr->solve_core(hs.get(), rpa_s.get());
-        s_me = ExternalField::me_table(legs, spectrum, hs.get(), rpa_s.get(),
-                                       &*sr, omega_s, sr_n_max, sr_norm);
+        s_me = Amplitudes::me_table(legs, spectrum, hs.get(), rpa_s.get(), &*sr,
+                                    omega_s, sr_n_max, sr_norm);
         std::cout << "done\n" << std::flush;
       }
 

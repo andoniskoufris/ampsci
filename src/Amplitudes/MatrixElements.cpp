@@ -5,6 +5,7 @@
 #include "MBPT/StructureRad.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "fmt/ostream.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -35,7 +36,20 @@ MEdata matrix_element(const DiracSpinor &a, const DiracSpinor &b,
 }
 
 //==============================================================================
-std::vector<MEdata> matrix_elements(const std::vector<DiracSpinor> &orbs,
+void set_operator_frequency(DiracOperator::TensorOperator *h,
+                            DiracOperator::TensorOperator *h_minus,
+                            double omega) {
+  if (h == nullptr || !h->freqDependantQ())
+    return;
+  h->updateFrequency(std::abs(omega));
+  if (h_minus) {
+    h_minus->updateFrequency(-std::abs(omega));
+  }
+}
+
+//==============================================================================
+std::vector<MEdata> matrix_elements(const std::vector<DiracSpinor> &a_orbs,
+                                    const std::vector<DiracSpinor> &b_orbs,
                                     DiracOperator::TensorOperator *h,
                                     DiracOperator::TensorOperator *h_minus,
                                     ExternalField::CorePolarisation *dV,
@@ -44,26 +58,20 @@ std::vector<MEdata> matrix_elements(const std::vector<DiracSpinor> &orbs,
 
   std::vector<MEdata> mes;
 
-  const bool freq_dep = h->freqDependantQ();
-  const auto pinned = options.operator_omega;
+  // The same list on both sides: each pair is calculated once. Two distinct
+  // lists have no such pairing, so every pair is calculated
+  const auto same_list = &a_orbs == &b_orbs;
 
-  // Operator at +|w|, h_minus (if given) at -|w|
-  const auto update_operator = [&](double w) {
-    if (!freq_dep)
-      return;
-    h->updateFrequency(std::abs(w));
-    if (h_minus) {
-      h_minus->updateFrequency(-std::abs(w));
-    }
-  };
+  // The operator, and the RPA, are each either updated here at every
+  // transition frequency, or left exactly as the caller set them
+  const bool op_each = options.operator_omega == Frequency::transition;
+  const bool rpa_each = options.rpa_omega == Frequency::transition;
 
-  if (pinned) {
-    update_operator(*pinned);
-  }
-
-  // RPA at fixed frequency, unless re-solving at each transition
-  if (dV && !options.each_omega) {
-    dV->solve_core(options.omega, options.rpa_iterations, options.print);
+  // The caller owns a fixed-frequency RPA. Solving it may not be wanted, so
+  // this is a note, not an error
+  if (!rpa_each && dV && dV->last_its() == 0) {
+    fmt::print(outstream, "\nNote: RPA at Frequency::fixed, and solve_core() "
+                          "has not been called: dV will be zero\n");
   }
 
   // Re-solve RPA at given frequency; clear first if previous solution poorly
@@ -80,16 +88,20 @@ std::vector<MEdata> matrix_elements(const std::vector<DiracSpinor> &orbs,
 
   //----------------------------------------------------
   // Diagonal (only for even-parity operators): w = 0
-  if (options.diagonal && h->parity() == 1) {
+  if (options.diagonal && (h->parity() == 1 || !same_list)) {
 
-    if (!pinned) {
-      update_operator(0.0);
+    if (op_each) {
+      set_operator_frequency(h, h_minus, 0.0);
     }
-    if (options.each_omega) {
+    if (rpa_each) {
       resolve_rpa(0.0);
     }
 
-    for (const auto &a : orbs) {
+    for (const auto &a : a_orbs) {
+      // Distinct lists: only the states that appear in both are 'diagonal'
+      if (!same_list &&
+          std::find(b_orbs.cbegin(), b_orbs.cend(), a) == b_orbs.cend())
+        continue;
       if (h->isZero(a.kappa(), a.kappa()))
         continue;
       mes.push_back(matrix_element(a, a, h, h_minus, dV, options.type, 0.0));
@@ -99,35 +111,38 @@ std::vector<MEdata> matrix_elements(const std::vector<DiracSpinor> &orbs,
   //----------------------------------------------------
   // Off-diagonal:
   if (options.off_diagonal) {
-    for (std::size_t ib = 0; ib < orbs.size(); ib++) {
-      const auto &b = orbs.at(ib);
-      for (std::size_t ia = 0; ia < orbs.size(); ia++) {
-        const auto &a = orbs.at(ia);
+    for (std::size_t ib = 0; ib < b_orbs.size(); ib++) {
+      const auto &b = b_orbs.at(ib);
+      for (std::size_t ia = 0; ia < a_orbs.size(); ia++) {
+        const auto &a = a_orbs.at(ia);
 
         if (a == b)
           continue;
         if (h->isZero(a.kappa(), b.kappa()))
           continue;
 
-        // Ensure even-parity state on right for odd-parity operators
-        if (h->parity() == -1) {
-          if (!options.calculate_both && b.parity() == -1)
-            continue;
-        } else {
-          if (!options.calculate_both && ib > ia)
-            continue;
+        // Ensure even-parity state on right for odd-parity operators.
+        // Only for a single list: with two lists, every pair is calculated
+        if (same_list) {
+          if (h->parity() == -1) {
+            if (!options.calculate_both && b.parity() == -1)
+              continue;
+          } else {
+            if (!options.calculate_both && ib > ia)
+              continue;
+          }
         }
 
         const auto w_ab = a.en() - b.en();
 
-        if (!pinned) {
-          update_operator(w_ab);
+        if (op_each) {
+          set_operator_frequency(h, h_minus, w_ab);
         }
-        if (options.each_omega && dV) {
+        if (rpa_each && dV) {
           if (options.print) {
             fmt::print(outstream,
-                       "<{}||t||{}> : w = {:.8f}\n RPA(w) : ", a.shortSymbol(),
-                       b.shortSymbol(), w_ab);
+                       "{} -> {}: w = {:.8f}\n RPA(w) : ", b.shortSymbol(),
+                       a.shortSymbol(), w_ab);
           }
           resolve_rpa(w_ab);
         }
@@ -141,6 +156,69 @@ std::vector<MEdata> matrix_elements(const std::vector<DiracSpinor> &orbs,
 }
 
 //==============================================================================
+Coulomb::meTable<double> me_table(const std::vector<DiracSpinor> &a_orbs,
+                                  const std::vector<DiracSpinor> &b_orbs,
+                                  const DiracOperator::TensorOperator *h,
+                                  const ExternalField::CorePolarisation *dV) {
+  return me_table(a_orbs, b_orbs, h, dV, nullptr, 0.0);
+}
+
+//==============================================================================
+Coulomb::meTable<double> me_table(const std::vector<DiracSpinor> &a_orbs,
+                                  const std::vector<DiracSpinor> &b_orbs,
+                                  const DiracOperator::TensorOperator *h,
+                                  const ExternalField::CorePolarisation *dV,
+                                  const MBPT::StructureRad *srn, double omega,
+                                  int sr_n_max, bool sr_norm) {
+
+  Coulomb::meTable<double> h_ab;
+
+  const auto a_is_b = &a_orbs == &b_orbs;
+
+  for (const auto &a : a_orbs) {
+    for (const auto &b : b_orbs) {
+      if (b < a && a_is_b)
+        continue;
+      if (h->isZero(a, b))
+        continue;
+      h_ab.add(a, b, 0.0);
+      if (a != b) {
+        h_ab.add(b, a, 0.0);
+      }
+    }
+  }
+
+#pragma omp parallel for schedule(dynamic)
+  for (std::size_t i = 0; i < a_orbs.size(); ++i) {
+    const auto &a = a_orbs[i];
+    for (const auto &b : b_orbs) {
+
+      if (b < a && a_is_b)
+        continue;
+
+      if (h->isZero(a, b))
+        continue;
+
+      const auto tab = h->reducedME(a, b);
+      const auto dv = dV ? dV->dV(a, b) : 0.0;
+      // SR+N only between physical (low-n) states; optionally without the norm
+      const auto do_sr = srn && a.n() <= sr_n_max && b.n() <= sr_n_max;
+      const auto sr = !do_sr  ? 0.0 :
+                      sr_norm ? srn->srn(a, b, h, dV, omega) :
+                                srn->SR(a, b, omega);
+
+      const auto me = tab + dv + sr;
+
+      h_ab.update(a, b, me);
+      if (a != b) {
+        h_ab.update(b, a, h->symm_sign(a, b) * me);
+      }
+    }
+  }
+  return h_ab;
+}
+
+//==============================================================================
 std::vector<SRNdata> sr_matrix_elements(const std::vector<DiracSpinor> &orbs,
                                         DiracOperator::TensorOperator *h,
                                         MBPT::StructureRad *sr,
@@ -151,43 +229,27 @@ std::vector<SRNdata> sr_matrix_elements(const std::vector<DiracSpinor> &orbs,
 
   std::vector<SRNdata> out;
 
-  const bool each = options.each_omega;
   const bool freq_dep = h->freqDependantQ();
-  const auto pinned = options.operator_omega;
+  const bool op_each = options.operator_omega == Frequency::transition;
+  const bool rpa_each = options.rpa_omega == Frequency::transition;
 
-  const auto update_op = [&](double w) {
-    if (freq_dep) {
-      h->updateFrequency(w);
-    }
-  };
-
-  if (pinned) {
-    update_op(*pinned);
+  // The caller owns a fixed-frequency RPA. Solving it may not be wanted, so
+  // this is a note, not an error
+  if (!rpa_each && dV && dV->last_its() == 0) {
+    fmt::print(outstream, "\nNote: RPA at Frequency::fixed, and solve_core() "
+                          "has not been called: dV will be zero\n");
   }
 
-  // RPA and SR-table frequency: fixed at options.omega (unless each_omega).
-  // The operator must be at the table frequency when the tables are built;
-  // it is then moved to each pair's transition frequency below
-  if (dV && !each) {
-    if (!pinned) {
-      update_op(options.omega);
-    }
-    dV->solve_core(options.omega, 100, options.print);
-  }
+  // The structure radiation follows the RPA: its frequency dependence is
+  // very weak, so when the RPA is fixed, the SR is taken at the frequency
+  // the RPA was solved at (zero if there is no RPA)
+  const auto fixed_omega = dV ? dV->last_omega() : 0.0;
 
-  // With each_omega, the diagonal elements are all at w = 0: solve there
-  // first (off-diagonal elements re-solve per transition below)
-  if (each && options.diagonal && h->parity() == 1) {
-    if (!pinned) {
-      update_op(0.0);
-    }
-    if (dV) {
-      dV->solve_core(0.0, 100, options.print);
-    }
-  }
-
-  // SR matrix element tables (holds <a||h+dV||b> for the internal lines)
-  sr->solve_core(h, dV);
+  // The SR matrix element tables hold <a||h+dV||b> for the internal lines,
+  // so they must be built after the operator and the RPA are at the right
+  // frequency; this is done inside the loop below. The frequency they were
+  // last built at, so they are re-built only when it changes:
+  std::optional<double> tables_at{};
 
   // Diagonal first, then off-diagonal
   for (const auto diag : {true, false}) {
@@ -220,30 +282,34 @@ std::vector<SRNdata> sr_matrix_elements(const std::vector<DiracSpinor> &orbs,
           timer.emplace("time");
         }
 
-        // Transition frequency (operator), and the RPA/SR-table frequency
+        // Transition frequency (operator), and the RPA/SR frequency
         const auto w_ab = w.en() - v.en();
-        const auto ww_sr = each ? w_ab : options.omega;
+        const auto ww_sr = rpa_each ? w_ab : fixed_omega;
         if (options.print) {
-          fmt::print(outstream, "\n<{}||t||{}>: {:.6f}\n", w.shortSymbol(),
-                     v.shortSymbol(), w_ab);
+          fmt::print(outstream, "\n{} -> {}: w = {:.8f}\n", v.shortSymbol(),
+                     w.shortSymbol(), w_ab);
         }
 
         const auto factor = h->matel_factor(options.type, w, v);
 
         // The operator itself is at the (physical) transition frequency
-        if (!pinned) {
-          update_op(w_ab);
+        if (op_each && freq_dep) {
+          h->updateFrequency(w_ab);
         }
-        // Off-diagonal each-frequency: re-solve RPA and the SR tables at
-        // this transition frequency
-        if (each && dV && !diag) {
+        // Re-solve the RPA at this transition frequency
+        if (rpa_each && dV) {
           if (dV->last_eps() > 1.0e-3 || std::isnan(dV->last_eps())) {
             dV->clear();
           }
           dV->solve_core(w_ab, 100, options.print);
         }
-        if (each && (freq_dep || dV) && !diag) {
+        // Build the SR tables, now that the operator and the RPA are set for
+        // this pair. Only re-built when their frequency has moved
+        const auto table_w =
+          (op_each && freq_dep) || rpa_each ? w_ab : fixed_omega;
+        if (!tables_at || *tables_at != table_w) {
           sr->solve_core(h, dV);
+          tables_at = table_w;
         }
 
         SRNdata me;
@@ -294,7 +360,7 @@ std::vector<SRNdata> sr_matrix_elements(const std::vector<DiracSpinor> &orbs,
           // Frequency-derivative term: the second-order energy shifts move
           // the transition frequency; for a freq-dependent operator this
           // shifts the matrix element: dT = (dt/dw) * dw^(2)
-          if (freq_dep && !pinned && w != v) {
+          if (freq_dep && op_each && w != v) {
             const auto dw_2 = sr->Sigma_vw(w, w) - sr->Sigma_vw(v, v);
             const auto del = 0.05 * std::abs(w_ab);
             h->updateFrequency(w_ab + del);

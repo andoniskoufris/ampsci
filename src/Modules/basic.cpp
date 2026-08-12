@@ -1,8 +1,8 @@
+#include "Amplitudes/MatrixElements.hpp"
 #include "DiracOperator/include.hpp"
 #include "ExternalField/DiagramRPA.hpp"
 #include "ExternalField/TDHF.hpp"
 #include "ExternalField/TDHFbasis.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "HF/HartreeFock.hpp"
 #include "IO/InputBlock.hpp"
 #include "Modules/Modules.hpp"
@@ -247,29 +247,49 @@ void continuum(const IO::InputBlock &input, const Wavefunction &wf) {
 
     std::cout << "\nMatrix elements of " << h->name() << "\n";
 
-    bool eachFreqQ = false;
     const auto rpaQ = input.get("rpa", false);
     const auto omega = input.get("omega", 0.0);
 
     auto rpa = ExternalField::TDHF(h.get(), wf.vHF());
     const auto p_rpa = rpaQ ? &rpa : nullptr;
 
-    const auto mes_c = ExternalField::calcMatrixElements(
-      wf.core(), cntm.orbitals, h.get(), p_rpa, omega, eachFreqQ);
-    const auto mes_v = ExternalField::calcMatrixElements(
-      wf.valence(), cntm.orbitals, h.get(), p_rpa, omega, eachFreqQ);
+    // Both the operator and the RPA are at the fixed frequency omega
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::fixed, Frequency::fixed};
+    options.print = false;
+    if (h->freqDependantQ()) {
+      h->updateFrequency(omega);
+    }
+    if (rpaQ) {
+      rpa.solve_core(omega, options.rpa_iterations, false);
+    }
 
-    std::cout << (rpaQ ? ExternalField::MEdata::title() :
-                         ExternalField::MEdata::title_noRPA())
-              << "\n";
+    const auto mes_c = Amplitudes::matrix_elements(
+      cntm.orbitals, wf.core(), h.get(), nullptr, p_rpa, options);
+    const auto mes_v = Amplitudes::matrix_elements(
+      cntm.orbitals, wf.valence(), h.get(), nullptr, p_rpa, options);
+
+    const auto print_mes = [rpaQ](const auto &mes) {
+      for (const auto &me : mes) {
+        fmt::print(" {:4s} {:4s}  {:8.5f}  {:13.6e}", me.a, me.b, me.omega,
+                   me.value0());
+        if (rpaQ) {
+          fmt::print("  {:13.6e}", me.value());
+        }
+        fmt::print("\n");
+      }
+    };
+
+    std::cout << "    a    b   w_ab      t_ab";
+    if (rpaQ)
+      std::cout << "           RPA_ab";
+    std::cout << "\n";
     if (!wf.core().empty())
       std::cout << "Core:\n";
-    for (const auto &me : mes_c)
-      std::cout << me << "\n";
+    print_mes(mes_c);
     if (!wf.valence().empty())
       std::cout << "Valence:\n";
-    for (const auto &me : mes_v)
-      std::cout << me << "\n";
+    print_mes(mes_v);
   }
 
   // Write continuum wavefunctions to file

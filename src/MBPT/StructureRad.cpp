@@ -1,9 +1,9 @@
 #include "StructureRad.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "Coulomb/CoulombIntegrals.hpp"
 #include "DiracOperator/TensorOperator.hpp"
 #include "ExternalField/CorePolarisation.hpp"
 #include "ExternalField/TDHF.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "Sigma2.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "qip/Vector.hpp"
@@ -93,7 +93,7 @@ void StructureRad::solve_core(const DiracOperator::TensorOperator *const h,
                               const ExternalField::CorePolarisation *const dV) {
 
   // Require all: core-core, core-excited, excited-excited
-  mTab = ExternalField::me_table(mBasis, h, dV);
+  mTab = Amplitudes::me_table(mBasis, h, dV);
   m_K = h->rank();
 }
 

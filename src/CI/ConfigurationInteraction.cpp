@@ -1,10 +1,10 @@
 #include "ConfigurationInteraction.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "Angular/include.hpp"
 #include "CI_Integrals.hpp"
 #include "CSF.hpp"
 #include "Coulomb/include.hpp"
 #include "DiracOperator/include.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "IO/InputBlock.hpp"
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/CorrelationPotential.hpp"
@@ -941,7 +941,7 @@ PsiJPi run_CI(const std::vector<DiracSpinor> &ci_sp_basis, int twoJ, int parity,
   // For calculating g-factors
   DiracOperator::M1 m1{ci_sp_basis.front().grid(), PhysConst::alpha, 0.0};
   // only actually need to do this once..
-  const auto m1_tab = ExternalField::me_table(ci_sp_basis, &m1);
+  const auto m1_tab = Amplitudes::me_table(ci_sp_basis, &m1);
 
   // Print details of each solution, unless we find all, or read from file:
   const auto print_details_tmp =

@@ -1,7 +1,7 @@
 #include "Amplitudes/Normalisation.hpp"
 #include "Amplitudes/MatrixElements.hpp"
 #include "DiracOperator/GenerateOperator.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
+#include "ExternalField/CorePolarisation.hpp"
 #include "IO/ChronoTimer.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/CorrelationPotential.hpp"
@@ -150,10 +150,15 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
   }
   const auto &orbs = use_basis ? t_orbs : wf.hf_valence();
 
-  // Matrix elements (frequency updates and RPA solves done internally):
-  Amplitudes::MEoptions options;
-  options.omega = omega;
-  options.each_omega = eachFreqQ;
+  // Matrix elements: the operator follows each transition; the RPA is
+  // solved here unless it too follows each transition
+  using Amplitudes::Frequency;
+  Amplitudes::MEoptions options{Frequency::transition, eachFreqQ ?
+                                                         Frequency::transition :
+                                                         Frequency::fixed};
+  if (!eachFreqQ && rpa) {
+    rpa->solve_core(omega, options.rpa_iterations, true);
+  }
   options.diagonal = input.get("diagonal", true);
   options.off_diagonal = input.get("off-diagonal", true);
   options.calculate_both = input.get("printBoth", false);

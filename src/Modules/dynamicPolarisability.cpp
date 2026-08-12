@@ -264,7 +264,7 @@ void dynamicPolarisability(const IO::InputBlock &input,
 
   // SR (+Norm) corrections: expensive, so calculated once (at w = 0,
   // ignoring their frequency dependence) and cached in a table. Only between
-  // physical (low-n) states, as ExternalField::me_table
+  // physical (low-n) states, as Amplitudes::me_table
   Coulomb::meTable<double> sr_tab{};
   if (sr) {
     IO::ChronoTimer t("Build SR table");

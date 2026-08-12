@@ -1,6 +1,6 @@
 #include "Amplitudes/MatrixElements.hpp"
 #include "DiracOperator/GenerateOperator.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
+#include "ExternalField/CorePolarisation.hpp"
 #include "IO/ChronoTimer.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/StructureRad.hpp"
@@ -273,11 +273,19 @@ void structureRadiation(const IO::InputBlock &input, const Wavefunction &wf) {
                         k_cut, fk, etak);
   std::cout << std::flush;
 
-  // All calculations (frequency updates, RPA/SR solves, matrix elements):
-  Amplitudes::SRNoptions options;
-  options.omega = const_omega;
-  options.each_omega = eachFreqQ;
-  options.operator_omega = omega_operator;
+  // Frequency choices: the operator is pinned only if omega_operator was
+  // given; the RPA (and hence the SR) is solved here unless it follows each
+  // transition
+  using Amplitudes::Frequency;
+  Amplitudes::SRNoptions options{
+    omega_operator ? Frequency::fixed : Frequency::transition,
+    eachFreqQ ? Frequency::transition : Frequency::fixed};
+  if (omega_operator && h->freqDependantQ()) {
+    h->updateFrequency(*omega_operator);
+  }
+  if (!eachFreqQ && dV) {
+    dV->solve_core(const_omega, 100, true);
+  }
   options.diagonal = input.get("diagonal", true);
   options.off_diagonal = input.get("off-diagonal", true);
   options.calculate_both = input.get("printBoth", false);

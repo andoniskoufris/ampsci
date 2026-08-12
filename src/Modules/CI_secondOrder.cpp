@@ -1,9 +1,9 @@
+#include "Amplitudes/MatrixElements.hpp"
 #include "Amplitudes/SecondOrderCI.hpp"
 #include "Angular/include.hpp"
 #include "CI/SecondOrder.hpp"
 #include "DiracOperator/include.hpp"
 #include "ExternalField/CorePolarisation.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/StructureRad.hpp"
 #include "Modules/Modules.hpp"
@@ -388,15 +388,14 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       // single-particle matrix elements, which drops the spectator electrons.
       // It is a property of the CI state; see CI::ReducedME_norm. It is not
       // included in this module at all
-      t_me =
-        ExternalField::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
-                                sr ? &*sr : nullptr, omega, sr_n_max, false);
+      t_me = Amplitudes::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
+                                  sr ? &*sr : nullptr, omega, sr_n_max, false);
       if (sr) {
         sr->solve_core(hs.get(), rpa_s.get());
       }
       s_me =
-        ExternalField::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
-                                sr ? &*sr : nullptr, omega_s, sr_n_max, false);
+        Amplitudes::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
+                             sr ? &*sr : nullptr, omega_s, sr_n_max, false);
       std::cout << "done\n" << std::flush;
       table_freqs = std::pair{omega, omega_s};
     }

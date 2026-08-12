@@ -1,8 +1,8 @@
 #include "SecondOrder.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "Angular/include.hpp"
 #include "CI_Integrals.hpp"
 #include "DiracOperator/include.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "MixedStates.hpp"
 #include "fmt/format.hpp"
 #include "fmt/ostream.hpp"
@@ -45,7 +45,7 @@ double sigma_rme(const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
 
   // sigma = 2S, a rank 1, even parity, operator
   const DiracOperator::s spin{};
-  const auto spin_me = ExternalField::me_table(ci_basis, &spin);
+  const auto spin_me = Amplitudes::me_table(ci_basis, &spin);
 
   return 2.0 * ReducedME(Psi_b, ib, Psi_a, ia, spin_me, 1, 1);
 }
@@ -198,10 +198,10 @@ double A_K_core(int K, int twoJ, const DiracOperator::TensorOperator *t,
 
   // Of each pair of matrix elements, only the one acting on the core orbital
   // carries RPA; see the note on A_K_core
-  const auto t_0 = ExternalField::me_table(core, excited, t);
-  const auto t_v = ExternalField::me_table(core, excited, t, dVt);
-  const auto s_0 = ExternalField::me_table(core, excited, s);
-  const auto s_v = ExternalField::me_table(core, excited, s, dVs);
+  const auto t_0 = Amplitudes::me_table(core, excited, t);
+  const auto t_v = Amplitudes::me_table(core, excited, t, dVt);
+  const auto s_0 = Amplitudes::me_table(core, excited, s);
+  const auto s_v = Amplitudes::me_table(core, excited, s, dVs);
 
   double A_core = 0.0;
   for (const auto &c : core) {
@@ -247,8 +247,8 @@ double A_K_cv(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
 
   // Matrix elements between the CI basis and the core. RPA on both, since the
   // blocked pair is a link of the chain; see the note on A_K_cv
-  const auto t_vc = ExternalField::me_table(ci_basis, core, t, dVt);
-  const auto s_vc = ExternalField::me_table(ci_basis, core, s, dVs);
+  const auto t_vc = Amplitudes::me_table(ci_basis, core, t, dVt);
+  const auto s_vc = Amplitudes::me_table(ci_basis, core, s, dVs);
 
   // The effective one-body operator of rank K, in the valence space
   Coulomb::meTable<double> W;

@@ -1,9 +1,9 @@
 #include "SecondOrder.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "Angular/include.hpp"
 #include "CI_Integrals.hpp"
 #include "Coulomb/include.hpp"
 #include "DiracOperator/include.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "catch2/catch.hpp"
 #include "fmt/format.hpp"
@@ -154,8 +154,8 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
 
   const DiracOperator::E1 d{wf.grid()};
   const DiracOperator::PNCnsi hpnc{1.0, Nuclear::default_t, wf.grid()};
-  const auto d_me = ExternalField::me_table(ints.ci_basis, &d);
-  const auto pnc_me = ExternalField::me_table(ints.ci_basis, &hpnc);
+  const auto d_me = Amplitudes::me_table(ints.ci_basis, &d);
+  const auto pnc_me = Amplitudes::me_table(ints.ci_basis, &hpnc);
 
   //----------------------------------------------------------------------------
   // The spin matrix element that defines beta. The lowest J=1 even solution is

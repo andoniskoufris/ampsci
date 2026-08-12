@@ -1,6 +1,6 @@
 #include "Coulomb/meTable.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "DiracOperator/include.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "catch2/catch.hpp"
 #include <random>
 
@@ -38,7 +38,7 @@ TEST_CASE("Coulomb: meTable", "[Coulomb][meTable][unit]") {
     }
   }
 
-  Coulomb::meTable<double> met2 = ExternalField::me_table(orbs, &h);
+  Coulomb::meTable<double> met2 = Amplitudes::me_table(orbs, &h);
 
   // Now, loop through and check, only for a>=b:
   for (const auto &a : orbs) {

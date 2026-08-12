@@ -1,7 +1,6 @@
 #include "Amplitudes/MatrixElements.hpp"
 #include "DiracOperator/include.hpp"
 #include "ExternalField/TDHF.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/StructureRad.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
@@ -45,24 +44,39 @@ TEST_CASE("Amplitudes: matrix elements", "[Amplitudes][unit]") {
     }
   }
 
-  // List driver (no RPA) agrees with ExternalField::calcMatrixElements
+  // List driver (no RPA): each element is the reduced ME of its pair, and
+  // every allowed pair appears exactly once
   {
-    Amplitudes::MEoptions options;
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::transition, Frequency::fixed};
     options.print = false;
     const auto mes = Amplitudes::matrix_elements(wf.valence(), &dE1, nullptr,
                                                  nullptr, options);
 
-    const auto mes0 = ExternalField::calcMatrixElements(wf.valence(), &dE1);
-
-    REQUIRE(mes.size() == mes0.size());
-    std::map<std::pair<std::string, std::string>, double> table;
-    for (const auto &m0 : mes0) {
-      table[{m0.a, m0.b}] = m0.hab;
-    }
+    REQUIRE(!mes.empty());
+    std::map<std::pair<std::string, std::string>, int> count;
     for (const auto &m : mes) {
-      const auto it = table.find({m.a, m.b});
-      REQUIRE(it != table.end());
-      REQUIRE(m.t0 == Approx(it->second));
+      const auto *Fa = wf.getState(m.a);
+      const auto *Fb = wf.getState(m.b);
+      REQUIRE(Fa != nullptr);
+      REQUIRE(Fb != nullptr);
+      REQUIRE(m.t0 == Approx(dE1.reducedME(*Fa, *Fb)));
+      REQUIRE(m.omega == Approx(Fa->en() - Fb->en()));
+      REQUIRE(m.dv == 0.0);
+      ++count[{m.a, m.b}];
+    }
+    for (const auto &[ab, n] : count) {
+      REQUIRE(n == 1);
+    }
+
+    // Two-list overload: every allowed pair, each calculated once
+    const auto mes2 = Amplitudes::matrix_elements(
+      wf.valence(), wf.valence(), &dE1, nullptr, nullptr, options);
+    REQUIRE(mes2.size() >= mes.size());
+    for (const auto &m : mes2) {
+      const auto *Fa = wf.getState(m.a);
+      const auto *Fb = wf.getState(m.b);
+      REQUIRE(m.t0 == Approx(dE1.reducedME(*Fa, *Fb)));
     }
   }
 
@@ -72,7 +86,8 @@ TEST_CASE("Amplitudes: matrix elements", "[Amplitudes][unit]") {
     auto hv = DiracOperator::E1v(wf.alpha(), 0.0);
     auto hv_minus = DiracOperator::E1v(wf.alpha(), 0.0);
 
-    Amplitudes::MEoptions options;
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::transition, Frequency::fixed};
     options.print = false;
     options.calculate_both = true;
     const auto mes = Amplitudes::matrix_elements(wf.valence(), &hv, &hv_minus,
@@ -92,8 +107,10 @@ TEST_CASE("Amplitudes: matrix elements", "[Amplitudes][unit]") {
   // With RPA: dv is dV, solved by the driver
   {
     auto rpa = ExternalField::TDHF(&dE1, wf.vHF());
-    Amplitudes::MEoptions options;
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::transition, Frequency::fixed};
     options.print = false;
+    rpa.solve_core(0.0, options.rpa_iterations, false);
     const auto mes =
       Amplitudes::matrix_elements(wf.valence(), &dE1, nullptr, &rpa, options);
 
@@ -118,31 +135,32 @@ TEST_CASE("Amplitudes: matrix elements with RPA",
   wf.solve_core("HartreeFock", "[Xe]");
   wf.solve_valence("6sp");
 
-  fmt::print("\nAmplitudes::matrix_elements vs calcMatrixElements (Cs, RPA)\n");
+  fmt::print("\nAmplitudes::matrix_elements: E1 with RPA (Cs)\n");
   fmt::print("{:5s} {:5s} {:>13s} {:>13s} {:>9s}\n", "a", "b", "expected",
              "found", "eps");
 
-  // E1, TDHF RPA at fixed w=0: against calcMatrixElements with same RPA
+  // E1, TDHF RPA at fixed w=0: against a separately-solved RPA
   {
     auto dE1 = DiracOperator::E1(wf.grid());
 
     auto rpa = ExternalField::TDHF(&dE1, wf.vHF());
-    Amplitudes::MEoptions options;
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::transition, Frequency::fixed};
     options.print = false;
+    rpa.solve_core(0.0, options.rpa_iterations, false);
     const auto mes =
       Amplitudes::matrix_elements(wf.valence(), &dE1, nullptr, &rpa, options);
 
     auto rpa0 = ExternalField::TDHF(&dE1, wf.vHF());
-    const auto mes0 =
-      ExternalField::calcMatrixElements(wf.valence(), &dE1, &rpa0, 0.0, false);
+    rpa0.solve_core(0.0, options.rpa_iterations, false);
 
-    REQUIRE(mes.size() == mes0.size());
-    for (std::size_t i = 0; i < mes.size(); ++i) {
-      const auto &m = mes.at(i);
-      const auto &m0 = mes0.at(i);
-      REQUIRE(m.a == m0.a);
-      REQUIRE(m.b == m0.b);
-      const auto expected = m0.hab + m0.dv;
+    REQUIRE(!mes.empty());
+    for (const auto &m : mes) {
+      const auto *Fa = wf.getState(m.a);
+      const auto *Fb = wf.getState(m.b);
+      REQUIRE(Fa != nullptr);
+      REQUIRE(Fb != nullptr);
+      const auto expected = dE1.reducedME(*Fa, *Fb) + rpa0.dV(*Fa, *Fb);
       const auto found = m.value();
       const auto eps = std::abs((found - expected) / expected);
       fmt::print("{:5s} {:5s} {:13.6e} {:13.6e} {:9.1e}\n", m.a, m.b, expected,
@@ -156,10 +174,12 @@ TEST_CASE("Amplitudes: matrix elements with RPA",
     const auto h = DiracOperator::generate("hfs", {"hfs", "print=false;"}, wf);
 
     auto rpa = ExternalField::TDHF(h.get(), wf.vHF());
-    Amplitudes::MEoptions options;
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::transition, Frequency::fixed};
     options.print = false;
     options.rpa_iterations = 1; // first-order RPA: quick
     options.type = DiracOperator::MatrixElementType::HFConstant;
+    rpa.solve_core(0.0, options.rpa_iterations, false);
     const auto mes = Amplitudes::matrix_elements(wf.valence(), h.get(), nullptr,
                                                  &rpa, options);
 
@@ -179,14 +199,14 @@ TEST_CASE("Amplitudes: matrix elements with RPA",
     }
   }
 
-  // each_omega: RPA re-solved at each transition frequency
+  // Frequency::transition: RPA re-solved at each transition frequency
   {
     auto dE1 = DiracOperator::E1(wf.grid());
 
     auto rpa = ExternalField::TDHF(&dE1, wf.vHF());
-    Amplitudes::MEoptions options;
+    using Amplitudes::Frequency;
+    Amplitudes::MEoptions options{Frequency::transition, Frequency::transition};
     options.print = false;
-    options.each_omega = true;
     const auto mes =
       Amplitudes::matrix_elements(wf.valence(), &dE1, nullptr, &rpa, options);
 
@@ -222,7 +242,8 @@ TEST_CASE("Amplitudes: SR matrix elements",
 
   MBPT::StructureRad sr(wf.basis(), wf.FermiLevel(), {2, 10}, "", 99, {}, {},
                         false);
-  Amplitudes::SRNoptions options;
+  using Amplitudes::Frequency;
+  Amplitudes::SRNoptions options{Frequency::transition, Frequency::fixed};
   options.print = false;
   const auto mes =
     Amplitudes::sr_matrix_elements(wf.valence(), &hE1, &sr, nullptr, options);
@@ -239,7 +260,7 @@ TEST_CASE("Amplitudes: SR matrix elements",
     REQUIRE(Fa != nullptr);
     REQUIRE(Fb != nullptr);
     REQUIRE(m.t0 == Approx(hE1.reducedME(*Fa, *Fb)));
-    // fixed-omega mode: SR denominators at options.omega (= 0), not w_ab
+    // Frequency::fixed: SR denominators at the RPA frequency (0), not w_ab
     REQUIRE(m.sr == Approx(sr0.SR(*Fa, *Fb, 0.0)));
     REQUIRE(m.norm == Approx((sr0.f_norm(*Fa) + sr0.f_norm(*Fb)) * m.t0));
     REQUIRE(m.bo == Approx(sr0.BO(*Fa, *Fb)));

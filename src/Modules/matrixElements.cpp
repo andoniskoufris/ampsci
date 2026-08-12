@@ -1,7 +1,7 @@
 #include "Amplitudes/MatrixElements.hpp"
 #include "CI/include.hpp"
 #include "DiracOperator/include.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
+#include "ExternalField/CorePolarisation.hpp"
 #include "IO/ChronoTimer.hpp"
 #include "IO/InputBlock.hpp"
 #include "MBPT/StructureRad.hpp"
@@ -257,11 +257,18 @@ void matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     orbs.insert(orbs.end(), wf.valence().begin(), wf.valence().end());
   }
 
-  // All calculations (frequency updates, RPA solves, matrix elements):
-  Amplitudes::MEoptions options;
-  options.omega = omega;
-  options.each_omega = eachFreqQ;
-  options.operator_omega = omega_operator;
+  // Frequency choices: the operator is pinned only if omega_operator was
+  // given; the RPA is solved here unless it follows each transition
+  using Amplitudes::Frequency;
+  Amplitudes::MEoptions options{
+    omega_operator ? Frequency::fixed : Frequency::transition,
+    eachFreqQ ? Frequency::transition : Frequency::fixed};
+  if (omega_operator) {
+    Amplitudes::set_operator_frequency(h.get(), h_minus.get(), *omega_operator);
+  }
+  if (!eachFreqQ && rpa) {
+    rpa->solve_core(omega, rpa_its, true);
+  }
   options.diagonal = input.get("diagonal", true);
   options.off_diagonal = input.get("off-diagonal", true);
   options.calculate_both = print_both;
@@ -491,8 +498,8 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
   Coulomb::meTable<double> me_tab;
   if (!eachFreqQ || !h->freqDependantQ()) {
     std::cout << "Calculate matrix element table.." << std::flush;
-    me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr, omega,
-                                     sr_n_max, false);
+    me_tab = Amplitudes::me_table(ci_basis, h.get(), rpa.get(), p_sr, omega,
+                                  sr_n_max, false);
     std::cout << "..done\n" << std::flush;
   }
 
@@ -517,8 +524,8 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     }
     if (eachFreqQ && h->freqDependantQ()) {
       std::cout << "Re-Calculate matrix element table.." << std::flush;
-      me_tab = ExternalField::me_table(ci_basis, h.get(), rpa.get(), p_sr,
-                                       t_omega, sr_n_max, false);
+      me_tab = Amplitudes::me_table(ci_basis, h.get(), rpa.get(), p_sr, t_omega,
+                                    sr_n_max, false);
       std::cout << "..done\n" << std::flush;
     }
 

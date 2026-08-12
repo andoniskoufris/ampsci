@@ -1,9 +1,10 @@
+#include "Amplitudes/MatrixElements.hpp"
 #include "CI/CI_Integrals.hpp"
 #include "Coulomb/meTable.hpp"
 #include "DiracOperator/include.hpp" //For E1 operator
 #include "ExternalField/TDHF.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "IO/InputBlock.hpp"
+#include "MBPT/StructureRad.hpp"
 #include "Modules/Modules.hpp"
 #include "Physics/PhysConst_constants.hpp" // For GHz unit conversion
 #include "Wavefunction/Wavefunction.hpp"
@@ -151,7 +152,7 @@ void CI_Pol(const IO::InputBlock &input, const Wavefunction &wf) {
   // The normalisation is applied to the CI states, not to the single-particle
   // matrix elements: it is a property of the state, so every valence electron
   // contributes, the spectators included. See CI::norm_factor
-  const auto sTable = ExternalField::me_table(
+  const auto sTable = Amplitudes::me_table(
     orbitals, &h1, &tdhf, sr ? &*sr : nullptr, {}, sr_n_max, false);
 
   // One-body normalisation defect, for the CI states

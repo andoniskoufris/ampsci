@@ -1,8 +1,8 @@
 #include "MixedStates.hpp"
+#include "Amplitudes/MatrixElements.hpp"
 #include "CI_Integrals.hpp"
 #include "Coulomb/include.hpp"
 #include "DiracOperator/include.hpp"
-#include "ExternalField/calcMatrixElements.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "catch2/catch.hpp"
 #include "fmt/format.hpp"
@@ -40,7 +40,7 @@ TEST_CASE("CI: mixed states", "[CI][MixedStates][unit]") {
   // Returns largest relative deviation, over all solutions of target block
   const auto test_mixed_state = [&](int twoJ, int parity,
                                     const DiracOperator::TensorOperator *h) {
-    const auto h_tab = ExternalField::me_table(ci_basis, h);
+    const auto h_tab = Amplitudes::me_table(ci_basis, h);
 
     // Solve CI for the block the mixed state lives in
     CI::PsiJPi target(twoJ, parity, ci_basis);
@@ -117,7 +117,7 @@ TEST_CASE("CI: mixed states", "[CI][MixedStates][unit]") {
   //   <A|dPsi> = <A||h||Psi_0> / (E_0 + omega - E_A),
   // and zero for any A that was projected out
   {
-    const auto d_tab = ExternalField::me_table(ci_basis, &d);
+    const auto d_tab = Amplitudes::me_table(ci_basis, &d);
 
     CI::PsiJPi target(2, -1, ci_basis);
     const auto Hci = CI::construct_Hci(target, h1, qk);
@@ -179,7 +179,7 @@ TEST_CASE("CI: mixed states", "[CI][MixedStates][unit]") {
   //----------------------------------------------------------------------------
   // The overload that constructs the CI matrix itself must agree
   {
-    const auto d_tab = ExternalField::me_table(ci_basis, &d);
+    const auto d_tab = Amplitudes::me_table(ci_basis, &d);
 
     CI::PsiJPi target(2, -1, ci_basis);
     const auto dPsi1 = CI::solve_mixed_state(

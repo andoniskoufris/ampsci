@@ -1,6 +1,7 @@
 #include "ampsci.hpp"
 #include "DiracOperator/GenerateOperator.hpp"
 #include "ExternalField/include.hpp"
+#include "MBPT/StructureRad.hpp"
 #include "Maths/NumCalc_quadIntegrate.hpp"
 #include "catch2/catch.hpp"
 #include "qip/Random.hpp"

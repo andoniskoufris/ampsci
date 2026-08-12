@@ -2,9 +2,9 @@
 #include "TDHFbasis.hpp"
 #include "DiagramRPA.hpp"
 #include "DiracOperator/include.hpp"
+#include "ExternalField/CorePolarisation.hpp"
 #include "TDHFbasis.hpp"
 #include "Wavefunction/Wavefunction.hpp"
-#include "calcMatrixElements.hpp"
 #include "catch2/catch.hpp"
 #include "qip/Vector.hpp"
 #include <algorithm>
