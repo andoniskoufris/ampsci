@@ -103,9 +103,8 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       "from the sums [none]"},
      {"StructureRadiation{}",
       "Options for structure radiation and normalisation. If this block is "
-      "included, SR is added to every single-particle matrix element used in "
-      "the amplitude: use with care. The normalisation of states is included "
-      "for the SOS method only (see norm)"}});
+      "included, SR and Normalisation is added "
+      "to every single-particle matrix element used in the amplitude"}});
 
   // Check for Structure Radiation
   const auto t_SR_input = input.getBlock("StructureRadiation");
@@ -115,8 +114,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     SR_input.add("help;");
   }
   SR_input.check(
-    {{"", "If this block is included, structure radiation will be included. "
-          "The normalisation of states is available for the SOS method only"},
+    {{"", "If this block is included, structure radiation will be included"},
      {"Qk_file", "true/false/filename - SR: filename for QkTable file. If "
                  "blank will not use QkTable; if exists, will read it in; if "
                  "doesn't exist, will create it and write to disk. If 'true' "
@@ -126,9 +124,8 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       "Max n of the CI basis states that SR is applied to. SR is only "
       "meaningful between physical states, and the high-n states of the CI "
       "basis are cavity states [default: max_n_core + 3]"},
-     {"norm", "SOS only: include the normalisation of states, applied at the "
-              "CI level (each vertex carries its own; see CI::norm_factor). "
-              "Not available for MS [true]"}});
+     {"norm", "Include the normalisation of states, applied to the "
+              "single-particle matrix elements [true]"}});
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
@@ -239,7 +236,7 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
   // it is applied only to the low-n part of the CI basis
   const auto sr_n_max =
     SR_input.get("n_max_legs", DiracSpinor::max_n(wf.core()) + 3);
-  const auto sr_norm = use_sos && SR_input.get("norm", true);
+  const auto sr_norm = SR_input.get("norm", true);
 
   std::optional<MBPT::StructureRad> sr;
   if (t_SR_input) {
@@ -257,12 +254,6 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     sr =
       MBPT::StructureRad(wf.basis(), wf.FermiLevel(), {n_min, n_max}, Qk_file);
   }
-
-  // Normalisation of states (SOS only): the one-body norm defect, applied at
-  // the CI level in the valence sum
-  const auto f_norm = (sr && sr_norm) ?
-                        CI::f_norm_table(*sr, ints.ci_basis, sr_n_max) :
-                        Coulomb::meTable<double>{};
 
   //----------------------------------------------------------------------------
   // Intermediate states carrying a core hole lie outside the CI space (used
@@ -384,18 +375,17 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       if (sr) {
         sr->solve_core(ht.get(), rpa_t.get());
       }
-      // sr_norm is false: the normalisation of states must not go onto the
-      // single-particle matrix elements, which drops the spectator electrons.
-      // It is a property of the CI state; see CI::ReducedME_norm. It is not
-      // included in this module at all
-      t_me = Amplitudes::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
-                                  sr ? &*sr : nullptr, omega, sr_n_max, false);
+      // The normalisation of states goes onto the single-particle matrix
+      // elements, as in the single-valence case
+      t_me =
+        Amplitudes::me_table(ints.ci_basis, ht.get(), rpa_t.get(),
+                             sr ? &*sr : nullptr, omega, sr_n_max, sr_norm);
       if (sr) {
         sr->solve_core(hs.get(), rpa_s.get());
       }
       s_me =
         Amplitudes::me_table(ints.ci_basis, hs.get(), rpa_s.get(),
-                             sr ? &*sr : nullptr, omega_s, sr_n_max, false);
+                             sr ? &*sr : nullptr, omega_s, sr_n_max, sr_norm);
       std::cout << "done\n" << std::flush;
       table_freqs = std::pair{omega, omega_s};
     }
@@ -405,9 +395,9 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
     double A_val{0.0};
     if (use_sos) {
       fmt::print("\nContributions to A^{}, by intermediate J and parity:\n", K);
-      A_val = Amplitudes::sos_ci(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me,
-                                 hs.get(), s_me, omega, omega_s, wf.CIwfs(),
-                                 f_norm, levels_to_remove);
+      A_val =
+        Amplitudes::sos_ci(K, *Psi_b, ib, *Psi_a, ia, ht.get(), t_me, hs.get(),
+                           s_me, omega, omega_s, wf.CIwfs(), levels_to_remove);
     } else {
       fmt::print("\nContributions to A^{}, by intermediate J and parity:\n", K);
       const auto [A_s, A_t] =
@@ -433,8 +423,8 @@ void CI_secondOrder(const IO::InputBlock &input, const Wavefunction &wf) {
       CI::A_K_cv(K, *Psi_b, ib, *Psi_a, ia, ht.get(), hs.get(), omega, omega_s,
                  wf.core(), ints.ci_basis, rpa_t.get(), rpa_s.get());
 
-    // Normalisation of states: SOS only, in the valence sum; the core and
-    // core-valence terms are bare
+    // SR and normalisation enter the valence sum through the single-particle
+    // tables; the core and core-valence terms are bare
     const auto A_total = A_val + A_cv + A_core;
 
     //--------------------------------------------------------------------------

@@ -11,24 +11,15 @@
 namespace Amplitudes {
 
 //==============================================================================
-// Reduced ME between two CI states, with the normalisation-of-states
-// correction when f_norm is non-empty: each vertex carries its own
-static double rme_norm(const CI::PsiJPi &Psi_x, std::size_t ix,
-                       const CI::PsiJPi &Psi_y, std::size_t iy,
-                       const Coulomb::meTable<double> &h_me,
-                       const Coulomb::meTable<double> &f_norm, int k, int pi) {
-  return CI::ReducedME(Psi_x, ix, Psi_y, iy, h_me, k, pi) +
-         CI::ReducedME_norm(Psi_x, ix, Psi_y, iy, h_me, f_norm, k, pi);
-}
-
-//==============================================================================
-double sos_ci(
-  int K, const CI::PsiJPi &Psi_b, std::size_t ib, const CI::PsiJPi &Psi_a,
-  std::size_t ia, const DiracOperator::TensorOperator *t,
-  const Coulomb::meTable<double> &t_me, const DiracOperator::TensorOperator *s,
-  const Coulomb::meTable<double> &s_me, double omega, double omega_s,
-  const std::vector<CI::PsiJPi> &ciwfs, const Coulomb::meTable<double> &f_norm,
-  const std::vector<CI::Level> &levels_to_remove, std::ostream &outstream) {
+double sos_ci(int K, const CI::PsiJPi &Psi_b, std::size_t ib,
+              const CI::PsiJPi &Psi_a, std::size_t ia,
+              const DiracOperator::TensorOperator *t,
+              const Coulomb::meTable<double> &t_me,
+              const DiracOperator::TensorOperator *s,
+              const Coulomb::meTable<double> &s_me, double omega,
+              double omega_s, const std::vector<CI::PsiJPi> &ciwfs,
+              const std::vector<CI::Level> &levels_to_remove,
+              std::ostream &outstream) {
 
   double A{0.0};
 
@@ -103,18 +94,16 @@ double sos_ci(
         if (do_ts && c1 != 0.0) {
           const auto denom = Ea + omega_s - En;
           A_ts +=
-            c1 * rme_norm(Psi_b, ib, *Psi_n, n, t_me, f_norm, kt, t->parity()) *
-            rme_norm(*Psi_n, n, Psi_a, ia, s_me, f_norm, ks, s->parity()) /
-            denom;
+            c1 * CI::ReducedME(Psi_b, ib, *Psi_n, n, t_me, kt, t->parity()) *
+            CI::ReducedME(*Psi_n, n, Psi_a, ia, s_me, ks, s->parity()) / denom;
         }
 
         // 'st' term: c2 <b||s||n><n||t||a> / (E_a + omega - E_n)
         if (do_st && c2 != 0.0) {
           const auto denom = Ea + omega - En;
           A_st +=
-            c2 * rme_norm(Psi_b, ib, *Psi_n, n, s_me, f_norm, ks, s->parity()) *
-            rme_norm(*Psi_n, n, Psi_a, ia, t_me, f_norm, kt, t->parity()) /
-            denom;
+            c2 * CI::ReducedME(Psi_b, ib, *Psi_n, n, s_me, ks, s->parity()) *
+            CI::ReducedME(*Psi_n, n, Psi_a, ia, t_me, kt, t->parity()) / denom;
         }
       }
 

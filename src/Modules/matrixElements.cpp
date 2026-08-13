@@ -488,18 +488,12 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "Solving RPA at each frequency\n";
   }
 
-  // The normalisation is applied to the CI states, not to the single-particle
-  // matrix elements: it is a property of the state, so every valence electron
-  // contributes, the spectators included. See CI::norm_factor
-  const auto f_norm = sr && sr_norm ?
-                        CI::f_norm_table(*sr, ci_basis, sr_n_max) :
-                        Coulomb::meTable<double>{};
-
+  // The normalisation is applied to the single-particle matrix elements
   Coulomb::meTable<double> me_tab;
   if (!eachFreqQ || !h->freqDependantQ()) {
     std::cout << "Calculate matrix element table.." << std::flush;
     me_tab = Amplitudes::me_table(ci_basis, h.get(), rpa.get(), p_sr, omega,
-                                  sr_n_max, false);
+                                  sr_n_max, sr_norm);
     std::cout << "..done\n" << std::flush;
   }
 
@@ -525,18 +519,14 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     if (eachFreqQ && h->freqDependantQ()) {
       std::cout << "Re-Calculate matrix element table.." << std::flush;
       me_tab = Amplitudes::me_table(ci_basis, h.get(), rpa.get(), p_sr, t_omega,
-                                    sr_n_max, false);
+                                    sr_n_max, sr_norm);
       std::cout << "..done\n" << std::flush;
     }
 
     const auto factor = h->matel_factor(matel_type, wfA.twoJ(), wfB.twoJ());
 
-    // Normalisation of states: <A||h||B>(1 + F_A + F_B)
     const auto me =
-      factor *
-      (CI::ReducedME(wfA, iA, wfB, iB, me_tab, h->rank(), h->parity()) +
-       CI::ReducedME_norm(wfA, iA, wfB, iB, me_tab, f_norm, h->rank(),
-                          h->parity()));
+      factor * CI::ReducedME(wfA, iA, wfB, iB, me_tab, h->rank(), h->parity());
 
     auto p1 = wfA.parity() == 1 ? '+' : '-';
     auto p2 = wfB.parity() == 1 ? '+' : '-';

@@ -5,7 +5,6 @@
 #include "LinAlg/Matrix.hpp"
 #include "MBPT/CorrelationPotential.hpp"
 #include "MBPT/Sigma2.hpp"
-#include "MBPT/StructureRad.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "fmt/format.hpp"
 #include "fmt/ostream.hpp"
@@ -758,44 +757,6 @@ double ReducedME(const LinAlg::View<const double> &cA,
     }
   }
   return rme;
-}
-
-//==============================================================================
-double ReducedME_norm(const PsiJPi &As, std::size_t iA, const PsiJPi &Bs,
-                      std::size_t iB, const Coulomb::meTable<double> &h,
-                      const Coulomb::meTable<double> &f_norm, int K_rank,
-                      int Parity) {
-  if (f_norm.empty()) {
-    return 0.0;
-  }
-  const auto F = norm_factor(As, iA, f_norm) + norm_factor(Bs, iB, f_norm);
-  return F * ReducedME(As, iA, Bs, iB, h, K_rank, Parity);
-}
-
-//==============================================================================
-double norm_factor(const PsiJPi &Psi, std::size_t i,
-                   const Coulomb::meTable<double> &f) {
-
-  const auto &CSFs = Psi.CSFs();
-
-  double F = 0.0;
-  for (std::size_t I = 0; I < CSFs.size(); ++I) {
-    const auto [v, w] = CSFs.at(I).states;
-    const auto c = Psi.coef(i, I);
-    F += c * c * (f.getv(v, v) + f.getv(w, w));
-  }
-  return F;
-}
-
-//==============================================================================
-Coulomb::meTable<double> f_norm_table(const MBPT::StructureRad &sr,
-                                      const std::vector<DiracSpinor> &basis,
-                                      int n_max) {
-  Coulomb::meTable<double> f;
-  for (const auto &v : basis) {
-    f.add(v, v, v.n() <= n_max ? sr.f_norm(v) : 0.0);
-  }
-  return f;
 }
 
 //==============================================================================

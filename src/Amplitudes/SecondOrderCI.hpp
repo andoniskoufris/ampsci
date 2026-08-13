@@ -35,24 +35,21 @@ namespace Amplitudes {
   levels carry.
 
   The reduced matrix elements are the CI contractions of the
-  single-particle tables (CI::ReducedME). If @p f_norm is non-empty, the
-  normalisation-of-states correction is added to every vertex
-  (CI::ReducedME_norm): each vertex carries its own, so the amplitude
-  carries \f$ (1 + F_a + F_b + 2F_n) \f$; see CI::norm_factor.
+  single-particle tables (CI::ReducedME). Corrections to the matrix
+  elements (RPA, structure radiation, normalisation of states) enter
+  through those tables.
 
   @param K       Rank of the amplitude.
   @param Psi_b,ib  Final CI state (solution @p ib of @p Psi_b).
   @param Psi_a,ia  Initial CI state.
   @param t,t_me  The \f$ t \f$ operator, and its table of single-particle
                  reduced matrix elements (which may include RPA, structure
-                 radiation), formed at @p omega.
+                 radiation, normalisation), formed at @p omega.
   @param s,s_me  The \f$ s \f$ operator, and its table (formed at
                  @p omega_s).
   @param omega,omega_s  Frequency of each operator; see CI::A_K.
   @param ciwfs   The solved CI blocks, e.g., Wavefunction::CIwfs(): the
                  intermediate states of the sum.
-  @param f_norm  Table of the one-body norm defect (CI::f_norm_table); if
-                 empty (default), no normalisation of states.
   @param levels_to_remove  CI levels skipped in the sum, so that they may be
                  treated separately - e.g., with experimental energies.
   @param outstream  Stream for the per-(J, parity) contributions.
@@ -74,7 +71,6 @@ namespace Amplitudes {
                             const Coulomb::meTable<double> &s_me, double omega,
                             double omega_s,
                             const std::vector<CI::PsiJPi> &ciwfs,
-                            const Coulomb::meTable<double> &f_norm = {},
                             const std::vector<CI::Level> &levels_to_remove = {},
                             std::ostream &outstream = std::cout);
 

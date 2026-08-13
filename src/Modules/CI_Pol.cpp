@@ -148,17 +148,11 @@ void CI_Pol(const IO::InputBlock &input, const Wavefunction &wf) {
     sr->solve_core(&h1, &tdhf);
   }
 
-  //store and fill table of single orbtial matrix elements
-  // The normalisation is applied to the CI states, not to the single-particle
-  // matrix elements: it is a property of the state, so every valence electron
-  // contributes, the spectators included. See CI::norm_factor
+  // Store and fill table of single orbtial matrix elements
+  // The normalisation of states is applied to the single-particle matrix
+  // elements, as in the single-valence case
   const auto sTable = Amplitudes::me_table(
-    orbitals, &h1, &tdhf, sr ? &*sr : nullptr, {}, sr_n_max, false);
-
-  // One-body normalisation defect, for the CI states
-  const auto f_norm = sr && sr_norm ?
-                        CI::f_norm_table(*sr, orbitals, sr_n_max) :
-                        Coulomb::meTable<double>{};
+    orbitals, &h1, &tdhf, sr ? &*sr : nullptr, {}, sr_n_max, sr_norm);
 
   //Number of states for final allowed angular momentum and parity obtained when solving CI+MBPT
 
@@ -184,13 +178,8 @@ void CI_Pol(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "\n Matrix elements and energy denominator contributions to "
                  "polarisability \n\n\n";
     for (std::size_t i = 0; i < num; i++) {
-      // Each vertex carries its own normalisation of states
-      double CI_ME_1 =
-        CI::ReducedME(*wfV, nv, *wfn, i, sTable, k1, p1) +
-        CI::ReducedME_norm(*wfV, nv, *wfn, i, sTable, f_norm, k1, p1);
-      double CI_ME_2 =
-        CI::ReducedME(*wfn, i, *wfV, nv, sTable, k1, p1) +
-        CI::ReducedME_norm(*wfn, i, *wfV, nv, sTable, f_norm, k1, p1);
+      double CI_ME_1 = CI::ReducedME(*wfV, nv, *wfn, i, sTable, k1, p1);
+      double CI_ME_2 = CI::ReducedME(*wfn, i, *wfV, nv, sTable, k1, p1);
       double deltaE = wfn->energy(i) - wfV->energy(nv);
       //get configurations
       const auto cf = (*wfV).info(nv).config;

@@ -170,26 +170,6 @@ TEST_CASE("CI: second-order amplitudes", "[CI][SecondOrder][unit]") {
   }
 
   //----------------------------------------------------------------------------
-  // Normalisation factor: with the same f for every orbital, F = 2f for any
-  // normalised two-electron CI state, however it is spread over the CSFs
-  {
-    REQUIRE(Psi_0e.CSFs().size() > 1);
-    Coulomb::meTable<double> f_tab;
-    const auto f0 = -0.007;
-    for (const auto &v : ints.ci_basis) {
-      f_tab.add(v, v, f0);
-    }
-    double worst = 0.0;
-    for (std::size_t i = 0; i < 3; ++i) {
-      worst =
-        std::max(worst, std::abs(CI::norm_factor(Psi_0e, i, f_tab) - 2.0 * f0));
-    }
-    fmt::print("\nF for uniform f, {} CSFs: worst {:.1e}\n",
-               Psi_0e.CSFs().size(), worst);
-    REQUIRE(worst < 1.0e-12);
-  }
-
-  //----------------------------------------------------------------------------
   // Static polarisability of the ground state (all K), and the dynamic case,
   // for which s carries -omega. The only intermediate block is J=1 odd, so
   // the direct sum over its complete CI spectrum is the reference
@@ -337,23 +317,6 @@ TEST_CASE("CI: second-order core and core-valence", "[CI][SecondOrder][unit]") {
   CI::PsiJPi Psi(0, +1, ints.ci_basis);
   Psi.solve(CI::construct_Hci(Psi, ints));
   REQUIRE(Psi.CSFs().size() == 1);
-
-  //----------------------------------------------------------------------------
-  // Normalisation factor of a CI state: every valence electron contributes.
-  // The one CSF here is 3s^2, so F = 2 f_3s
-  {
-    Coulomb::meTable<double> f_tab;
-    const auto f_v = -0.0123;
-    f_tab.add(Fv, Fv, f_v);
-
-    const auto F = CI::norm_factor(Psi, 0, f_tab);
-    fmt::print("\nF(3s^2) = {:.8f} [{:.8f}]\n", F, 2.0 * f_v);
-    REQUIRE(std::abs(F - 2.0 * f_v) < 1.0e-14);
-
-    // An orbital not in the state must not contribute
-    const auto F_none = CI::norm_factor(Psi, 0, Coulomb::meTable<double>{});
-    REQUIRE(F_none == 0.0);
-  }
 
   //----------------------------------------------------------------------------
   // Core and core-valence: A^0/sqrt(3[J]) must be the core (core-valence)

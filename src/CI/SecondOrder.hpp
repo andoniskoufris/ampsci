@@ -275,7 +275,9 @@ A_K_coefs(int K, int kt, int ks, int twoJb, int twoJn, int twoJa);
         PNC), since then the intermediate states have the opposite parity to
         \f$ a \f$ and \f$ b \f$.
 
-  @note The normalisation of states is NOT included.
+  @note Corrections to the matrix elements (RPA, structure radiation,
+        normalisation of states) enter through the single-particle tables.
+        
 */
 [[nodiscard]] std::pair<double, double>
 A_K(int K, const PsiJPi &Psi_b, std::size_t ib, const PsiJPi &Psi_a,
