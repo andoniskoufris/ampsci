@@ -20,8 +20,6 @@
 
 namespace Module {
 
-// Declare, register, then define below.
-
 /*!
   @brief Matrix elements of any operator for HF/Brueckner valence states.
   @details
@@ -533,8 +531,8 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
 
     if (eachFreqQ && rpa) {
       fmt::print(
-        "{}{} {:2} {:5s} {:3s} - {}{} {:2} {:5s} {:3s}  {:2} {:.0e}  {:.5f} "
-        "{:12.5e}\n",
+        "{}{} {:2} {:5s} {:3s} - {}{} {:2} {:5s} {:3s}  {:2} {:.0e}  {: .5f} "
+        "{: 12.5e}\n",
         wfA.twoJ() / 2, p1, iA, wfA.info(iA).config,
         CI::Term_Symbol((int)wfA.info(iA).L, (int)wfA.info(iA).twoS,
                         wfA.parity()),
@@ -544,7 +542,7 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
         rpa->last_its(), rpa->last_eps(), t_omega, me);
     } else {
       fmt::print(
-        "{}{} {:2} {:5s} {:3s} - {}{} {:2} {:5s} {:3s}  {:.5f} {:12.5e}\n",
+        "{}{} {:2} {:5s} {:3s} - {}{} {:2} {:5s} {:3s}  {: .5f} {: 12.5e}\n",
         wfA.twoJ() / 2, p1, iA, wfA.info(iA).config,
         CI::Term_Symbol((int)wfA.info(iA).L, (int)wfA.info(iA).twoS,
                         wfA.parity()),
@@ -593,6 +591,8 @@ void CI_matrixElements(const IO::InputBlock &input, const Wavefunction &wf) {
     }
   };
 
+  std::cout << "<a||t||b> -- "
+            << DiracOperator::parse_MatrixElementType(matel_type) << "\n";
   if (eachFreqQ && rpa) {
     std::cout << "Ja  # conf      - Jb  # conf      its eps    w_ab     t_ab\n";
   } else {

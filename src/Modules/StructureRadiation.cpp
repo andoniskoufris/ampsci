@@ -66,7 +66,7 @@ void structureRadiation(const IO::InputBlock &input, const Wavefunction &wf) {
       "not use QkTable; if exists, will read it in; if doesn't exist, will "
       "create it and write to disk. If 'true' will use default filename. "
       "Save time (10x) at cost of memory. Note: Using QkTable implies "
-      "legs=basis"},
+      "legs=basis [true]"},
      {"n_minmax", "list; min,max n for core/excited: (1,inf)dflt"},
      {"k_cut",
       "Maximum multipolarity k to include in Coulomb Qk. Default: all"},
@@ -98,7 +98,7 @@ void structureRadiation(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto h = DiracOperator::generate(oper, h_options, wf);
 
-  const auto Qk_file_t = input.get("Qk_file", std::string{"false"});
+  const auto Qk_file_t = input.get("Qk_file", std::string{"true"});
   const std::string Qk_file =
     Qk_file_t != "false" ?
       Qk_file_t == "true" ? wf.identity() + ".qk.abf" : Qk_file_t :

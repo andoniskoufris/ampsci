@@ -11,21 +11,27 @@
 namespace Module {
 
 /*!
-  @brief Breit corrections to HF energies and matrix elements.
+  @brief Breit corrections to HF energies.
   @details
   Calculates first-order (one-body) Breit corrections to core and valence
   energies, with and without HF relaxation. Decomposes into Gaunt,
   retardation, and frequency-dependent contributions.
+  Used to test Breit, compare sensitivities of different systems to Breit effects, and to compare energy corrections between works.
+  Should not be used for final/accurate breit calculations; see note below.
 
   Optionally computes second-order Breit corrections using the Johnson
   formula (requires a basis). The second-order term includes both HF
   one-body (de(B1,2)) and Sigma two-body (de(B2,2)) contributions.
 
   @note Assumes Breit is NOT already included in the input wavefunction.
+
   @warning Not compatible with Brueckner (correlation potential) orbitals.
 
   To calculate Breit corrections including MBPT, just use ampsci manually (i.e., calculate once with and once without Breit). 
   This is because Breit must be included into the basis/Green's function when forming correlation potential.
+
+  @note The interplay between correlations and the Breit effect is very important, and not captured in this perturbative approach.
+  To accurately inlcude Breit corrections to energies and wavefunction, Breit should be added to the wavefunction in the `HartreeFock{}` input block.
 */
 void Breit(const IO::InputBlock &input, const Wavefunction &wf);
 
@@ -38,10 +44,14 @@ const Register r_Breit{
 void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
-    {{"units", "Energy units for output: au (default) or cm (cm^-1)"},
+    {{"", "Calculates first-order (one-body) Breit corrections to core and "
+          "valence energies, with and without HF relaxation. Decomposes into "
+          "Gaunt, retardation, and frequency-dependent contributions. "
+          "Optionally computes 2nd order"},
+     {"units", "Energy units for output: au (default) or cm (cm^-1)"},
      {"lambda", "Frequency scaling for f-dependent Breit (default 1.0)"},
-     {"second_order",
-      "Do second-order (Johnson) formula. Requires basis. [false]"}});
+     {"second_order", "Do second-order (Johnson) formula. Requires basis. "
+                      "Note: not always accurate. [false]"}});
 
   if (input.has_option("help")) {
     return;
@@ -169,7 +179,8 @@ void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
       "Requires basis\n"
       "\n"
       "de(B1,1) = <v|Vbr|v> - first-order one-body Breit correction.\n"
-      "           Gaunt and Ret. columns are static; Freq. is the additional\n"
+      "           Gaunt and Ret. columns are static; Freq. is the "
+      "additional\n"
       "           frequency-dependent correction. Total includes all three.\n"
       "de(C,2)  = <v|Sigma_C|v> - second-order Coulomb correction (normal "
       "MBPT)\n"

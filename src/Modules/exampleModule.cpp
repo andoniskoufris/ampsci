@@ -23,9 +23,30 @@
 
 namespace Module {
 
-// Declare out module function
-// (This is optional; but decalring first allows us to register at the
-//  top of the file. Purely preference.)
+/*!
+  @brief Template module: copy this file to write your own module.
+  @details
+  To create a new module:
+  1. Copy this file and rename it (e.g., myModule.cpp).
+  2. Rename exampleModule to your module name throughout (function
+     declaration, definition, and the Register entry).
+  3. Either drop the file anywhere under src/ and recompile (internal), or
+     keep it outside ampsci and add it to your Makefile (external):
+       EXTERNAL_MODULES = path/to/myModule.cpp
+  4. Add the module to the `Register` (see example) - this is what makes your 
+     module visible to ampsci and allows it to be run from the input options.
+
+  No other files need to be edited: the Register object below adds the
+  module to the list ampsci knows about at compile time.
+
+  Every module is a free function with this exact signature, taking the
+  user input block and a pre-solved Wavefunction.
+  Inside the module, use the precomputed wavefunction to calculate any property
+  you require. See example for how to parse input options using 
+  `IO::InputBlock`, and a few basic examples of things to do with the 
+  wavefunctions.
+
+*/
 void exampleModule(const IO::InputBlock &input, const Wavefunction &wf);
 
 // Register module:

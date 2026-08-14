@@ -48,8 +48,8 @@ void CI_Pol(const IO::InputBlock &input, const Wavefunction &wf) {
                       "parity PI is required [deprecated: use state]"},
      {"StructureRadiation{}",
       "Options for structure radiation and normalisation. If this block is "
-      "included, SR+N is added to every single-particle matrix element used in "
-      "the sum: use with care"}});
+      "included, SR+N is added to the single-particle matrix element used in "
+      "the sum"}});
 
   // Check for Structure Radiation
   const auto t_SR_input = input.getBlock("StructureRadiation");
@@ -77,6 +77,12 @@ void CI_Pol(const IO::InputBlock &input, const Wavefunction &wf) {
   if (input.has_option("help")) {
     return;
   }
+
+  fmt2::styled_print(fg(fmt::color::blue), "\n* Note: ");
+  std::cout
+    << "This module is deprecated and will be removed.\n"
+    << "Instead, use the general `CI_secondOrder' module, with t=E1, s=E1. "
+       "Then, set method=SOS to use the sum-over-states method.\n\n";
 
   using namespace std::string_literals;
 

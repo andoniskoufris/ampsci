@@ -17,10 +17,17 @@ namespace Module {
 /*!
   @brief QED corrections to HF energies.
   @details
-  Calculates first-order QED corrections (Ginges-Flambaum radiative potential)
+  Calculates first-order QED corrections (Flambaum-Ginges radiative potential)
   to core and valence energies, with and without HF relaxation.
   Decomposes into Uehling (vacuum polarisation), self-energy (high- and
   low-frequency), and magnetic form-factor contributions.
+
+  It should be used to test sensitivity of energies to parts of the QED potential, and can be used to compare QED results between works.
+  
+  For accurate calculations, correlation corrections are required, which are not accounted for in this module. For those cases, add QED into the wavefunction itself using the options in `HartreeFock{}` input block.
+
+  This module also does not calculate QED corrections to matrix elements.
+  You can do that manually using the usual `MatrixElements` module, and running with/without QED.
 
   @note Assumes QED is NOT already included in the input wavefunction.
 */
@@ -36,7 +43,12 @@ void QED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // Check input options for spelling mistakes etc.:
   input.check(
-    {{"rcut", "Maximum radius (au) to calculate Rad Pot for [5.0]"},
+    {{"", "Calculates first-order QED corrections (Flambaum-Ginges radiative "
+          "potential) to core and valence energies, with and without HF "
+          "relaxation. Decomposes into Uehling (vacuum polarisation), "
+          "self-energy (high- and low-frequency), and magnetic form-factor "
+          "contributions."},
+     {"rcut", "Maximum radius (au) to calculate Rad Pot for [5.0]"},
      {"scale_rN", "Scale factor for Nuclear size within QED potential. 0 for "
                   "pointlike, 1 for typical [1.0]"},
      {"scale_l", "List of doubles. Extra scaling factor for each l. e.g., "
@@ -67,7 +79,7 @@ void QED(const IO::InputBlock &input, const Wavefunction &wf) {
   }
 
   const auto units_in = input.get("units", std::string{"au"});
-  const bool use_cm = (units_in == "cm");
+  const bool use_cm = qip::ci_contains(units_in, "cm");
   const double un = use_cm ? PhysConst::Hartree_invcm : 1.0;
   const std::string unit_label = use_cm ? "cm^-1" : "au";
 

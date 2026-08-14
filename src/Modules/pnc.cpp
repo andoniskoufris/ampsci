@@ -9,6 +9,7 @@
 #include "Physics/NuclearData.hpp"
 #include "Potentials/NuclearPotentials.hpp"
 #include "Wavefunction/Wavefunction.hpp"
+#include "fmt/color.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -68,6 +69,11 @@ void pnc(const IO::InputBlock &input, const Wavefunction &wf) {
   if (input.has_option("help")) {
     return;
   }
+
+  fmt2::styled_print(fg(fmt::color::blue), "\n* Note: ");
+  std::cout
+    << "This module is deprecated and will be removed.\n"
+    << "Instead, use the general `secondOrder' module, with t=E1, s=pnc\n\n";
 
   // input: nuc parameters for rho:
   const auto c_dflt =

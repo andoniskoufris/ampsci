@@ -130,6 +130,12 @@ void polarisability(const IO::InputBlock &input, const Wavefunction &wf) {
     return;
   }
 
+  fmt2::styled_print(fg(fmt::color::blue), "\n* Note: ");
+  std::cout << "This module is deprecated and will be removed.\n"
+            << "Instead, use the general `secondOrder' module, with t=E1, "
+               "s=E1, and K=0 and/or 1.\n"
+            << " K=0 will give scalar component, K=2 will give tensor\n\n";
+
   // Find the subset of valence states to calculate
   const auto v_string =
     input.get("states", DiracSpinor::state_config(wf.valence()));
@@ -385,6 +391,12 @@ void transitionPolarisability(const IO::InputBlock &input,
   if (input.has_option("help")) {
     return;
   }
+
+  fmt2::styled_print(fg(fmt::color::blue), "\n Note: ");
+  std::cout << "This module is deprecated and will be removed.\n"
+            << "Instead, use the general `secondOrder' module, with t=E1, "
+               "s=E1, and K=1.\n"
+            << "K=1 will give the required vector component\n\n";
 
   const auto states = input.get("transition", std::vector<std::string>{});
   if (states.size() != 2) {
