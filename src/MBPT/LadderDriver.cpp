@@ -189,6 +189,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (count_init != count_after) {
     fmt::print("Calculated {} new Qk integrals\n", count_after - count_init);
     qk.write(Qk_file);
+  } else {
+    std::cout << "No new Qk integrals required\n";
   }
 
   std::cout << "\nMBPT(2) energy shifts, using HF vs. spline legs" << std::endl;
