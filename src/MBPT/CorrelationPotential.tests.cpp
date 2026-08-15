@@ -8,6 +8,7 @@
 #include "Wavefunction/DiracSpinor.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "catch2/catch.hpp"
+#include "fmt/format.hpp"
 #include "qip/Maths.hpp"
 #include "qip/Random.hpp"
 #include "qip/Vector.hpp"
@@ -147,6 +148,192 @@ TEST_CASE("MBPT: Feynman unit tests", "[MBPT][Feynman][unit]") {
 
     // Test hole-particle: ratio of all-orders to screening
     REQUIRE(deao / des == Approx(expected_hp_ratio[i]).epsilon(epsilon));
+  }
+  std::cout << "\n";
+}
+
+//==============================================================================
+TEST_CASE("MBPT: Feynman complex Green",
+          "[MBPT][Feynman][ComplexGreen][unit]") {
+
+  // Compares the two methods for the Green's function at complex energy:
+  //  (1) Dyson method: solve at Re(en), correct to complex via resolvent
+  //  (2) Direct method: solve the Dirac equation at complex energy
+  // Also checks conjugate symmetry g(en*) = g(en)*, and compares against
+  // the (approximate) basis expansion.
+
+  fmt::print(
+    "Green's function at complex energy: Dyson vs direct methods (Na)\n"
+    "  eps12 : max|g_Dyson - g_direct| / max|g_Dyson|\n"
+    "  cc    : conjugate symmetry, g(en*) vs g(en)* (direct method)\n"
+    "  b1,b2 : Dyson,direct vs basis-expansion Green (approximate)\n"
+    "  pole1,2: <a|G|a>*(en-e_a)-1, core states a (exact = 0; limited\n"
+    "          by sub-grid quadrature)\n");
+
+  Wavefunction wf({1000, 1.0e-4, 50.0, 0.33 * 100.0, "loglinear"},
+                  {"Na", -1, "Fermi"}, 1.0);
+  wf.solve_core("HartreeFock", "[Ne]", std::nullopt, 1.0e-5);
+  wf.formBasis(SplineBasis::Parameters("30spd", 40, 7, 1.0e-4, 1.0e-4, 40.0, "",
+                                       SplineBasis::SplineType::Derevianko,
+                                       false, false));
+
+  const double r0{1.0e-3};
+  const double rmax{30.0};
+  const std::size_t stride = 8;
+  const auto omre = -0.33 * wf.energy_gap();
+  const int lmax = 6;
+  const double w0{0.1};
+  const double wratio{3.0};
+  const int n_min_core = 2;
+
+  const auto i0 = wf.grid().getIndex(r0);
+  const auto size = (wf.grid().getIndex(rmax) - i0) / stride + 1;
+
+  const MBPT::Feynman Fy(wf.vHF(), i0, stride, size,
+                         {MBPT::Screening::exclude, MBPT::HoleParticle::exclude,
+                          lmax, omre, w0, wratio},
+                         n_min_core, true, false);
+
+  // Test at typical energies: en_v + omre + iw, and e_core +/- (omre + iw)
+  // High kappa included: high-l Green's functions are the fragile ones
+  const std::vector<std::complex<double>> energies{
+    {-0.5, 0.1}, {-0.5, 2.0}, {-0.5, 30.0}, {-2.0, 0.5}, {-40.5, 1.0}};
+
+  for (const auto kappa : {-1, 1, -2, 3, -4, 5, -6, 6}) {
+    for (const auto &en : energies) {
+
+      const auto g1 = Fy.green(kappa, en);
+      const auto g2 = Fy.green_complex_dirac(kappa, en);
+
+      // Dyson vs direct-complex: same operator, different numerics
+      const auto eps12 = MBPT::max_delta(g1, g2) / MBPT::max_element(g1);
+
+      // Conjugate symmetry for the direct-complex method
+      const auto g2cc = Fy.green_complex_dirac(kappa, std::conj(en));
+      const auto eps_cc = MBPT::max_delta(g2cc, g2.conj()) / max_element(g2);
+
+      // Basis comparison (approximate: basis truncation, no negative-energy
+      // states), just a sanity check
+      const auto gb = Fy.green_basis(kappa, en, wf.basis());
+      const auto eps_1b = MBPT::max_delta(g1, gb) / MBPT::max_element(g1);
+      const auto eps_2b = MBPT::max_delta(g2, gb) / MBPT::max_element(g2);
+
+      // Sharp analytic test: <a|G(en)|a> = 1/(en - e_a) for HF core states
+      const auto braket = [&](const DiracSpinor &Fa,
+                              const MBPT::ComplexGMatrix &G) {
+        std::complex<double> sum{0.0, 0.0};
+        for (auto i = 0ul; i < G.size(); ++i) {
+          const auto si = G.index_to_fullgrid(i);
+          for (auto j = 0ul; j < G.size(); ++j) {
+            const auto sj = G.index_to_fullgrid(j);
+            sum += (Fa.f(si) * G.ff(i, j) * Fa.f(sj) +
+                    Fa.f(si) * G.fg(i, j) * Fa.g(sj) +
+                    Fa.g(si) * G.gf(i, j) * Fa.f(sj) +
+                    Fa.g(si) * G.gg(i, j) * Fa.g(sj)) *
+                   G.dr(i) * G.dr(j);
+          }
+        }
+        return sum;
+      };
+      double pole1{0.0}, pole2{0.0};
+      for (const auto &Fa : wf.core()) {
+        if (Fa.kappa() != kappa)
+          continue;
+        const auto exact = 1.0 / (en - Fa.en());
+        const auto p1 = std::abs(braket(Fa, g1) / exact - 1.0);
+        const auto p2 = std::abs(braket(Fa, g2) / exact - 1.0);
+        pole1 = std::max(pole1, p1);
+        pole2 = std::max(pole2, p2);
+      }
+
+      fmt::print("kappa={:2} en=({:6.1f},{:5.1f}): eps12={:.1e} cc={:.1e} "
+                 "b1={:.1e} b2={:.1e} pole1={:.1e} pole2={:.1e}\n",
+                 kappa, en.real(), en.imag(), eps12, eps_cc, eps_1b, eps_2b,
+                 pole1, pole2);
+
+      CHECK(eps_cc < 1.0e-10);
+      // pole tests limited by sub-grid braket quadrature (not G itself)
+      CHECK(pole1 < 0.1);
+      CHECK(pole2 < 0.1);
+    }
+  }
+  std::cout << "\n";
+}
+
+//==============================================================================
+TEST_CASE("MBPT: Feynman omre stability", "[MBPT][Feynman][omre]") {
+
+  // Sigma is (analytically) independent of the contour position Re(w) = omre;
+  // the numerical spread against omre measures the total error
+  // (frequency quadrature + Green's function accuracy).
+  // Compares the two complex-Green methods: Dyson vs direct-complex.
+
+  fmt::print("Sigma_direct(3s, Na) vs contour position, omre = {{-0.15, "
+             "-0.30, -0.60}}.\n"
+             "Exact Sigma is omre-independent: spread = numerical error.\n");
+
+  Wavefunction wf({1000, 1.0e-4, 50.0, 0.33 * 100.0, "loglinear"},
+                  {"Na", -1, "Fermi"}, 1.0);
+  wf.solve_core("HartreeFock", "[Ne]", std::nullopt, 1.0e-6);
+  wf.solve_valence("3s");
+  wf.formBasis(SplineBasis::Parameters("30spd", 40, 7, 1.0e-4, 1.0e-4, 40.0, "",
+                                       SplineBasis::SplineType::Derevianko,
+                                       false, false));
+
+  const double r0{1.0e-3};
+  const double rmax{30.0};
+  const std::size_t stride = 4;
+  const int lmax = 2;
+  const int n_min_core = 2;
+
+  const auto i0 = wf.grid().getIndex(r0);
+  const auto size = (wf.grid().getIndex(rmax) - i0) / stride + 1;
+
+  const auto &v = wf.valence().front();
+
+  // Goldstone (basis) value: the 2nd-order direct reference
+  // (differs from Feynman by basis truncation + negative-energy states)
+  const MBPT::Goldstone Gs(wf.basis(), wf.core(), i0, stride, size, n_min_core,
+                           true);
+  const auto de_G = v * (Gs.Sigma_direct(v.kappa(), v.en()) * v);
+  fmt::print("Goldstone reference: de = {:.6f} au\n", de_G);
+
+  const std::vector<double> omres{-0.15, -0.30, -0.60};
+
+  // nb: w0 = 0.01 (not larger): the [0,w0] panel assumes the integrand is
+  // linear; its error depends on omre (pole distances), and so drives
+  // spurious omre-dependence if w0 is too large
+  const double w0{0.01};
+  const double wratio{1.5};
+
+  for (const bool complex_green : {false, true}) {
+    std::vector<double> des;
+    for (const auto omre : omres) {
+      const MBPT::Feynman Fy(wf.vHF(), i0, stride, size,
+                             {MBPT::Screening::exclude,
+                              MBPT::HoleParticle::exclude, lmax, omre, w0,
+                              wratio, complex_green},
+                             n_min_core, true, false);
+      const auto Sd = Fy.Sigma_direct(v.kappa(), v.en());
+      des.push_back(v * (Sd * v));
+    }
+    const auto [min, max] = std::minmax_element(des.begin(), des.end());
+    const auto spread = std::abs((*max - *min) / des.at(1));
+    fmt::print("{}: de = {{{:.6f}, {:.6f}, {:.6f}}}, spread = {:.1e}, "
+               "vs Goldstone: {:+.1f}%\n",
+               complex_green ? "direct" : "Dyson ", des.at(0), des.at(1),
+               des.at(2), spread, 100.0 * (des.at(1) / de_G - 1.0));
+    // nb: tolerances are empirical for THIS config (regression guards, not
+    // universal statements: e.g., at the Cs production config the Dyson
+    // method agrees with Goldstone to ~1%)
+    if (complex_green) {
+      // Direct-complex: omre-stable, and agrees with Goldstone limit here
+      CHECK(spread < 0.01);
+      CHECK(std::abs(des.at(1) / de_G - 1.0) < 0.02);
+    } else {
+      CHECK(spread < 0.05);
+      CHECK(std::abs(des.at(1) / de_G - 1.0) < 0.10);
+    }
   }
   std::cout << "\n";
 }

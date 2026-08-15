@@ -365,6 +365,10 @@ Wavefunction ampsci(const IO::InputBlock &input) {
      {"imag_omega",
       "Pair of comma-separated doubles: w0, wratio. Initial point, and "
       "ratio, for logarithimg Im(w) grid [0.01, 1.5]"},
+     {"complex_green",
+      "Method for Green's function at complex energy in Feynman method. "
+      "false: solve at real energy, extend via Dyson method; "
+      "true: solve Dirac equation directly at complex energy [false]"},
      {"include_G", "Inlcude lower g-part into Sigma [false]"},
      {"include_Breit", "Inlcude two-body Breit corrections into Sigma [false]"},
      {"n_max_Breit",
@@ -403,6 +407,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
   const auto hole_particle =
     input.get({"Correlations"}, "hole_particle", all_order);
   const auto sigma_lmax = input.get({"Correlations"}, "lmax", 6);
+  const auto complex_green =
+    input.get({"Correlations"}, "complex_green", false);
   const auto include_G = input.get({"Correlations"}, "include_G", false);
   const auto include_Breit =
     input.get({"Correlations"}, "include_Breit", false);
@@ -471,7 +477,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
                  include_G, include_Breit, n_max_Breit, lambda_k, fk, etak,
                  sigma_readwrite, sigma_filename, sigma_Feynman,
                  sigma_Screening, hole_particle, sigma_lmax, sigma_omre, w0,
-                 wratio, ek_Sig, ladder_file, sigma_derivative);
+                 wratio, complex_green, ek_Sig, ladder_file, sigma_derivative);
   }
 
   // Solve Brueckner orbitals (optionally, fit Sigma to exp energies)

@@ -9,18 +9,26 @@ namespace DiracODE {
 
 /*!
   @brief Performs asymptotic expansion for f and g at large r, up to order Nx in (1/r).
+  @details Templated on energy type T: T=double for bound states, or
+  T=std::complex<double> for Green's function solutions at complex energy.
+  The expansion coefficients, lambda, and sigma extend analytically; the
+  principal branch of sqrt gives Re(lambda)>0, i.e. the decaying solution.
 */
-template <std::size_t Nx = 15>
+template <typename T = double, std::size_t Nx = 15>
 class AsymptoticSpinor {
 private:
   int kappa;
-  double Zeff, en, alpha, m_mass, eps_target;
-  double kappa2, alpha2, c, lambda, sigma;
-  std::array<double, Nx> bx; // bx must be first
-  std::array<double, Nx> ax; // ax depends on bx
+  double Zeff;
+  T en;
+  double alpha, m_mass, eps_target;
+  double kappa2, alpha2, c;
+  T lambda, sigma;
+  // bx must be first (ax depends on bx in initialisation), make_ax()
+  std::array<T, Nx> bx;
+  std::array<T, Nx> ax;
 
 public:
-  AsymptoticSpinor(int in_kappa, double in_Zeff, double in_en,
+  AsymptoticSpinor(int in_kappa, double in_Zeff, T in_en,
                    double in_alpha = PhysConst::alpha,
                    double in_eps_target = 1.0e-14, double m = 1.0)
     : kappa(in_kappa),
@@ -34,7 +42,6 @@ public:
       c(1.0 / alpha),
       lambda(std::sqrt(-en * (2.0 * m_mass + en * alpha2))),
       sigma((m + en * alpha2) * (Zeff / lambda)),
-      // Ren(en + m * c2),
       bx(make_bx()),
       ax(make_ax()) {
     // assert(en < 0.0 && "Must have en<0 in AsymptoticSpinor");
@@ -56,19 +63,19 @@ public:
     terminated early if the relative change drops below eps_target (typically
     around order ~5).
   */
-  std::pair<double, double> fg(double r) const {
+  std::pair<T, T> fg(double r) const {
     // See Johnson (2007), Eqs. (2.170) -- (2.171)
     // Notation difference:
     // P(r) = f(r)
     // Q(r) = -g(r)
     // There appears to by typo in Eq. (2.171)
 
-    const double A_large = std::sqrt(1.0 + 0.5 * en * alpha2 / m_mass);
-    const double A_small = std::sqrt(-0.5 * en / m_mass) * alpha;
+    const T A_large = std::sqrt(1.0 + 0.5 * en * alpha2 / m_mass);
+    const T A_small = std::sqrt(-0.5 * en / m_mass) * alpha;
 
-    const double rfac = /*2.0 * */ std::pow(r, sigma) * std::exp(-lambda * r);
-    double fs = 1.0;
-    double gs = 0.0;
+    const T rfac = /*2.0 * */ std::pow(r, sigma) * std::exp(-lambda * r);
+    T fs{1.0};
+    T gs{0.0};
     // Continue the expansion until reach eps, or Nx
     for (std::size_t k = 0; k < Nx; k++) {
       const auto rkp1 = qip::pow(r, int(k) + 1);
@@ -88,9 +95,9 @@ public:
   }
 
 private:
-  std::array<double, Nx> make_bx() const {
+  std::array<T, Nx> make_bx() const {
     // See Johnson (2007), Eqs. (2.172) -- (2.173)
-    std::array<double, Nx> tbx;
+    std::array<T, Nx> tbx;
     const auto Zalpha2 = Zeff * Zeff * alpha2;
     tbx[0] = (kappa / m_mass + (Zeff / lambda)) * (0.5 * alpha);
     for (std::size_t i = 1; i < Nx; i++) {
@@ -100,10 +107,10 @@ private:
     return tbx;
   }
 
-  std::array<double, Nx> make_ax() const {
+  std::array<T, Nx> make_ax() const {
     // See Johnson (2007), Eq. (2.174)
     // bx must already be initialised
-    std::array<double, Nx> tax;
+    std::array<T, Nx> tax;
     const auto RenAlpha2 = m_mass + en * alpha2;
     for (std::size_t i = 0; i < Nx; i++) {
       tax[i] = (kappa * m_mass + (double(i + 1) - sigma) * RenAlpha2 -

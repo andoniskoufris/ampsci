@@ -23,8 +23,15 @@ struct FeynmanOptions {
   HoleParticle hole_particle{HoleParticle::exclude};
   int max_l_internal{6};
   double omre{-0.3};
-  double w0{0.05};
+  // nb: w0 = first grid point along Im(w). The [0, w0] panel is only
+  // approximated (assumes integrand linear in w): w0 must be small.
+  // (0.05 gives ~3% error in Sigma_d; 0.01 gives ~0.5%)
+  double w0{0.01};
   double w_ratio{1.5};
+  // Method for Green's function at complex energy:
+  // false: solve at Re(en), extend to complex energy via Dyson (resolvent);
+  // true: solve the Dirac equation directly at complex energy
+  bool complex_green{false};
   // int n_min_core{1};
 };
 
@@ -76,9 +83,10 @@ class Feynman {
   // Effective spinless Q*Pi*Q operator: for each imaginary omega, and each k
   LinAlg::Matrix<ComplexRMatrix> m_qpiq_wk{};
 
-  // For now, just for testing: switch between complex green methods
-  // This is broken, not sure what changed
-  bool m_Complex_green_method = false;
+  // Method for complex-energy Green's function (see FeynmanOptions)
+  // false: Dyson method (solve at real energy, correct to complex);
+  // true: solve Dirac equation directly at complex energy
+  bool m_Complex_green_method;
 
 public:
   //! Construct Feynman diagram
@@ -109,20 +117,27 @@ public:
   ComplexGMatrix green(int kappa, std::complex<double> en,
                        GreenStates states = GreenStates::both) const;
 
-  //! Sovles Complex Dirac equation
-  ComplexGMatrix green_v2(int kappa, std::complex<double> en) const;
+  //! Green's function by solving the Dirac equation directly at complex
+  //! energy (cf. green(), which uses the Dyson method unless complex_green set)
+  ComplexGMatrix green_complex_dirac(int kappa, std::complex<double> en) const;
 
   // Uses explicit basis
   ComplexGMatrix green_basis(int kappa, std::complex<double> en,
                              const std::vector<DiracSpinor> &basis) const;
 
-  //! Polarisation operator pi^k(w), for multipolarity k
-  ComplexRMatrix polarisation_k(int k, std::complex<double> omega,
-                                bool hole_particle) const;
+  //! Polarisation operator pi^k(w), for each k = 0..max_k separately (not
+  //! summed). Green's functions are computed once and re-used across all k.
+  std::vector<ComplexRMatrix> polarisation_each_k(std::complex<double> omega,
+                                                  bool hole_particle) const;
 
   //! Calculate Direct part of correlation potential
   GMatrix Sigma_direct(int kappa_v, double en_v,
                        std::optional<int> k = {}) const;
+
+  //! Direct part of correlation potential, for each multipole k separately
+  //! (not summed: Sigma_d = sum of these). Same cost as a single Sigma_direct
+  //! call, since the Green's functions are shared by all k
+  std::vector<GMatrix> Sigma_direct_each_k(int kappa_v, double en_v) const;
 
   //! Returns (reference to) q^k (radial) matrix. Note: includes drj? No?
   const ComplexRMatrix &get_qk(int k) const { return m_qk.at(std::size_t(k)); }
@@ -141,6 +156,10 @@ private:
   void form_vx();
   // Sets up imaginary frequency grid
   Grid form_w_grid(double w0, double wratio) const;
+
+  // Quadrature weights (linear measure) for integral along Im(w) axis;
+  // log-Simpson + [0,w0] panel + large-w tail
+  std::vector<double> w_quadrature_weights() const;
   // Constructs the Q*Pi*Q Matrix along w grid, for each k
   void form_qpiq();
 
@@ -164,8 +183,9 @@ private:
   // Forms full Hartree-Fock green's function. If Fc_hp is given,
   // includes hole-particle contribution (Fc is polarised core state).
   // Uses "Complex Dirac" method for complex energies.
-  ComplexGMatrix green_hf_v2(int kappa, std::complex<double> en,
-                             const DiracSpinor *Fc_hp = nullptr) const;
+  ComplexGMatrix
+  green_hf_complex_dirac(int kappa, std::complex<double> en,
+                         const DiracSpinor *Fc_hp = nullptr) const;
 
   // Given Gr(wr), and wi (wr is real), returns Gr(wr + i*wi)
   ComplexGMatrix green_to_complex(const ComplexGMatrix &Gr,

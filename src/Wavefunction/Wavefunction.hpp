@@ -311,7 +311,7 @@ public:
                  const std::string &fname = "", bool FeynmanQ = false,
                  bool ScreeningQ = false, bool hole_particleQ = false,
                  int lmax = 6, double omre = -0.2, double w0 = 0.01,
-                 double wratio = 1.5,
+                 double wratio = 1.5, bool complex_green = false,
                  const std::optional<IO::InputBlock> &ek = std::nullopt,
                  const std::string &ladder_file = "", bool derivative = false);
 

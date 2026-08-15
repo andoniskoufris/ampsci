@@ -333,12 +333,15 @@ CorrelationPotential::calculate_fk(double ev, const DiracSpinor &v) const {
   // flag for printing clamping warning
   int N_clamped = 0;
 
+  // Sigma_d for every k in one pass (Green's fns shared across k):
+  // much faster than separate per-k Sigma_direct calls
+  const auto Sd0_k = m_Fy0->Sigma_direct_each_k(v.kappa(), ev);
+  const auto SdX_k = m_FyX->Sigma_direct_each_k(v.kappa(), ev);
+
   std::vector<double> vfk;
-  for (int k = 0; k <= 8; ++k) {
-    const auto Sd0 = m_Fy0->Sigma_direct(v.kappa(), ev, k);
-    const auto SdX = m_FyX->Sigma_direct(v.kappa(), ev, k);
-    const auto de0 = v * (Sd0 * v);
-    const auto deX = v * (SdX * v);
+  for (auto k = 0ul; k <= 9 && k < Sd0_k.size(); ++k) {
+    const auto de0 = v * (Sd0_k[k] * v);
+    const auto deX = v * (SdX_k[k] * v);
     auto fk = de0 != 0.0 ? deX / de0 : 1.0;
 
     // clamp fk:
@@ -361,13 +364,14 @@ CorrelationPotential::calculate_fk(double ev, const DiracSpinor &v) const {
 std::vector<double>
 CorrelationPotential::calculate_etak(double ev, const DiracSpinor &v) const {
   assert(m_Fy0 && m_FyH);
+  // Sigma_d for every k in one pass (see calculate_fk)
+  const auto Sd0_k = m_FyX->Sigma_direct_each_k(v.kappa(), ev);
+  const auto SdH_k = m_Fy->Sigma_direct_each_k(v.kappa(), ev);
   std::vector<double> vetak;
-  for (int k = 0; k <= 6; ++k) {
+  for (auto k = 0ul; k <= 6 && k < Sd0_k.size(); ++k) {
     // Include screening when calc eta:
-    const auto Sd0 = m_FyX->Sigma_direct(v.kappa(), ev, k);
-    const auto SdX = m_Fy->Sigma_direct(v.kappa(), ev, k);
-    const auto de0 = v * (Sd0 * v);
-    const auto deH = v * (SdX * v);
+    const auto de0 = v * (Sd0_k[k] * v);
+    const auto deH = v * (SdH_k[k] * v);
     const auto etak = de0 != 0.0 ? deH / de0 : 1.0;
     vetak.push_back(etak);
     if (std::abs(etak - 1.0) < 0.01 || de0 == 0.0)

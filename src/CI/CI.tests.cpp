@@ -398,8 +398,8 @@ TEST_CASE("CI: dSdE from correlation potential", "[CI][integration]") {
   // written to file for the round-trip check below
   const auto sig_fname = "deleteme_" + qip::random_string(3) + ".s2.abf";
   wf.formSigma(1, 1.0e-4, 30.0, 2, false, false, false, 0, {}, {}, {}, true,
-               sig_fname, false, false, false, 6, -0.2, 0.01, 1.5, std::nullopt,
-               "", true);
+               sig_fname, false, false, false, 6, -0.2, 0.01, 1.5, false,
+               std::nullopt, "", true);
   REQUIRE(wf.Sigma() != nullptr);
   REQUIRE(wf.Sigma()->has_derivative());
 

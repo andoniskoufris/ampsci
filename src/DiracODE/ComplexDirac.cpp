@@ -29,8 +29,15 @@ void regularAtOrigin_C(DiracSpinor &FaR, DiracSpinor &FaI,
     FaR.en() = en.real();
     FaI.en() = en.imag();
   }
+  // Effective real energy with the same decay constant as the complex-energy
+  // solution: Re[sqrt(-2en)] = sqrt(2|e_eff|), e_eff = -(|en|+|Re(en)|)/2.
+  // (Reduces to en.real() when Im(en)=0; range shrinks as Im(en) grows.)
+  const auto e_eff = -0.5 * (std::abs(en) + std::abs(en.real()));
+  // 4x usual cALR: the Green's function built from these solutions is not
+  // exponentially small along the diagonal r1=r2 (only off it), so a more
+  // generous range is required; 4*cALR corresponds to r_c ~ 70/sqrt(2|E|)
   const auto pinf =
-    Internal::findPracticalInfinity(en.real(), v, gr.r(), Param::cALR);
+    Internal::findPracticalInfinity(e_eff, v, gr.r(), 4.0 * Param::cALR);
   Internal::CDiracDerivative Hd(gr, v, FaR.kappa(), en, alpha, H_mag);
 
   std::vector<std::complex<double>> f(gr.num_points()), g(gr.num_points());
@@ -62,8 +69,10 @@ void regularAtInfinity_C(DiracSpinor &FaR, DiracSpinor &FaI,
     FaR.en() = en.real();
     FaI.en() = en.imag();
   }
+  // Same effective-energy range cut as regularAtOrigin_C (see comments there)
+  const auto e_eff = -0.5 * (std::abs(en) + std::abs(en.real()));
   const auto pinf =
-    Internal::findPracticalInfinity(en.real(), v, gr.r(), Param::cALR);
+    Internal::findPracticalInfinity(e_eff, v, gr.r(), 4.0 * Param::cALR);
   Internal::CDiracDerivative Hd(gr, v, FaR.kappa(), en, alpha, H_mag);
 
   std::vector<std::complex<double>> f(gr.num_points()), g(gr.num_points());
@@ -157,9 +166,10 @@ void solve_Dirac_inwards_C(std::vector<std::complex<double>> &f,
 
   ode.S_scale = 0.0;
 
-  // XXX Perhaps this can be updated? Depends only weakly on energy I think
-  const auto Rasym =
-    AsymptoticSpinor{ka, Zeff, en.real(), alpha, Param::nx_eps};
+  // Complex-energy asymptotic start: decaying solution has complex momentum,
+  // lambda = sqrt(-2*en*(1 + en*alpha^2/2)); a real-energy start would mix in
+  // the growing solution and spoil the whole inward integration
+  const auto Rasym = AsymptoticSpinor{ka, Zeff, en, alpha, Param::nx_eps};
 
   // nb: can use AsymptoticWavefunction for more r values?
   for (std::size_t i0 = pinf - 1, i = 0; i < ode.K_steps(); ++i) {
