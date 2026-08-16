@@ -11,6 +11,7 @@
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/color.hpp"
 #include "qip/omp.hpp"
+#include <algorithm>
 #include <cassert>
 #include <memory>
 #include <utility>
@@ -34,13 +35,16 @@ Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
     m_min_core_n(n_min_core),
     m_include_G(include_G),
     m_omre(options.omre),
-    m_wgrid(form_w_grid(options.w0, options.w_ratio)),
+    m_w0(options.w0),
+    m_wratio(options.w_ratio),
     m_hole_particle(options.hole_particle == HoleParticle::include ||
                     options.hole_particle == HoleParticle::include_k0),
     m_include_higher_order_hp(options.hole_particle !=
                               HoleParticle::include_k0),
     m_screen_Coulomb(options.screening == Screening::include),
     m_Complex_green_method(options.complex_green) {
+
+  form_w_quadrature(m_w0, m_wratio);
 
   if (verbose) {
     std::cout << "\nFeynman diagrams:\n";
@@ -55,8 +59,9 @@ Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
                                                 "(only k=0)\n");
     }
     std::cout << "Re(w) = " << m_omre << "\n";
-    std::cout << "Im(w) : " << m_wgrid.gridParameters();
-    printf(", r=%.2f\n", m_wgrid.r(1) / m_wgrid.r(0));
+    fmt::print("Im(w) : 0 + log grid [{}, {:.1f}], ratio={}, N={} "
+               "(log-Simpson + tail)\n",
+               m_w0, m_wgrid_points.back(), m_wratio, m_wgrid_points.size());
     std::cout << "Complex Green method: "
               << (m_Complex_green_method ? "direct (solve at complex energy)" :
                                            "Dyson (solve at Re(e), extend)")
@@ -639,9 +644,20 @@ Feynman::polarisation_each_k(std::complex<double> omega,
 }
 
 //==============================================================================
-Grid Feynman::form_w_grid(double w0, double wratio) const {
+void Feynman::form_w_quadrature(double w0, double wratio) {
+  // Quadrature for int_0^infty F(u) du, u = Im(w), in linear measure:
+  //   int_0^infty F(u) du =~ sum_i W_i F(u_i).
+  // The integrand is finite at u = 0 (generically its maximum, and flat:
+  // F(u) - F(0) is O(u^2)), so u = 0 is included as an explicit point:
+  //  - [0, w0] panel: trapezoid, (w0/2)[F(0) + F(w0)]
+  //  - [w0, wmax]: composite Simpson's rule in t = ln(u) (uniform in t,
+  //    jacobian du/dt = u; endpoint coefficients 1/3, requires odd N_log)
+  //  - tail: F ~ 1/u^3 at large u [g ~ 1/u, qpiq ~ 1/u^2],
+  //    so int_wmax^infty =~ (wmax/2) F(wmax)
 
-  // Find max core energy: (for w_max)
+  // Maximum Im(w): the polarisation loop is O(1) for u up to ~|e_core|;
+  // beyond a few |e_core| the u^-3 tail correction handles the remainder
+  // (with the tail included, the result is insensitive to the exact wmax)
   auto wmax_core = 30.0;
   const auto &core = m_HF->core();
   for (const auto &Fc : core) {
@@ -650,55 +666,148 @@ Grid Feynman::form_w_grid(double w0, double wratio) const {
     if (std::abs(Fc.en()) > wmax_core)
       wmax_core = std::abs(Fc.en());
   }
-
-  // Target for maximum Im(w): based on core energy.
-  // XXX Check this - seems to matter (a tiny bit)
   const auto wmax_t = 2.0 * wratio * wmax_core;
 
-  // Solve wmax < w0 * ratio^{N-1} for N
+  // Solve wmax < w0 * ratio^{N-1} for N; odd number of log points
   std::size_t wsteps =
     std::size_t(std::log(wratio * wmax_t / w0) / std::log(wratio)) + 1;
-
-  // Composite Simpson's rule requires an even number of intervals
-  // (odd number of points); see w_quadrature_weights()
   if (wsteps % 2 == 0)
     ++wsteps;
 
-  // actual w0, to keep w_ratio exact
-  const auto wmax = w0 * std::pow(wratio, int(wsteps - 1));
+  const auto dt = std::log(wratio);
 
-  return Grid(w0, wmax, wsteps, GridType::logarithmic);
+  m_wgrid_points.clear();
+  m_wgrid_weights.clear();
+  m_wgrid_points.reserve(wsteps + 1);
+  m_wgrid_weights.reserve(wsteps + 1);
+
+  // u = 0 point: half of the [0, w0] trapezoid panel
+  m_wgrid_points.push_back(0.0);
+  m_wgrid_weights.push_back(0.5 * w0);
+
+  for (std::size_t i = 0; i < wsteps; ++i) {
+    const auto u = w0 * std::pow(wratio, double(i));
+    const auto simpson = (i == 0 || i == wsteps - 1) ? 1.0 / 3.0 :
+                         (i % 2 == 1)                ? 4.0 / 3.0 :
+                                                       2.0 / 3.0;
+    auto W = simpson * dt * u;
+    if (i == 0) {
+      // other half of the [0, w0] trapezoid panel
+      W += 0.5 * w0;
+    }
+    if (i == wsteps - 1) {
+      // u^-3 tail beyond wmax
+      W += 0.5 * u;
+    }
+    m_wgrid_points.push_back(u);
+    m_wgrid_weights.push_back(W);
+  }
 }
 
 //==============================================================================
-std::vector<double> Feynman::w_quadrature_weights() const {
-  // Weights W_i for the integral over u = Im(w), in linear measure:
-  //   int_0^infty F(u) du =~ sum_i W_i F(u_i)
-  // Composite Simpson's rule in t = ln(u): the grid is uniform in t, with
-  // Jacobian du/dt = drdu. Endpoint coefficients are 1/3 (requires odd
-  // number of points; enforced in form_w_grid). Plus corrections for the
-  // regions outside the grid:
-  //  - [0, u0] panel: for the direct integrand F(0) = 0 exactly (all
-  //    matrices real at u=0, and Re[i*real] = 0), and F is linear in u,
-  //    so int_0^u0 =~ (u0/2) F(u0)
-  //  - tail: F ~ 1/u^3 at large u [g ~ 1/u, qpiq ~ 1/u^2],
-  //    so int_umax^infty =~ (umax/2) F(umax)
-  const auto N = m_wgrid.num_points();
-  assert(N % 2 == 1 && "Simpson's rule requires odd number of points");
-  const auto du = m_wgrid.du();
-  std::vector<double> W;
-  W.reserve(N);
-  for (std::size_t i = 0; i < N; ++i) {
-    const auto simpson = (i == 0 || i == N - 1) ? 1.0 / 3.0 :
-                         (i % 2 == 1)           ? 4.0 / 3.0 :
-                                                  2.0 / 3.0;
-    W.push_back(simpson * du * m_wgrid.drdu(i));
+double best_omre(const std::vector<DiracSpinor> &core,
+                 const std::vector<DiracSpinor> &valence, bool print) {
+  // Real part of frequency Re{omega} = omre:
+  // should sit as far as possible from the poles.
+  // The poles:
+  //  - Green's function, g(e_v + omre): bound-state poles. The core
+  //    ones require omre <= e_core_max - e_v; the excited ones require
+  //    omre >= 0, except the few excited states BELOW e_v, which give
+  //    omre = e_m - e_v (small, near zero; only for non-lowest valence).
+  //  - Polarisation loop, gex(e_a +/- omre): true (excited) poles all lie
+  //    at omre <= -Delta. The numerical core subtraction in gex is
+  //    imperfect, leaving weak fictitious poles at the core-core
+  //    differences, omre = -|e_b - e_a|.
+  // So with Delta = e_lowest_excited - e_core_max, the window (-Delta, 0)
+  // is free of true poles for the lowest valence state; inside it are only
+  // the fictitious core-difference poles and the small e_m - e_v
+  // differences.
+  // Returns the midpoint of the largest pole-free gap. One omre serves all
+  // valence states (the window is set by the lowest one; the others only
+  // add near-zero poles, which the gap search avoids).
+
+  constexpr double omre_default = -0.3;
+  // Assumed lowest-valence energy, if no valence states are given
+  constexpr double e_valence_typical = -0.1;
+
+  if (core.empty())
+    return omre_default;
+
+  // Search window (-Delta, 0), Delta = lowest excited - highest core
+  const auto e_core_max = DiracSpinor::max_En(core);
+  const auto e_v_min =
+    valence.empty() ? e_valence_typical : DiracSpinor::min_En(valence);
+  const auto Delta = e_v_min - e_core_max;
+  if (Delta <= 0.0)
+    return omre_default;
+
+  // Keep only poles inside the window; sort; drop duplicates
+  const auto tidy = [=](std::vector<double> &list) {
+    list.erase(std::remove_if(list.begin(), list.end(),
+                              [=](double w) { return w < -Delta || w > 0.0; }),
+               list.end());
+    std::sort(list.begin(), list.end());
+    list.erase(
+      std::unique(list.begin(), list.end(),
+                  [](double a, double b) { return std::abs(a - b) < 1.0e-9; }),
+      list.end());
+  };
+
+  // True poles: the window ends, and the Green's-function (valence-line)
+  // poles omre = e_m - e_v (excited states below e_v)
+  std::vector<double> true_poles{-Delta, 0.0};
+  for (const auto &Fv : valence) {
+    for (const auto &Fm : valence) {
+      true_poles.push_back(Fm.en() - Fv.en());
+    }
   }
-  // [0, u0] panel:
-  W.front() += 0.5 * m_wgrid.r(0);
-  // Large-u tail:
-  W.back() += 0.5 * m_wgrid.r(N - 1);
-  return W;
+  tidy(true_poles);
+
+  // Fictitious poles (imperfect core subtraction in the loop gex) at
+  // (minus) core-core differences
+  std::vector<double> fict_poles;
+  for (const auto &Fa : core) {
+    for (const auto &Fb : core) {
+      // each unordered pair once; skip self-pairs
+      if (Fb >= Fa)
+        continue;
+      fict_poles.push_back(-std::abs(Fa.en() - Fb.en()));
+    }
+  }
+  tidy(fict_poles);
+
+  // Combined list for the gap search
+  auto poles = true_poles;
+  poles.insert(poles.end(), fict_poles.cbegin(), fict_poles.cend());
+  tidy(poles);
+
+  // Best omre: midpoint of the largest gap between consecutive poles
+  auto best = -0.5 * Delta;
+  auto best_gap = 0.0;
+  for (auto i = 1ul; i < poles.size(); ++i) {
+    const auto gap = poles[i] - poles[i - 1];
+    if (gap > best_gap) {
+      best_gap = gap;
+      best = 0.5 * (poles[i] + poles[i - 1]);
+    }
+  }
+
+  if (print) {
+    fmt::print("\nFeynman contour:\n");
+    fmt::print("Delta = {:.4f}\n", Delta);
+    fmt::print("True poles in window (ends; valence-valence):\n  ");
+    for (const auto w : true_poles) {
+      fmt::print("{:.4f} ", w);
+    }
+    fmt::print("\nFictitious poles in window (core-core differences):\n  ");
+    for (const auto w : fict_poles) {
+      fmt::print("{:.4f} ", w);
+    }
+    fmt::print("\nBest omre = {:.4f}\n", best);
+    fmt::print("Distance to nearest pole: {:.4f}\n", 0.5 * best_gap);
+  }
+
+  return best;
 }
 
 //==============================================================================
@@ -761,15 +870,17 @@ bool Feynman::readwrite_qpiq(IO::FRW::RoW rw, const std::string &fname) {
       !fequal(t_loglin, m_grid->loglin_b()) || !fequal(t_du, m_grid->du()))
     return false;
 
-  double t_wr0{m_wgrid.r0()}, t_wrmax{m_wgrid.rmax()},
-    t_wloglin{m_wgrid.loglin_b()}, t_wdu{m_wgrid.du()};
-  std::size_t twsize{m_wgrid.num_points()};
-  rw_binary(iofs, rw, t_wr0, t_wrmax, t_wloglin, t_wdu, twsize);
-
-  if (!fequal(t_wr0, m_wgrid.r0()) || !fequal(t_wrmax, m_wgrid.rmax()) ||
-      !fequal(t_wloglin, m_wgrid.loglin_b()) || !fequal(t_wdu, m_wgrid.du()) ||
-      twsize != m_wgrid.num_points())
+  // Check frequency quadrature (points define the stored qpiq)
+  std::size_t twsize{m_wgrid_points.size()};
+  rw_binary(iofs, rw, twsize);
+  if (twsize != m_wgrid_points.size())
     return false;
+  for (const auto &u : m_wgrid_points) {
+    double t_u{u};
+    rw_binary(iofs, rw, t_u);
+    if (!fequal(t_u, u))
+      return false;
+  }
 
   int t_max_k{m_max_k};
   double t_omre{m_omre};
@@ -780,7 +891,7 @@ bool Feynman::readwrite_qpiq(IO::FRW::RoW rw, const std::string &fname) {
   // Now, do actual read/write of data:
 
   const auto num_ks = std::size_t(m_max_k + 1);
-  const auto num_ws = m_wgrid.num_points();
+  const auto num_ws = m_wgrid_points.size();
   if (readQ) {
     m_qpiq_wk.resize(num_ws, num_ks,
                      ComplexRMatrix{m_i0, m_stride, m_subgrid_points, m_grid});
@@ -816,7 +927,7 @@ void Feynman::form_qpiq() {
   std::cout << " .. " << std::flush;
 
   const auto num_ks = std::size_t(m_max_k + 1);
-  const auto num_ws = m_wgrid.num_points();
+  const auto num_ws = m_wgrid_points.size();
 
   m_qpiq_wk.resize(num_ws, num_ks,
                    ComplexRMatrix{m_i0, m_stride, m_subgrid_points, m_grid});
@@ -826,7 +937,7 @@ void Feynman::form_qpiq() {
   std::vector<std::vector<ComplexRMatrix>> pi_wk(num_ws);
 #pragma omp parallel for schedule(dynamic)
   for (auto iw = 0ul; iw < num_ws; ++iw) {
-    const auto omega = std::complex<double>{m_omre, m_wgrid.r(iw)};
+    const auto omega = std::complex<double>{m_omre, m_wgrid_points[iw]};
     pi_wk[iw] = polarisation_each_k(omega, m_hole_particle);
   }
 
@@ -895,23 +1006,19 @@ std::vector<GMatrix> Feynman::Sigma_direct_each_k(int kv, double env) const {
   constexpr std::complex<double> I{0.0, 1.0};
   const auto num_kappas = m_max_ki + 1;
 
-  // Quadrature weights along Im(w) (in linear measure; includes [0,w0]
-  // panel and large-w tail corrections)
-  const auto wquad = w_quadrature_weights();
-
   std::vector<std::vector<GMatrix>> Sigma_ts(std::size_t(omp_get_max_threads()),
                                              Sigma_k);
 
 #pragma omp parallel for collapse(2)
-  for (auto iw = 0ul; iw < m_wgrid.num_points(); iw++) {
+  for (auto iw = 0ul; iw < m_wgrid_points.size(); iw++) {
     for (auto iB = 0ul; iB < num_kappas; ++iB) {
 
       auto &Sigma_t = Sigma_ts[std::size_t(omp_get_thread_num())];
 
-      const auto omega = std::complex{m_omre, m_wgrid(iw)};
+      const auto omega = std::complex{m_omre, m_wgrid_points[iw]};
 
       // I, since dw is on imag. grid
-      const auto dw = I * wquad[iw];
+      const auto dw = I * m_wgrid_weights[iw];
 
       const auto kB = Angular::kindex_to_kappa(iB);
 

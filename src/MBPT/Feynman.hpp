@@ -23,9 +23,9 @@ struct FeynmanOptions {
   HoleParticle hole_particle{HoleParticle::exclude};
   int max_l_internal{6};
   double omre{-0.3};
-  // nb: w0 = first grid point along Im(w). The [0, w0] panel is only
-  // approximated (assumes integrand linear in w): w0 must be small.
-  // (0.05 gives ~3% error in Sigma_d; 0.01 gives ~0.5%)
+  // nb: w0 = first non-zero point along Im(w) (u=0 is always included).
+  // The [0, w0] panel is a trapezoid: w0 must be small compared to the
+  // pole distances (~|omre|) so the integrand is flat across the panel.
   double w0{0.01};
   double w_ratio{1.5};
   // Method for Green's function at complex energy:
@@ -61,8 +61,14 @@ class Feynman {
   bool m_include_G;
   // real part of frequency for integration
   double m_omre;
-  // Stores imaginary frequency grid (setup post-construction)
-  Grid m_wgrid;
+  // Parameters of the log grid along Im(w): first point, ratio
+  double m_w0;
+  double m_wratio;
+  // Frequency quadrature along Im(w): points u_i (u_0 = 0 explicitly) and
+  // weights W_i in linear measure: int_0^inf F(u) du =~ sum_i W_i F(u_i).
+  // Weights include the [0, w0] end panel and the u^-3 large-u tail.
+  std::vector<double> m_wgrid_points{};
+  std::vector<double> m_wgrid_weights{};
 
   // Option: include hole-particle interaction into polarisation operator
   bool m_hole_particle;
@@ -108,9 +114,10 @@ public:
   std::size_t stride() const { return m_stride; }
 
   int n_min() const { return m_min_core_n; }
+  int max_k() const { return m_max_k; }
   double omre() const { return m_omre; }
-  double w0() const { return m_wgrid.r0(); }
-  double wratio() const { return m_wgrid.r(1) / m_wgrid.r(0); }
+  double w0() const { return m_w0; }
+  double wratio() const { return m_wratio; }
   int lmax() const { return Angular::kindex_to_l(m_max_ki); }
 
   //! Calculates Green's function for kappa, and complex energy
@@ -154,12 +161,11 @@ private:
   void form_pa();
   // Forms HF exchange potential matrix
   void form_vx();
-  // Sets up imaginary frequency grid
-  Grid form_w_grid(double w0, double wratio) const;
-
-  // Quadrature weights (linear measure) for integral along Im(w) axis;
-  // log-Simpson + [0,w0] panel + large-w tail
-  std::vector<double> w_quadrature_weights() const;
+  // Sets up the frequency quadrature (points + weights) along Im(w):
+  // u = 0 explicitly (the integrand is finite, generically maximal, there),
+  // composite Simpson's rule in ln(u) on the log grid [w0, wmax], trapezoid
+  // panel for [0, w0], and u^-3 tail correction beyond wmax
+  void form_w_quadrature(double w0, double wratio);
   // Constructs the Q*Pi*Q Matrix along w grid, for each k
   void form_qpiq();
 
@@ -226,5 +232,20 @@ public:
   Feynman(const Feynman &) = default;
   ~Feynman() = default;
 };
+
+//! Best real part of the frequency, omre, for the direct diagram: the value
+//! furthest from any pole of the u=0 integrand.
+//! @details With Delta = e_lowest_excited - e_core_max, the window
+//! (-Delta, 0) is free of true poles; inside it lie only the weak fictitious
+//! poles at core-core energy differences (imperfect core subtraction in the
+//! polarisation-loop Gex) and, for non-lowest valence states, the small
+//! valence-valence differences (valence-line G). Only the lowest few
+//! physical excited states enter, so the valence list suffices: no
+//! basis/spectrum needed (a typical valence energy is assumed if the list is
+//! empty). Returns the midpoint of the largest pole-free gap; one omre
+//! serves all valence states. Set print=true to show Delta, the in-window
+//! poles, and the chosen omre.
+double best_omre(const std::vector<DiracSpinor> &core,
+                 const std::vector<DiracSpinor> &valence, bool print = false);
 
 } // namespace MBPT

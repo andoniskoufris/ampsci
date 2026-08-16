@@ -268,15 +268,14 @@ TEST_CASE("MBPT: Feynman omre stability", "[MBPT][Feynman][omre]") {
   // (frequency quadrature + Green's function accuracy).
   // Compares the two complex-Green methods: Dyson vs direct-complex.
 
-  fmt::print("Sigma_direct(3s, Na) vs contour position, omre = {{-0.15, "
-             "-0.30, -0.60}}.\n"
+  fmt::print("Sigma_direct(3s, Na) vs contour position, omre.\n"
              "Exact Sigma is omre-independent: spread = numerical error.\n");
 
   Wavefunction wf({1000, 1.0e-4, 50.0, 0.33 * 100.0, "loglinear"},
                   {"Na", -1, "Fermi"}, 1.0);
   wf.solve_core("HartreeFock", "[Ne]", std::nullopt, 1.0e-6);
   wf.solve_valence("3s");
-  wf.formBasis(SplineBasis::Parameters("30spd", 40, 7, 1.0e-4, 1.0e-4, 40.0, "",
+  wf.formBasis(SplineBasis::Parameters("30spd", 35, 7, 1.0e-4, 1.0e-4, 40.0, "",
                                        SplineBasis::SplineType::Derevianko,
                                        false, false));
 
@@ -291,6 +290,8 @@ TEST_CASE("MBPT: Feynman omre stability", "[MBPT][Feynman][omre]") {
 
   const auto &v = wf.valence().front();
 
+  const auto wr_best = MBPT::best_omre(wf.core(), wf.valence(), true);
+
   // Goldstone (basis) value: the 2nd-order direct reference
   // (differs from Feynman by basis truncation + negative-energy states)
   const MBPT::Goldstone Gs(wf.basis(), wf.core(), i0, stride, size, n_min_core,
@@ -298,15 +299,19 @@ TEST_CASE("MBPT: Feynman omre stability", "[MBPT][Feynman][omre]") {
   const auto de_G = v * (Gs.Sigma_direct(v.kappa(), v.en()) * v);
   fmt::print("Goldstone reference: de = {:.6f} au\n", de_G);
 
-  const std::vector<double> omres{-0.15, -0.30, -0.60};
+  std::vector<double> omres{-0.15, -0.30, -0.60};
+  omres.push_back(wr_best);
 
-  // nb: w0 = 0.01 (not larger): the [0,w0] panel assumes the integrand is
-  // linear; its error depends on omre (pole distances), and so drives
-  // spurious omre-dependence if w0 is too large
+  // nb: w0 = 0.01 (not larger): the [0,w0] trapezoid panel requires the
+  // integrand to be flat across the panel (w0 small vs pole distances)
   const double w0{0.01};
   const double wratio{1.5};
 
   for (const bool complex_green : {false, true}) {
+    std::cout << (complex_green ?
+                    "\nDirectly solving Green's function at complex energy" :
+                    "\nUsing Dyson equation to shift Green's to complex energy")
+              << "\n";
     std::vector<double> des;
     for (const auto omre : omres) {
       const MBPT::Feynman Fy(wf.vHF(), i0, stride, size,
@@ -316,23 +321,26 @@ TEST_CASE("MBPT: Feynman omre stability", "[MBPT][Feynman][omre]") {
                              n_min_core, true, false);
       const auto Sd = Fy.Sigma_direct(v.kappa(), v.en());
       des.push_back(v * (Sd * v));
+      fmt::print("  omre = {:6.3f} : de = {:.6f}\n", omre, des.back());
     }
-    const auto [min, max] = std::minmax_element(des.begin(), des.end());
-    const auto spread = std::abs((*max - *min) / des.at(1));
-    fmt::print("{}: de = {{{:.6f}, {:.6f}, {:.6f}}}, spread = {:.1e}, "
-               "vs Goldstone: {:+.1f}%\n",
-               complex_green ? "direct" : "Dyson ", des.at(0), des.at(1),
-               des.at(2), spread, 100.0 * (des.at(1) / de_G - 1.0));
+
+    // Compare at the recommended omre (the last entry of omres)
+    const auto de_best = des.back();
+    const auto [min, max] = std::minmax_element(des.cbegin(), des.cend());
+    const auto spread = std::abs((*max - *min) / de_best);
+    fmt::print("  spread = {:.1e}, vs Goldstone: {:+.1f}%\n", spread,
+               100.0 * (de_best / de_G - 1.0));
+
     // nb: tolerances are empirical for THIS config (regression guards, not
     // universal statements: e.g., at the Cs production config the Dyson
     // method agrees with Goldstone to ~1%)
     if (complex_green) {
       // Direct-complex: omre-stable, and agrees with Goldstone limit here
       CHECK(spread < 0.01);
-      CHECK(std::abs(des.at(1) / de_G - 1.0) < 0.02);
+      CHECK(std::abs(de_best / de_G - 1.0) < 0.02);
     } else {
       CHECK(spread < 0.05);
-      CHECK(std::abs(des.at(1) / de_G - 1.0) < 0.10);
+      CHECK(std::abs(de_best / de_G - 1.0) < 0.10);
     }
   }
   std::cout << "\n";

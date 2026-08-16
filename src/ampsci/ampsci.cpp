@@ -3,6 +3,7 @@
 #include "IO/ChronoTimer.hpp"
 #include "IO/FRW_fileReadWrite.hpp" //for 'ExtraPotential'
 #include "IO/InputBlock.hpp"
+#include "MBPT/Feynman.hpp"
 #include "MBPT/LadderDriver.hpp"
 #include "Maths/Grid.hpp"
 #include "Maths/Interpolator.hpp" //for 'ExtraPotential'
@@ -361,7 +362,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
       "Feynman method [false]"},
      {"lmax", "Maximum l used for internal lines in Feynman method [6]"},
      {"real_omega", "Real part of frequency used in contour integral. By "
-                    "Default, ~1/3 of the core/valence energy gap"},
+                    "default, the value furthest from any pole of the "
+                    "integrand (see MBPT::best_omre)"},
      {"imag_omega",
       "Pair of comma-separated doubles: w0, wratio. Initial point, and "
       "ratio, for logarithimg Im(w) grid [0.01, 1.5]"},
@@ -414,8 +416,10 @@ Wavefunction ampsci(const IO::InputBlock &input) {
     input.get({"Correlations"}, "include_Breit", false);
   const auto n_max_Breit = input.get({"Correlations"}, "n_max_Breit", -1);
   // force sigma_omre to be always -ve
-  const auto sigma_omre = -std::abs(
-    input.get({"Correlations"}, "real_omega", -0.33 * wf.energy_gap()));
+  const auto omre_default =
+    MBPT::best_omre(wf.core(), wf.valence(), sigma_Feynman);
+  const auto sigma_omre =
+    -std::abs(input.get({"Correlations"}, "real_omega", omre_default));
 
   // Imaginary omegagrid params (only used for Feynman)
   double w0 = 0.01;
