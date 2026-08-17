@@ -204,7 +204,8 @@ private:
   ComplexGMatrix green_excited(int kappa, std::complex<double> en,
                                const DiracSpinor *Fc_hp = nullptr) const;
 
-  // Forces Green's fn to be orthog. to core
+  // Removes core-state pole content from Green's fn: subtracts each
+  // |a><a| <a|G|a>/<a|a>^2 with discrete (sub-grid) brakets
   ComplexGMatrix orthogonalise_wrt_core(const ComplexGMatrix &g_in,
                                         int kappa) const;
 
