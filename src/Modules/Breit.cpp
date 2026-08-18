@@ -155,7 +155,7 @@ void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // Table with HF energy, BDF, FBDF, and B2 values
   const auto print_doni_table = [&](const std::vector<DiracSpinor> &orbitals,
-                                    const std::vector<double> B2_shifts) {
+                                    const std::vector<double> B2_corrections) {
     fmt::print("      {:>12s} {:>12s} {:>12s} {:>12s}  [{}]\n", "E(HF)", "BDF",
                "FBDF", "B2", unit_label);
     for (int i = 0; i < orbitals.size(); i++) {
@@ -165,7 +165,7 @@ void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
       const auto eGRF = wf_GRF.getState(s.symbol())->en();
       fmt::print("{:4s}  {:12.5e} {:12.5e} {:12.5e} {:12.5e}\n",
                  s.shortSymbol(), e0 * un, (eGR - e0) * un, (eGRF - eGR) * un,
-                 B2_shifts[i] * un);
+                 B2_corrections[i] * un);
     }
   };
 
