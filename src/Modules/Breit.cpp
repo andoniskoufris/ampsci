@@ -69,6 +69,8 @@ void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
   const double lambda = input.get("lambda", 1.0);
   const bool second_order = input.get("second_order", false);
 
+  std::vector<double> B2_shifts;
+
   std::cout << "Using scale: " << lambda
             << " for f-dependent Breit (scales the frequencies)\n";
 
@@ -151,6 +153,22 @@ void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
     }
   };
 
+  // Table with HF energy, BDF, FBDF, and B2 values
+  const auto print_doni_table = [&](const std::vector<DiracSpinor> &orbitals,
+                                    const std::vector<double> B2_shifts) {
+    fmt::print("      {:>12s} {:>12s} {:>12s} {:>12s}  [{}]\n", "E(HF)", "BDF",
+               "FBDF", "B2", unit_label);
+    for (int i = 0; i < orbitals.size(); i++) {
+      const auto s = orbitals[i];
+      const auto e0 = s.en();
+      const auto eGR = wf_GR.getState(s.symbol())->en();
+      const auto eGRF = wf_GRF.getState(s.symbol())->en();
+      fmt::print("{:4s}  {:12.5e} {:12.5e} {:12.5e} {:12.5e}\n",
+                 s.shortSymbol(), e0 * un, (eGR - e0) * un, (eGRF - eGR) * un,
+                 B2_shifts[i] * un);
+    }
+  };
+
   fmt::print("\nCore energy corrections (de(B1,1), with relaxation):\n");
   print_relax_table(wf.core());
 
@@ -202,8 +220,11 @@ void Breit(const IO::InputBlock &input, const Wavefunction &wf) {
                  "{:10.3e}\n",
                  v.shortSymbol(), e0 * un, de2_C * un, de1 * un, de2_Z1 * un,
                  de2_Z2 * un, (de1 + de2) * un);
+      B2_shifts.push_back(de2_Z2);
     }
   }
+  std::cout << std::endl << std::endl;
+  print_doni_table(wf.valence(), B2_shifts);
 }
 
 } // namespace Module
