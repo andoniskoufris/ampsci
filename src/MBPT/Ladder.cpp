@@ -121,15 +121,20 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const bool CC_expr) {
 
   // nb: i energy enters only L1 and L3; m energy only L2 and L4
-  auto L123 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i);
+  double l1 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i);
   // + L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
   // L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
-  L123 += CC_expr ?
-            -1.0 * (L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) +
-                    L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i)) :
-            L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-              L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  auto L23 = CC_expr ?
+               -1.0 * (L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) +
+                       L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i)) :
+               L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                 L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  // auto L23 = 0.0;
+
+  // auto L23 = CC_expr ? 0.0 : -0.0;
+
+  auto L123 = l1 + L23;
 
   // Optionally include "4th" ladder diagram
   // nb: L4 not fully checked!
@@ -1168,8 +1173,8 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
     if (!is_excited[m.nk_index()] || !is_excited[n.nk_index()])
       return false;
     // Require i to be in {i}, and b to be in core
-    if (!is_i_orb[i.nk_index()])
-      return false;
+    // if (!is_i_orb[i.nk_index()])
+    // return false;
     // relax the restriction that b is in the core for testing the regular LCCSD form of L2 & L3
     // if (!is_core[b.nk_index()])
     //   return false;
@@ -2026,7 +2031,8 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                           const DiracSpinor &i, const DiracSpinor &b) {
     // return (in(update_set, i) && in(core_set, b)) ||
     //        (in(update_set, b) && in(core_set, i));
-    return (in(update_set, i)) || (in(update_set, b));
+    // return (in(update_set, i)) || (in(update_set, b));
+    return true;
   };
 
   lk->update(basis, Lk_function, a_damp, print, filter);
