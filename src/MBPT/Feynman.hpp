@@ -217,6 +217,13 @@ private:
   ComplexGMatrix orthogonalise_wrt_core(const ComplexGMatrix &g_in,
                                         int kappa) const;
 
+  // Replaces each sampled cell of a complex-energy Green matrix by its
+  // average over the dr*dr cell (near-diagonal cells are otherwise
+  // unresolved on the sub-grid); factors from the solutions' local decay
+  void cell_average(ComplexGMatrix *G, const DiracSpinor &x0,
+                    const DiracSpinor &Ix0, const DiracSpinor &xI,
+                    const DiracSpinor &IxI) const;
+
   // Given Dirac solutions regular at 0 (x0) and infinity (xI), forms "local"
   // Green's function, with all four spinor components
   GMatrix construct_green_g0(const DiracSpinor &x0, const DiracSpinor &xI,

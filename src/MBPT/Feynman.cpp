@@ -355,21 +355,105 @@ ComplexGMatrix Feynman::green_hf_complex_dirac(int kappa,
   // Get G0 (Green's function, without exchange):
   const auto g0 = construct_green_g0(x0, Ix0, xI, IxI, w);
 
-  // Don't include exchange if local!
-  const auto localQ = m_HF->is_localQ();
-  if (localQ) {
-    return g0;
+  auto G = g0;
+
+  // Include exchange (optionally, with hole-particle correction),
+  // unless local (no exchange)
+  if (!m_HF->is_localQ()) {
+    auto Vx = get_Vx_kappa(kappa);
+    if (Fc_hp != nullptr) {
+      // Include hole-particle interaction (w/ [1-P]V[1-P]):
+      Vx += calculate_Vhp(kappa, *Fc_hp);
+    }
+    // Include exchange using Dyson:
+    G = -1.0 * ((g0 * Vx.complex() - 1.0).invert_in_place() * g0);
   }
 
-  // Include exchange (optionally, with hole-particle correction)
-  auto Vx = get_Vx_kappa(kappa);
-  if (Fc_hp != nullptr) {
-    // Include hole-particle interaction (w/ [1-P]V[1-P]):
-    Vx += calculate_Vhp(kappa, *Fc_hp);
-  }
+  // Cell-average the continuum part of the sampled kernel. The core-pole
+  // part is smooth and separable (not a ridge), so it is excluded from the
+  // averaging and restored afterwards; averaging it distorts the delicate
+  // monopole (k=0) cancellation, where the same-kappa pole sits only
+  // |omre| from the contour.
+  const auto Gcore = green_core(kappa, en);
+  G -= Gcore;
+  cell_average(&G, x0, Ix0, xI, IxI);
+  G += Gcore;
+  return G;
+}
 
-  // Include exchange using Dyson:
-  return -1.0 * ((g0 * Vx.complex() - 1.0).invert_in_place() * g0);
+//==============================================================================
+void Feynman::cell_average(ComplexGMatrix *G, const DiracSpinor &x0,
+                           const DiracSpinor &Ix0, const DiracSpinor &xI,
+                           const DiracSpinor &IxI) const {
+  // Kernel:
+  //   G(r1,r2) = chi0(r<) * chiI(r>) / W
+  // Within one sub-grid cell (width h) each solution is locally exponential,
+  // with complex rate p (real part: growth/decay, imag part: oscillation):
+  //   chi0(r_i + t) ~ chi0(r_i) * exp(+p*t)
+  //   chiI(r_i + t) ~ chiI(r_i) * exp(-p*t)
+  // so G falls off like exp(-p*|r1-r2|) across the diagonal, with width 1/p
+  // often below the sub-grid spacing h. Downstream double integrations
+  // sample each dr*dr cell at a single point, which overestimates these
+  // unresolved near-diagonal cells.
+  //
+  // So, we replace the sampled value of each cell by the average of the local
+  // exponential over the cell. With x = p*h for the cell, the average of
+  // exp(p*t) over t in [-h/2, h/2], relative to its central value, is
+  //   s(x) = (1/h) * Int_{-h/2}^{+h/2} exp(p*t) dt = sinh(x/2) / (x/2)
+  // Off-diagonal cells (i,j) factorise into one average per solution:
+  //   G(i,j) *= s(x_i) * s(x_j)
+  // On the diagonal cell (i,i), r< and r> cross inside the cell, so average
+  // the ridge profile over the 2D cell instead:
+  //   f(x) = (1/h^2) * Int Int exp(-p*|t1 - t2|) dt1 dt2
+  //        = 2*(x - 1 + exp(-x)) / x^2
+  //   G(i,i) *= f(x_i)
+  //
+  // The rate is measured from the solutions' own ratio across one cell:
+  //   x = [ ln(chi0_{i+1}/chi0_i) - ln(chiI_{i+1}/chiI_i) ] / 2
+  // The complex log keeps sign and phase: Im(x) averages the local
+  // oscillation; Re(x) is clamped >= 0 so the model always decays away
+  // from the diagonal. All factors -> 1 as x -> 0, so cells that resolve
+  // the kernel are unchanged.
+  const auto I = std::complex{0.0, 1.0};
+  std::vector<std::complex<double>> sfac(m_subgrid_points, {1.0, 0.0});
+  std::vector<std::complex<double>> ffac(m_subgrid_points, {1.0, 0.0});
+  for (auto i = 0ul; i < m_subgrid_points; ++i) {
+    const auto si = G->index_to_fullgrid(i);
+    const bool last = (i + 1 == m_subgrid_points);
+    const auto sj = G->index_to_fullgrid(last ? i - 1 : i + 1);
+    const auto c0_i = x0.f(si) + I * Ix0.f(si);
+    const auto c0_j = x0.f(sj) + I * Ix0.f(sj);
+    const auto cI_i = xI.f(si) + I * IxI.f(si);
+    const auto cI_j = xI.f(sj) + I * IxI.f(sj);
+    // beyond the practical infinity the solutions are zero: leave cell as-is
+    if (std::abs(c0_i) == 0.0 || std::abs(c0_j) == 0.0 ||
+        std::abs(cI_i) == 0.0 || std::abs(cI_j) == 0.0) {
+      continue;
+    }
+    auto xx = 0.5 * (std::log(c0_j / c0_i) - std::log(cI_j / cI_i));
+    if (last) {
+      xx = -xx;
+    }
+    if (xx.real() < 0.0) {
+      xx = std::complex{-xx.real(), xx.imag()};
+    }
+    if (std::abs(xx) < 1.0e-3) {
+      sfac[i] = 1.0 + xx * xx / 24.0;
+      ffac[i] = 1.0 - xx / 3.0 + xx * xx / 12.0;
+    } else {
+      sfac[i] = std::sinh(0.5 * xx) / (0.5 * xx);
+      ffac[i] = 2.0 * (xx - 1.0 + std::exp(-xx)) / (xx * xx);
+    }
+  }
+  for (auto i = 0ul; i < m_subgrid_points; ++i) {
+    for (auto j = 0ul; j < m_subgrid_points; ++j) {
+      const auto cell = (i == j) ? ffac[i] : sfac[i] * sfac[j];
+      G->ff(i, j) *= cell;
+      G->fg(i, j) *= cell;
+      G->gf(i, j) *= cell;
+      G->gg(i, j) *= cell;
+    }
+  }
 }
 
 //==============================================================================
