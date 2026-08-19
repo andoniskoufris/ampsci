@@ -5,13 +5,14 @@
 
 namespace MBPT {
 
-//! Matrix element of 1-body Sigma (2nd-order correlation) operator;
-//! de_v = <v|Sigma|v>. qk (CoulombIntegral) may be YkTable or QkTable.
+//! Direct and exchange parts of the 1-body Sigma (2nd-order correlation)
+//! matrix element, returned separately as {direct, exchange};
+//! <v|Sigma|w> = direct + exchange. qk may be YkTable or QkTable.
 template <class CoulombIntegral> // CoulombIntegral may be YkTable or QkTable
-double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
-                const CoulombIntegral &qk, const std::vector<DiracSpinor> &core,
-                const std::vector<DiracSpinor> &excited, int max_l_internal,
-                std::optional<double> ev) {
+std::pair<double, double> Sigma_vw_direct_exchange(
+  const DiracSpinor &v, const DiracSpinor &w, const CoulombIntegral &qk,
+  const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
+  int max_l_internal, std::optional<double> ev) {
 
   static_assert(std::is_same_v<CoulombIntegral, Coulomb::QkTable> ||
                 std::is_same_v<CoulombIntegral, Coulomb::YkTable>);
@@ -24,14 +25,16 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
 
   // Calculates <Fv|Sigma|Fw> from scratch, at Fw energy [full grid + fg+gg]
   if (v.kappa() != w.kappa())
-    return 0.0;
+    return {0.0, 0.0};
 
   // Mainly for tests, but can include basis states only up to maximum l
   if (max_l_internal < 0)
     max_l_internal = 999;
 
-  double sum = 0.0;
-#pragma omp parallel for reduction(+ : sum) collapse(2) schedule(dynamic)
+  double sum_direct = 0.0;
+  double sum_exchange = 0.0;
+#pragma omp parallel for reduction(+ : sum_direct, sum_exchange) collapse(2)   \
+  schedule(dynamic)
   for (auto ia = 0ul; ia < core.size(); ia++) {
     for (auto in = 0ul; in < excited.size(); in++) {
 
@@ -55,7 +58,8 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
           const auto Qk_vamn = qk.Q(k, v, a, m, n);
           const auto Qk_wamn = (v == w) ? Qk_vamn : qk.Q(k, w, a, m, n);
           const auto Pk_wamn = qk.P(k, w, a, m, n);
-          sum += Qk_vamn * (Qk_wamn + Pk_wamn) * inv_de / (2.0 * k + 1.0);
+          sum_direct += Qk_vamn * Qk_wamn * inv_de / (2.0 * k + 1.0);
+          sum_exchange += Qk_vamn * Pk_wamn * inv_de / (2.0 * k + 1.0);
         }
       }
 
@@ -71,13 +75,28 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
           const auto Qk_vnba = qk.Q(k, v, n, b, a);
           const auto Qk_wnba = (v == w) ? Qk_vnba : qk.Q(k, w, n, b, a);
           const auto Pk_wnba = qk.P(k, w, n, b, a);
-          sum += Qk_vnba * (Qk_wnba + Pk_wnba) * inv_de / (2.0 * k + 1.0);
+          sum_direct += Qk_vnba * Qk_wnba * inv_de / (2.0 * k + 1.0);
+          sum_exchange += Qk_vnba * Pk_wnba * inv_de / (2.0 * k + 1.0);
         }
       }
     }
   }
 
-  return sum * (1.0 / v.twojp1());
+  const auto factor = 1.0 / v.twojp1();
+  return {sum_direct * factor, sum_exchange * factor};
+}
+
+//==============================================================================
+//! Matrix element of 1-body Sigma (2nd-order correlation) operator;
+//! de_v = <v|Sigma|v>. qk (CoulombIntegral) may be YkTable or QkTable.
+template <class CoulombIntegral> // CoulombIntegral may be YkTable or QkTable
+double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
+                const CoulombIntegral &qk, const std::vector<DiracSpinor> &core,
+                const std::vector<DiracSpinor> &excited, int max_l_internal,
+                std::optional<double> ev) {
+  const auto [direct, exchange] =
+    Sigma_vw_direct_exchange(v, w, qk, core, excited, max_l_internal, ev);
+  return direct + exchange;
 }
 
 //==============================================================================

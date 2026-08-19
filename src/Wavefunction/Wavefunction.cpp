@@ -518,7 +518,7 @@ void Wavefunction::formSigma(
   bool FeynmanQ, bool ScreeningQ, bool hole_particleQ, int lmax, double omre,
   double w0, double wratio, bool complex_green,
   const std::optional<IO::InputBlock> &ek, const std::string &ladder_file,
-  bool derivative) {
+  bool derivative, bool print_de) {
   if (core().empty() || !m_HF)
     return;
 
@@ -600,6 +600,10 @@ void Wavefunction::formSigma(
     // Better to make it explicit!
     m_Sigma->scale_Sigma(lambdas);
     m_Sigma->print_scaling();
+  }
+
+  if (print_de) {
+    m_Sigma->print_de(m_valence);
   }
 
   if (file_name != "")

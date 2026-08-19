@@ -4,6 +4,7 @@
 #include "Coulomb/YkTable.hpp"
 #include "IO/FRW_fileReadWrite.hpp"
 #include "MBPT/Ladder.hpp"
+#include "MBPT/Sigma2.hpp"
 #include "MBPT/SpinorMatrix.hpp"
 #include "Physics/AtomData.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
@@ -539,6 +540,38 @@ DiracSpinor CorrelationPotential::SigmaFv(const DiracSpinor &Fv) const {
   // lambda (from base Sigma) scales both the base and ladder parts
   const auto lambda = Sv ? Sv->lambda : 1.0;
   return lambda * SF;
+}
+
+//==============================================================================
+void CorrelationPotential::print_de(const std::vector<DiracSpinor> &valence) {
+
+  if (valence.empty() || m_basis.empty()) {
+    return;
+  }
+
+  if (!m_Gold) {
+    m_Gold =
+      Goldstone(m_basis, m_HF->core(), m_i0, m_stride, m_size, m_n_min_core,
+                m_includeG, m_includeBreit_b2 ? m_HF->vBreit() : nullptr);
+  }
+  const auto &[core, excited] = m_Gold->basis();
+
+  std::cout << "\nMBPT(2) (/cm):\n";
+  fmt::print("{:5s} {:>11s} {:>11s} {:>11s} {:>12s} {:>9s}\n", "state",
+             "direct", "exchange", "total", "<v|Sigma|v>", "eps");
+  for (const auto &v : valence) {
+    const auto [de_direct, de_exchange] =
+      MBPT::Sigma_vw_direct_exchange(v, v, m_Gold->Yeh(), core, excited);
+    const auto de_2 = de_direct + de_exchange;
+    const auto de_Sigma = v * SigmaFv(v);
+    const auto eps = de_Sigma / de_2 - 1.0;
+    fmt::print("{:5s} {:>11.2f} {:>11.2f} {:>11.2f} {:>12.2f} {:>9.1e}\n",
+               v.shortSymbol(), de_direct * PhysConst::Hartree_invcm,
+               de_exchange * PhysConst::Hartree_invcm,
+               de_2 * PhysConst::Hartree_invcm,
+               de_Sigma * PhysConst::Hartree_invcm, eps);
+  }
+  std::cout << std::flush;
 }
 
 //==============================================================================

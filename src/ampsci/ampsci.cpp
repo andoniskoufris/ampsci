@@ -383,7 +383,10 @@ Wavefunction ampsci(const IO::InputBlock &input) {
       "default filename: <Identity>.sl.abf. [false]"},
      {"derivative",
       "Also calculate the energy derivative of Sigma, dSigma/dE, by forward "
-      "difference (step 0.01 au) of the full Sigma [false]"}});
+      "difference (step 0.01 au) of the full Sigma [false]"},
+     {"print_de",
+      "For each valence state, print MBPT(2) energy correction (direct, "
+      "exchange, total), and <v|Sigma|v> using the stored Sigma [false]"}});
 
   const bool do_brueckner = input.getBlock({"Correlations"}) != std::nullopt;
   const auto n_min_core = input.get({"Correlations"}, "n_min_core", 1);
@@ -466,6 +469,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
   const auto sigma_derivative =
     input.get({"Correlations"}, "derivative", false);
 
+  const auto print_de = input.get({"Correlations"}, "print_de", false);
+
   // Ladder correlation potential file (produced by the Ladder{} block):
   // ladder = true; uses the default filename; or give the filename directly
   const auto t_ladder = input.get({"Correlations"}, "ladder", ""s);
@@ -481,7 +486,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
                  include_G, include_Breit, n_max_Breit, lambda_k, fk, etak,
                  sigma_readwrite, sigma_filename, sigma_Feynman,
                  sigma_Screening, hole_particle, sigma_lmax, sigma_omre, w0,
-                 wratio, complex_green, ek_Sig, ladder_file, sigma_derivative);
+                 wratio, complex_green, ek_Sig, ladder_file, sigma_derivative,
+                 print_de);
   }
 
   // Solve Brueckner orbitals (optionally, fit Sigma to exp energies)

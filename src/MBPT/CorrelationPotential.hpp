@@ -105,6 +105,10 @@ public:
   DiracSpinor SigmaFv(const DiracSpinor &Fv) const;
   DiracSpinor operator()(const DiracSpinor &Fv) const { return SigmaFv(Fv); }
 
+  //! For each valence state, prints MBPT(2) energy correction (direct,
+  //! exchange, total), and <v|Sigma|v> using the stored Sigma matrix.
+  void print_de(const std::vector<DiracSpinor> &valence);
+
   //! True if any dSigma/dE matrices are present (see form_derivative)
   bool has_derivative() const { return !m_dSigma.empty(); }
 

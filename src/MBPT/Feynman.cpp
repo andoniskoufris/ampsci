@@ -133,6 +133,7 @@ void Feynman::form_qk() {
 void Feynman::form_pa() {
   // Fill core |a><a|
   const auto &core = m_HF->core();
+  constexpr auto one = std::complex<double>{1.0, 0.0};
 
   m_pa.resize(core.size(), {m_i0, m_stride, m_subgrid_points, true, m_grid});
 
@@ -141,9 +142,8 @@ void Feynman::form_pa() {
                  {m_i0, m_stride, m_subgrid_points, true, m_grid});
 
   for (auto ia = 0ul; ia < core.size(); ia++) {
-    m_pa[ia] = green_single(core[ia], core[ia], std::complex<double>{1.0, 0.0});
-    m_Pcore[std::size_t(Angular::kappa_to_kindex(core[ia].kappa()))] +=
-      m_pa[ia];
+    m_pa[ia] = green_single(core[ia], core[ia], one);
+    m_Pcore[Angular::kappa_to_kindex(core[ia].kappa())] += m_pa[ia];
   }
 }
 

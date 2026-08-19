@@ -214,6 +214,19 @@ double Sigma_vw(const DiracSpinor &v, const DiracSpinor &w,
                 std::optional<double> ev = std::nullopt);
 
 /*!
+  @brief Direct and exchange parts of \f$ \langle v | \Sigma(E) | w \rangle \f$,
+  returned separately as {direct, exchange}.
+  @details
+  As Sigma_vw(), but with the direct (QQ) and exchange (QP) contributions
+  accumulated separately; Sigma_vw() returns their sum.
+*/
+template <class CoulombIntegral> // CoulombIntegral may be YkTable or QkTable
+std::pair<double, double> Sigma_vw_direct_exchange(
+  const DiracSpinor &v, const DiracSpinor &w, const CoulombIntegral &qk,
+  const std::vector<DiracSpinor> &core, const std::vector<DiracSpinor> &excited,
+  int max_l_internal = 99, std::optional<double> ev = std::nullopt);
+
+/*!
   @brief Energy derivative of the one-body correlation correction,
   \f$ d\langle v|\Sigma(E)|w\rangle/dE \f$, evaluated at E = @p ev.
   @details

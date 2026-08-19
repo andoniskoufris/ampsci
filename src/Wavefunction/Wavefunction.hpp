@@ -313,7 +313,8 @@ public:
                  int lmax = 6, double omre = -0.2, double w0 = 0.01,
                  double wratio = 1.5, bool complex_green = false,
                  const std::optional<IO::InputBlock> &ek = std::nullopt,
-                 const std::string &ladder_file = "", bool derivative = false);
+                 const std::string &ladder_file = "", bool derivative = false,
+                 bool print_de = false);
 
   // void correlations(const IO::InputBlock &input);
 
