@@ -83,6 +83,8 @@ class Feynman {
 
   // Core projection operators (one for each core state)
   std::vector<ComplexGMatrix> m_pa{};
+  // Summed core projection operator, P = sum_a |a><a| (one for each kappa)
+  std::vector<ComplexGMatrix> m_Pcore{};
   // Hartree-Fock Exchange matrix (one for each kappa)
   std::vector<GMatrix> m_Vx_kappa{};
 
@@ -154,6 +156,12 @@ public:
     return m_Vx_kappa.at(Angular::kappa_to_kindex(kappa));
   }
 
+  //! Returns (ref to) summed core projection operator, P = sum_a |a><a|,
+  //! for given kappa. No integration measure.
+  const ComplexGMatrix &get_Pcore(int kappa) const {
+    return m_Pcore.at(Angular::kappa_to_kindex(kappa));
+  }
+
 private:
   // forms Qk matrices, as well as dri, drj
   void form_qk();
@@ -204,8 +212,8 @@ private:
   ComplexGMatrix green_excited(int kappa, std::complex<double> en,
                                const DiracSpinor *Fc_hp = nullptr) const;
 
-  // Removes core-state pole content from Green's fn: subtracts each
-  // |a><a| <a|G|a>/<a|a>^2 with discrete (sub-grid) brakets
+  // Projects core states out of Green's fn from both sides:
+  // G -> (1-P) G (1-P), with P = sum_a |a><a| dr (discrete brakets)
   ComplexGMatrix orthogonalise_wrt_core(const ComplexGMatrix &g_in,
                                         int kappa) const;
 

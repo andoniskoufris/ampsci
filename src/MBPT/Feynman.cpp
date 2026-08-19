@@ -136,8 +136,14 @@ void Feynman::form_pa() {
 
   m_pa.resize(core.size(), {m_i0, m_stride, m_subgrid_points, true, m_grid});
 
+  // Summed core projector, P = sum_a |a><a|, for each kappa
+  m_Pcore.resize(m_max_ki + 1,
+                 {m_i0, m_stride, m_subgrid_points, true, m_grid});
+
   for (auto ia = 0ul; ia < core.size(); ia++) {
     m_pa[ia] = green_single(core[ia], core[ia], std::complex<double>{1.0, 0.0});
+    m_Pcore[std::size_t(Angular::kappa_to_kindex(core[ia].kappa()))] +=
+      m_pa[ia];
   }
 }
 
@@ -417,37 +423,17 @@ ComplexGMatrix Feynman::green_excited(int kappa, std::complex<double> en,
 //==============================================================================
 ComplexGMatrix Feynman::orthogonalise_wrt_core(const ComplexGMatrix &g_in,
                                                int kappa) const {
-  // Remove core-state poles from G: for each core state a (same kappa),
-  // subtract |a><a| scaled by the discretely-evaluated <a|G|a> / <a|a>^2.
-  // Both brakets use the same sub-grid quadrature, so the subtraction removes
-  // exactly the a-content present in the sampled G. This is robust when the
-  // discrete brakets of a sampled kernel differ from the analytic pole
-  // residue (e.g. complex-energy ODE solutions on a coarse sub-grid), where a
-  // fixed one-sided projection |a><a|dr*G leaves a pole residual.
-  const auto &core = m_HF->core();
-  auto g_out = g_in;
-  for (auto ia = 0ul; ia < core.size(); ++ia) {
-    if (core[ia].kappa() != kappa) {
-      continue;
-    }
-    const auto &a = core[ia];
-    std::complex<double> gaa{0.0, 0.0};
-    double naa{0.0};
-    for (auto i = 0ul; i < g_in.size(); ++i) {
-      const auto si = g_in.index_to_fullgrid(i);
-      naa += (a.f(si) * a.f(si) + a.g(si) * a.g(si)) * g_in.dr(i);
-      for (auto j = 0ul; j < g_in.size(); ++j) {
-        const auto sj = g_in.index_to_fullgrid(j);
-        gaa += (a.f(si) * g_in.ff(i, j) * a.f(sj) +
-                a.f(si) * g_in.fg(i, j) * a.g(sj) +
-                a.g(si) * g_in.gf(i, j) * a.f(sj) +
-                a.g(si) * g_in.gg(i, j) * a.g(sj)) *
-               g_in.dr(i) * g_in.dr(j);
-      }
-    }
-    g_out -= (gaa / (naa * naa)) * m_pa[ia];
-  }
-  return g_out;
+  // Project the core states out of G from both sides:
+  //   G -> (1 - P) G (1 - P),  P = sum_a |a><a| dr  (sub-grid brakets).
+  // One-sided projection (1-P)G leaves the right-side pole residual
+  // G|a><a|, which survives discretisation and dominates the monopole
+  // (k=0) channel, where the sandwich Fa^dag G Fa picks it up linearly.
+  // The symmetric projection removes both sides, and remains valid for
+  // the hole-particle-dressed G: core states are still eigenstates under
+  // the [1-P]V[1-P] dressing, but the numerical G carries core-excited
+  // cross terms that one-sided subtraction leaves behind.
+  const auto &P = get_Pcore(kappa);
+  return (-1.0 * P.drj() + 1.0) * g_in * (-1.0 * P.dri() + 1.0);
 }
 
 //==============================================================================
@@ -481,16 +467,8 @@ GMatrix Feynman::calculate_Vhp(int kappa, const DiracSpinor &Fc) const {
 
   V0.drj_in_place();
 
-  GMatrix OneNegPc(m_i0, m_stride, m_subgrid_points, true, m_HF->grid_sptr());
-  const auto &core = m_HF->core();
-  for (std::size_t ia = 0; ia < core.size(); ++ia) {
-    const auto &a = core[ia];
-    if (a.kappa() != kappa)
-      continue;
-    OneNegPc.add(a, a, -1.0);
-  }
-  OneNegPc.drj_in_place();
-  OneNegPc += 1.0; // (1-P)
+  // (1-P), with P = sum_a |a><a| drj
+  const auto OneNegPc = -1.0 * get_Pcore(kappa).real().drj_in_place() + 1.0;
   return OneNegPc * V0 * OneNegPc;
 }
 
