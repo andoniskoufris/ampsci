@@ -31,7 +31,7 @@ struct FeynmanOptions {
   // Method for Green's function at complex energy:
   // false: solve at Re(en), extend to complex energy via Dyson (resolvent);
   // true: solve the Dirac equation directly at complex energy
-  bool complex_green{false};
+  bool complex_green{true};
   // int n_min_core{1};
 };
 
@@ -103,8 +103,7 @@ public:
   //! w_ratio is ratio used for logarithic omega grid (integration);
   //! scr_option and hp_option are screening and hole-particle interactions;
   //! max_l is maximum l to include for internal lines (Green's functions);
-  //! n_min_core is minimum n to include in polarisation loop **
-  //! ** Currently have issue: polarising deep n leads to failure?
+  //! n_min_core is minimum n to include in polarisation loop
   Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
           std::size_t size, const FeynmanOptions &options, int n_min_core,
           bool include_G, bool verbose = true, const std::string &ident = "");

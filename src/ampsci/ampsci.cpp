@@ -342,7 +342,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
      {"rmin", "minimum radius to calculate sigma for [1.0e-4]"},
      {"rmax", "maximum radius to calculate sigma for [30.0]"},
      {"stride", "Only calculate Sigma every <stride> points. Default such "
-                "that there are 150 points between (1e-4, 30)"},
+                "that there are 200 points between (1e-4, 30)"},
      {"ek{}", "Block: Explicit list of energies to solve for. e.g., "
               "ek{6s+=-0.127; 7s+=-0.552;}. Blank => HF energies. Takes "
               "precidence over each_valence. [blank]"},
@@ -370,7 +370,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
      {"complex_green",
       "Method for Green's function at complex energy in Feynman method. "
       "false: solve at real energy, extend via Dyson method; "
-      "true: solve Dirac equation directly at complex energy [false]"},
+      "true: solve Dirac equation directly at complex energy [true]"},
      {"include_G", "Inlcude lower g-part into Sigma [false]"},
      {"include_Breit", "Inlcude two-body Breit corrections into Sigma [false]"},
      {"n_max_Breit",
@@ -396,9 +396,9 @@ Wavefunction ampsci(const IO::InputBlock &input) {
   const auto sigma_rmax = input.get({"Correlations"}, "rmax", 30.0);
   const auto each_valence = input.get({"Correlations"}, "each_valence", false);
   const auto default_stride = [&]() {
-    // By default, choose stride such that there is 150 points over [1e-4,30]
+    // By default, choose stride such that there is 200 points over [1e-4,30]
     const auto stride =
-      int(wf.grid().getIndex(30.0) - wf.grid().getIndex(1.0e-4)) / 150;
+      int(wf.grid().getIndex(30.0) - wf.grid().getIndex(1.0e-4)) / 200;
     return (stride <= 2) ? 2 : stride;
   }();
   const auto sigma_stride =
@@ -412,8 +412,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
   const auto hole_particle =
     input.get({"Correlations"}, "hole_particle", all_order);
   const auto sigma_lmax = input.get({"Correlations"}, "lmax", 6);
-  const auto complex_green =
-    input.get({"Correlations"}, "complex_green", false);
+  const auto complex_green = input.get({"Correlations"}, "complex_green", true);
   const auto include_G = input.get({"Correlations"}, "include_G", false);
   const auto include_Breit =
     input.get({"Correlations"}, "include_Breit", false);

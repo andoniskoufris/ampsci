@@ -252,8 +252,19 @@ ComplexGMatrix Feynman::green(int kappa, std::complex<double> en,
   } else if (states == GreenStates::excited) {
     return green_excited(kappa, en);
   }
-  return m_Complex_green_method ? green_hf_complex_dirac(kappa, en) :
-                                  green_hf(kappa, en);
+  if (m_Complex_green_method) {
+    // Hybrid: solve directly at complex energy where the kernel ridge
+    // (width ~ 1/sqrt(2*Im(e))) is resolvable on the sub-grid; at larger
+    // Im(e) the Dyson (resolvent) construction is exactly consistent with
+    // the discrete radial sums, so use it there. Results are insensitive
+    // to the switch point over Im(e) ~ 1 - 30.
+    constexpr double u_switch = 10.0;
+    if (std::abs(en.imag()) > u_switch) {
+      return green_hf(kappa, en);
+    }
+    return green_hf_complex_dirac(kappa, en);
+  }
+  return green_hf(kappa, en);
 }
 
 //==============================================================================
@@ -875,14 +886,24 @@ double best_omre(const std::vector<DiracSpinor> &core,
     }
   }
 
+  bool print_all_true_poles = false;
   if (print) {
     fmt::print("\nFeynman contour:\n");
     fmt::print("Delta = {:.4f}\n", Delta);
-    fmt::print("True poles in window (ends; valence-valence):\n  ");
-    for (const auto w : true_poles) {
-      fmt::print("{:.4f} ", w);
+    if (print_all_true_poles) {
+      fmt::print("True poles in window (valence-valence):\n  ");
+      for (const auto w : true_poles) {
+        fmt::print("{:.4f} ", w);
+      }
+    } else {
+      if (true_poles.size() >= 2) {
+        // True poles includes one *at* Delta, rest between 0.0 and next
+        fmt::print("True poles in window (valence-valence):\n  ");
+        fmt::print("{} poles between {:.4f} and 0.0", true_poles.size() - 1,
+                   true_poles.at(1));
+      }
     }
-    fmt::print("\nFictitious poles in window (core-core differences):\n  ");
+    fmt::print("\nFictitious poles in window (core-core):\n  ");
     for (const auto w : fict_poles) {
       fmt::print("{:.4f} ", w);
     }
