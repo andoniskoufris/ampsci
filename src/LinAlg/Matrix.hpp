@@ -45,11 +45,10 @@ constexpr bool is_complex_v = is_complex<T>::value;
   - @ref LinAlg::Matrix_view<T> : non-owning view of a 2D subblock of a Matrix.
 
   ### Solvers:
-  - @ref LinAlg::solve_Axeqb() : solves `Ax = b` via LU decomposition (GSL).
+  - @ref LinAlg::solve_Axeqb() : solves `Ax = b`.
   - @ref LinAlg::symmhEigensystem() : generalised problem `Av = eBv` or `Av = ev`
-    Several overloads, and templayte for real/complex types
-    (LAPACK `dsygv`/`zhegv`/`dsyevr`/`dsyev`/`zheev`).
-  - @ref LinAlg::genEigensystem() : general non-symmetric real matrix (GSL).
+    Several overloads, and template for real/complex types.
+  - @ref LinAlg::genEigensystem() : general non-symmetric real matrix.
 */
 namespace LinAlg {
 
@@ -389,10 +388,9 @@ public:
   //============================================================================
 
   /*!
-    @brief Returns the determinant via LU decomposition (GSL).
+    @brief Returns the determinant.
     @details
-    Makes an internal copy of the matrix, performs LU decomposition, and
-    returns the determinant. The original matrix is not modified.
+    The original matrix is not modified.
 
     @return Determinant of the matrix.
     @note Only available for `T = double` or `T = std::complex<double>`.
@@ -401,10 +399,7 @@ public:
   [[nodiscard]] T determinant() const;
 
   /*!
-    @brief Inverts the matrix in place via LU decomposition (GSL).
-    @details
-    Performs LU decomposition on a copy, then overwrites `*this` with its
-    inverse using `gsl_linalg_LU_invert` (or the complex equivalent).
+    @brief Inverts the matrix in place.
 
     @return Reference to `*this` (the inverted matrix).
     @note Only available for `T = double` or `T = std::complex<double>`.

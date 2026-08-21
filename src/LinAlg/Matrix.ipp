@@ -1,5 +1,19 @@
 #pragma once
 
+// LAPACK LU routines, used for in-place matrix inversion.
+// Complex arguments are passed as opaque pointers (all arithmetic happens on
+// the Fortran side); the buffers are std::complex<double>, which matches
+// LAPACK's storage layout.
+extern "C" {
+using lapack_complex = long double;
+void dgetrf_(int *m, int *n, double *a, int *lda, int *ipiv, int *info);
+void dgetri_(int *n, double *a, int *lda, int *ipiv, double *work, int *lwork,
+             int *info);
+void zgetrf_(int *m, int *n, lapack_complex *a, int *lda, int *ipiv, int *info);
+void zgetri_(int *n, lapack_complex *a, int *lda, int *ipiv,
+             lapack_complex *work, int *lwork, int *info);
+}
+
 namespace LinAlg {
 
 //==============================================================================
@@ -31,8 +45,11 @@ T Matrix<T>::determinant() const {
 }
 
 //==============================================================================
-// Inverts the matrix, in place. Uses GSL; via LU decomposition. Only works
-// for double/complex<double>.
+// Inverts the matrix, in place. Uses LAPACK (getrf/getri); LU decomposition
+// with partial pivoting. Only works for double/complex<double>.
+// Row-major data is seen by LAPACK (column-major) as the transpose;
+// (A^T)^-1 = (A^-1)^T, so the result read back row-major is A^-1, and no
+// transposes are required.
 template <typename T>
 Matrix<T> &Matrix<T>::invert_in_place() {
   static_assert(
@@ -40,23 +57,35 @@ Matrix<T> &Matrix<T>::invert_in_place() {
     "invert only works for Matrix<double> or Matrix<complex<double>>");
 
   assert(rows() == cols() && "Inverse only defined for square matrix");
-  int sLU = 0;
-  // gsl_linalg_LU_decomp(m, permutn, &sLU);
-  // gsl_linalg_LU_invx(m, permutn);
-  // In-place inversion gsl_linalg_LU_invx added sometime after GSL v:2.1
-  // Getafix only has 2.1 installed, so can't use this for now
-  auto LU = *this; // copy! to be LU decomposed
-  auto LU_gsl = LU.as_gsl_view();
-  auto iverse_gsl = this->as_gsl_view();
-  gsl_permutation *permutn = gsl_permutation_alloc(m_rows);
+  int dim = int(m_rows);
+  int info = 0;
+  std::vector<int> ipiv(m_rows);
   if constexpr (std::is_same_v<T, double>) {
-    gsl_linalg_LU_decomp(&LU_gsl.matrix, permutn, &sLU);
-    gsl_linalg_LU_invert(&LU_gsl.matrix, permutn, &iverse_gsl.matrix);
+    dgetrf_(&dim, &dim, data(), &dim, ipiv.data(), &info);
+    assert(info == 0 && "LU factorisation failed (singular matrix?)");
+    // workspace query, then invert
+    int lwork = -1;
+    double wkopt = 0.0;
+    dgetri_(&dim, data(), &dim, ipiv.data(), &wkopt, &lwork, &info);
+    lwork = std::max(1, int(wkopt));
+    std::vector<double> work(static_cast<std::size_t>(lwork));
+    dgetri_(&dim, data(), &dim, ipiv.data(), work.data(), &lwork, &info);
+    assert(info == 0 && "LU inversion failed (singular matrix?)");
   } else if constexpr (std::is_same_v<T, std::complex<double>>) {
-    gsl_linalg_complex_LU_decomp(&LU_gsl.matrix, permutn, &sLU);
-    gsl_linalg_complex_LU_invert(&LU_gsl.matrix, permutn, &iverse_gsl.matrix);
+    auto *a_ptr = reinterpret_cast<lapack_complex *>(data());
+    zgetrf_(&dim, &dim, a_ptr, &dim, ipiv.data(), &info);
+    assert(info == 0 && "LU factorisation failed (singular matrix?)");
+    // workspace query, then invert
+    int lwork = -1;
+    std::complex<double> wkopt{0.0, 0.0};
+    zgetri_(&dim, a_ptr, &dim, ipiv.data(),
+            reinterpret_cast<lapack_complex *>(&wkopt), &lwork, &info);
+    lwork = std::max(1, int(wkopt.real()));
+    std::vector<std::complex<double>> work(static_cast<std::size_t>(lwork));
+    zgetri_(&dim, a_ptr, &dim, ipiv.data(),
+            reinterpret_cast<lapack_complex *>(work.data()), &lwork, &info);
+    assert(info == 0 && "LU inversion failed (singular matrix?)");
   }
-  gsl_permutation_free(permutn);
   return *this;
 }
 
