@@ -654,7 +654,7 @@ double StructureRad::dSigma_dE(const DiracSpinor &v, const DiracSpinor &i,
 
     const auto tup1 = (2 * u + 1);
 
-    const auto q = only_exchange ? 0.0 : Q(u, v, i, j, k);
+    const auto q = Q(u, v, i, j, k);
     if (Angular::zeroQ(q))
       continue;
 
@@ -662,7 +662,9 @@ double StructureRad::dSigma_dE(const DiracSpinor &v, const DiracSpinor &i,
     const auto ek = eta_hp(u); // to exchange as well?? XXX
 
     const auto p = P(u, v, i, j, k);
-    t += q * (ek * q + p) * ide2 / tup1;
+    // only does exchange if we specify (for the feynman method method)
+    t +=
+      only_exchange ? ek * q * q * ide2 / tup1 : q * (ek * q + p) * ide2 / tup1;
   }
   return t / tjvp1;
 }

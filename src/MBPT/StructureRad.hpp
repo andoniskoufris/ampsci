@@ -155,7 +155,7 @@ public:
 
   //! Normalisation factor calculated in Feynman method; defined: <w||h||v>_norm = <w||h||v>(f_v + f_w)
   double f_norm_Feyn(const DiracSpinor &v, const Feynman &Feyn) const {
-    return -0.5 * (norm_feyn_direct(v, Feyn) + n1(v, true) + n1(v, true));
+    return -0.5 * (norm_feyn_direct(v, Feyn) + n1(v, true) + n2(v, true));
   }
 
   //! Returns sum of SR+Norm diagrams, reduced ME: <w||T+B+C+N||v>.

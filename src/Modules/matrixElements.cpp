@@ -985,15 +985,13 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto sr = MBPT::StructureRad(wf.basis(), wf.FermiLevel());
 
   const size_t num_points = wf.grid().num_points();
-  const size_t num_points_sub = wf.grid().num_points() / 4;
+  const size_t num_points_sub = wf.grid().num_points() / 8;
   const size_t stride = num_points / num_points_sub;
 
-  IO::ChronoTimer timerfeyn("construct feynman object");
-  const MBPT::Feynman feyn(
-    wf.vHF(), 215, stride, 158,
-    {MBPT::Screening::exclude, MBPT::HoleParticle::exclude}, 1, true, false);
-
-  timerfeyn.stop();
+  // default i0 = 427, stride = 8, num_points = 155 (?)
+  const MBPT::Feynman feyn = MBPT::Feynman(
+    wf.vHF(), 427, 6, 155,
+    {MBPT::Screening::exclude, MBPT::HoleParticle::exclude}, 1, true, true);
 
   //----------------------------------------------------
   // First, diagonal:
@@ -1070,8 +1068,8 @@ void normalisation(const IO::InputBlock &input, const Wavefunction &wf) {
         const auto &Sw2 = *Sigma2.getSigma(w.kappa(), w.n());
         const auto dSv = lambda_v * v * ((Sv1 - Sv2) * v) / (2 * delta);
         const auto dSw = lambda_w * w * ((Sw1 - Sw2) * w) / (2 * delta);
-        const auto dSv_Feyn = -2.0 * sr.f_norm_Feyn(v, feyn);
-        const auto dSw_Feyn = -2.0 * sr.f_norm_Feyn(w, feyn);
+        const auto dSv_Feyn = lambda_v * sr.f_norm_Feyn(v, feyn);
+        const auto dSw_Feyn = lambda_w * sr.f_norm_Feyn(w, feyn);
 
         const auto h0 = factor * h->reducedME(v, w);
         const auto dV = rpaQ ? factor * rpa->dV(v, w) : 0.0;
