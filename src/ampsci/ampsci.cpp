@@ -444,7 +444,9 @@ Wavefunction ampsci(const IO::InputBlock &input) {
 
   // Filename for Sigma: true => default filename; false => don't read or
   // write to disk; otherwise, the given filename (prefix) is used
-  const auto t_fname = input.get({"Correlations"}, "filename", "true"s);
+  // "read" is to maintain back comparability (deprecated)
+  const auto t_read = input.get({"Correlations"}, "read", "true"s);
+  const auto t_fname = input.get({"Correlations"}, "filename", t_read);
   const auto sigma_readwrite = !qip::ci_compare(t_fname, "false");
   const auto sigma_filename =
     qip::ci_compare(t_fname, "true") || qip::ci_compare(t_fname, "false") ?

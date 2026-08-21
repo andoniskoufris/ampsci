@@ -129,6 +129,10 @@ public:
   //! energy (cf. green(), which uses the Dyson method unless complex_green set)
   ComplexGMatrix green_complex_dirac(int kappa, std::complex<double> en) const;
 
+  //! Green's function by the Dyson (resolvent) method: solve at Re(en), then
+  //! shift to complex energy (cf. green(), which mixes the two methods)
+  ComplexGMatrix green_dyson(int kappa, std::complex<double> en) const;
+
   // Uses explicit basis
   ComplexGMatrix green_basis(int kappa, std::complex<double> en,
                              const std::vector<DiracSpinor> &basis) const;

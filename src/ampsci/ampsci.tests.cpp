@@ -42,7 +42,7 @@ TEST_CASE("ampsci - basic unit test",
       stride = 10;
       n_min_core = 4;
       each_valence = false;
-      read = false;
+      filename = false;
     }
     Module::MatrixElements {
       operator = hfs;
@@ -148,7 +148,7 @@ TEST_CASE("ampsci - basic Feynman unit test",
       stride = 14;
       each_valence = false;
       imag_omega = 0.02, 2.0;
-      read = false;
+      filename = false;
     }
   )"};
 

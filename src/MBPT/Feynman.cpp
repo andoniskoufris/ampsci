@@ -274,6 +274,11 @@ ComplexGMatrix Feynman::green_complex_dirac(int kappa,
 }
 
 //==============================================================================
+ComplexGMatrix Feynman::green_dyson(int kappa, std::complex<double> en) const {
+  return green_hf(kappa, en);
+}
+
+//==============================================================================
 ComplexGMatrix Feynman::green_hf(int kappa, std::complex<double> en,
                                  const DiracSpinor *Fc_hp) const {
   // Solve DE (no exchange), regular at 0, infinity ("pinf")
@@ -1049,6 +1054,7 @@ void Feynman::form_qpiq() {
   }
 
   // Stage 2: q*pi*q products (+ screening): parallel over all (w, k)
+  // (this is near instant)
 #pragma omp parallel for collapse(2)
   for (auto iw = 0ul; iw < num_ws; ++iw) {
     for (auto k = 0ul; k < num_ks; ++k) {
