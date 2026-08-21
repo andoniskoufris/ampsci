@@ -1036,6 +1036,9 @@ void Feynman::form_qpiq() {
   m_qpiq_wk.resize(num_ws, num_ks,
                    ComplexRMatrix{m_i0, m_stride, m_subgrid_points, m_grid});
 
+  // BLAS must run single-threaded inside the omp regions below
+  const qip::SingleThreadBlas single_thread_blas{};
+
   // Stage 1: polarisation operator for each (w, k): parallel over w only
   // (Green's fns are computed once per w, and re-used across all k)
   std::vector<std::vector<ComplexRMatrix>> pi_wk(num_ws);
@@ -1109,6 +1112,9 @@ std::vector<GMatrix> Feynman::Sigma_direct_each_k(int kv, double env) const {
 
   constexpr std::complex<double> I{0.0, 1.0};
   const auto num_kappas = m_max_ki + 1;
+
+  // BLAS must run single-threaded inside the omp region below
+  const qip::SingleThreadBlas single_thread_blas{};
 
   std::vector<std::vector<GMatrix>> Sigma_ts(std::size_t(omp_get_max_threads()),
                                              Sigma_k);
