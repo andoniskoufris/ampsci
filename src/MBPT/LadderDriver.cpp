@@ -168,6 +168,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "max_it       = " << max_it << "\n";
   std::cout << "damp         = " << a_damp << "\n";
   std::cout << "eps_target   = " << eps_target << "\n";
+  std::cout << "CC_expr      = " << CC_expr << "\n";
 
   // in/out file names (default based on atom identity)
   const auto ident = wf.identity();
