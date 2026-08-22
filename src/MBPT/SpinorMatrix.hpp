@@ -163,20 +163,32 @@ public:
   }
 
   //============================================================================
-  //! Matrix adition +,-
+  //! Matrix adition +,-. A matrix without g parts is treated as having
+  //! zero g parts: adding one to a matrix with g parts leaves its g parts
+  //! unchanged; adding a matrix with g parts to one without creates them
   SpinorMatrix<T> &operator+=(const SpinorMatrix<T> &rhs) {
     m_ff += rhs.m_ff;
-    m_fg += rhs.m_fg;
-    m_gf += rhs.m_gf;
-    m_gg += rhs.m_gg;
+    if (rhs.m_incl_g) {
+      if (!m_incl_g) {
+        create_g();
+      }
+      m_fg += rhs.m_fg;
+      m_gf += rhs.m_gf;
+      m_gg += rhs.m_gg;
+    }
     return *this;
   }
-  //! Matrix adition +,-
+  //! Matrix adition +,- (see operator+= for matrices without g parts)
   SpinorMatrix<T> &operator-=(const SpinorMatrix<T> &rhs) {
     m_ff -= rhs.m_ff;
-    m_fg -= rhs.m_fg;
-    m_gf -= rhs.m_gf;
-    m_gg -= rhs.m_gg;
+    if (rhs.m_incl_g) {
+      if (!m_incl_g) {
+        create_g();
+      }
+      m_fg -= rhs.m_fg;
+      m_gf -= rhs.m_gf;
+      m_gg -= rhs.m_gg;
+    }
     return *this;
   }
   //! Scalar multiplication
