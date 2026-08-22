@@ -518,7 +518,7 @@ void Wavefunction::formSigma(
   bool FeynmanQ, bool ScreeningQ, bool hole_particleQ, int lmax, double omre,
   double w0, double wratio, bool complex_green,
   const std::optional<IO::InputBlock> &ek, const std::string &ladder_file,
-  bool derivative, bool print_de) {
+  bool derivative, bool print_de, bool fk_both_lines) {
   if (core().empty() || !m_HF)
     return;
 
@@ -537,6 +537,13 @@ void Wavefunction::formSigma(
     ext += "b1";
   if (include_Breit_b2 && m_HF->vBreit())
     ext += "2";
+  // Exchange: xg = Goldstone, followed by the number of Coulomb lines the fk
+  // screening is applied to (0, 1, 2). fk screen when calculated (Feynman +
+  // screening), or when given and not all 1
+  const bool fk_given =
+    std::any_of(fk.cbegin(), fk.cend(), [](double f) { return f != 1.0; });
+  const bool fk_calculated = FeynmanQ && ScreeningQ && fk.empty();
+  ext += (fk_given || fk_calculated) ? (fk_both_lines ? "xg2" : "xg1") : "xg0";
   ext += ".abf";
 
   // Default filename identity+ext; explicit filename used verbatim (full name)
@@ -558,7 +565,7 @@ void Wavefunction::formSigma(
     file_name, &*m_HF, m_basis, r0, rmax, std::size_t(stride), nmin_core,
     method, include_G, include_Breit_b2, n_max_breit,
     MBPT::FeynmanOptions{screening, hp, lmax, omre, w0, wratio, complex_green},
-    calculate_fk, fk, etak, ladder_file, derivative);
+    calculate_fk, fk, etak, ladder_file, derivative, fk_both_lines);
 
   std::cout << "\n";
 

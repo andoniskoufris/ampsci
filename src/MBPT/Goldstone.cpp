@@ -125,11 +125,15 @@ GMatrix Goldstone::Sigma_direct(int kappa_v, double en_v,
 //==============================================================================
 GMatrix Goldstone::Sigma_both(int kappa_v, double en_v,
                               const std::vector<double> &fks,
-                              const std::vector<double> &etaks,
-                              int n_max_core) const {
+                              const std::vector<double> &etaks, int n_max_core,
+                              bool fk_both_lines) const {
 
   // nb: More efficient (a bit) to calcul Dir+Exch together.
   // However, we usually don't, just to get better output
+
+  // Screening factors for the inner Coulomb line of the exchange term
+  const std::vector<double> no_fk{};
+  const auto &fls = fk_both_lines ? fks : no_fk;
 
   const auto &[t_holes, t_excited] = m_basis;
 
@@ -175,7 +179,7 @@ GMatrix Goldstone::Sigma_both(int kappa_v, double en_v,
           if (!Angular::Ck_kk_SR(k, kappa_v, m.kappa()))
             continue;
           const auto Qkv = m_Yeh.Qkv_bcd(k, kappa_v, a, m, n);
-          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, a, m, n);
+          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, a, m, n, fls);
           const auto dele = en_v + a.en() - m.en() - n.en();
           const auto factor = fk / (f_kkjj * dele);
           Sd_t.add(Qkv, etak * Qkv + Pkv, factor);
@@ -186,7 +190,7 @@ GMatrix Goldstone::Sigma_both(int kappa_v, double en_v,
           if (!Angular::Ck_kk_SR(k, kappa_v, b.kappa()))
             continue;
           const auto Qkv = m_Yeh.Qkv_bcd(k, kappa_v, n, b, a);
-          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, n, b, a);
+          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, n, b, a, fls);
           const auto dele = en_v + n.en() - b.en() - a.en();
           const auto factor = fk / (f_kkjj * dele);
           Sd_t.add(Qkv, etak * Qkv + Pkv, factor);
@@ -204,12 +208,17 @@ GMatrix Goldstone::Sigma_both(int kappa_v, double en_v,
 
 //==============================================================================
 GMatrix Goldstone::Sigma_exchange(int kappa_v, double en_v,
-                                  const std::vector<double> &fks) const {
+                                  const std::vector<double> &fks,
+                                  bool fk_both_lines) const {
 
   // Diagram (b) (exchange):
   // |Q^k_amn><P^k_amn| / de_amn / [k][j]
   // Diagram (d) (exchange):
   // |Q^k_nba><P^k_nba| / de_nba / [k][j]
+
+  // Screening factors for the inner Coulomb line (the l sum inside P^k)
+  const std::vector<double> no_fk{};
+  const auto &fls = fk_both_lines ? fks : no_fk;
 
   const auto &[t_holes, t_excited] = m_basis;
 
@@ -251,7 +260,7 @@ GMatrix Goldstone::Sigma_exchange(int kappa_v, double en_v,
           if (!Angular::Ck_kk_SR(k, kappa_v, m.kappa()))
             continue;
           const auto Qkv = m_Yeh.Qkv_bcd(k, kappa_v, a, m, n);
-          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, a, m, n);
+          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, a, m, n, fls);
           const auto dele = en_v + a.en() - m.en() - n.en();
           const auto factor = fk / (f_kkjj * dele);
           Sx_t.add(Qkv, Pkv, factor);
@@ -262,7 +271,7 @@ GMatrix Goldstone::Sigma_exchange(int kappa_v, double en_v,
           if (!Angular::Ck_kk_SR(k, kappa_v, b.kappa()))
             continue;
           const auto Qkv = m_Yeh.Qkv_bcd(k, kappa_v, n, b, a);
-          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, n, b, a);
+          const auto Pkv = m_Yeh.Pkv_bcd(k, kappa_v, n, b, a, fls);
           const auto dele = en_v + n.en() - b.en() - a.en();
           const auto factor = fk / (f_kkjj * dele);
           Sx_t.add(Qkv, Pkv, factor);

@@ -41,15 +41,19 @@ public:
                        const std::vector<double> &etak = {},
                        int n_max_core = 99) const;
 
-  // Calculate Exchange part of correlation potential
+  //! Calculate Exchange part of correlation potential.
+  //! @details fk are effective screening factors, applied to the multipole k
+  //! of the outer Coulomb line; with fk_both_lines, also to the multipole of
+  //! the inner line (inside P^k), i.e., f_k * f_l.
   GMatrix Sigma_exchange(int kappa_v, double en_v,
-                         const std::vector<double> &fk = {}) const;
+                         const std::vector<double> &fk = {},
+                         bool fk_both_lines = false) const;
 
   // Calculate both parts of correlation potential.
   GMatrix Sigma_both(int kappa_v, double en_v,
                      const std::vector<double> &fk = {},
-                     const std::vector<double> &etak = {},
-                     int n_max_core = 99) const;
+                     const std::vector<double> &etak = {}, int n_max_core = 99,
+                     bool fk_both_lines = false) const;
 
   // Calculates 2-body Breit correction to correlation potential. Must have Breit
   GMatrix dSigma_Breit2(int kappa_v, double en_v,

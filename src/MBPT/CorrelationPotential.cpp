@@ -25,7 +25,7 @@ CorrelationPotential::CorrelationPotential(
   bool include_Breit_b2, int n_max_breit, const FeynmanOptions &Foptions,
   bool calculate_fk, const std::vector<double> &fk,
   const std::vector<double> &etak, const std::string &ladder_file,
-  bool form_derivative)
+  bool form_derivative, bool fk_both_lines)
   : m_HF(vHF),
     m_basis(basis),
     m_r0(r0),
@@ -42,6 +42,7 @@ CorrelationPotential::CorrelationPotential(
     m_calculate_fk(calculate_fk),
     m_fk(fk),
     m_etak(etak),
+    m_fk_both_lines(fk_both_lines),
     m_fname(fname),
     m_ladder_file(ladder_file),
     m_form_derivative(form_derivative) {
@@ -93,6 +94,9 @@ CorrelationPotential::CorrelationPotential(
           std::cout << "}\n";
         }
       }
+      if (m_fk_both_lines) {
+        std::cout << "fk applied to both Coulomb lines in exchange\n";
+      }
     }
 
     if (m_method == SigmaMethod::Goldstone) {
@@ -103,6 +107,9 @@ CorrelationPotential::CorrelationPotential(
           printf("%.3f, ", tfk);
         }
         std::cout << "}\n";
+        if (m_fk_both_lines) {
+          std::cout << "fk applied to both Coulomb lines in exchange\n";
+        }
       }
       if (!m_etak.empty()) {
         std::cout << "Approx hole-particle: etak = {";
@@ -291,7 +298,7 @@ GMatrix CorrelationPotential::formSigma_F(int kappa, double ev,
     std::cout << std::flush;
   }
 
-  const auto Sx = m_Gold->Sigma_exchange(kappa, ev, vfk);
+  const auto Sx = m_Gold->Sigma_exchange(kappa, ev, vfk, m_fk_both_lines);
 
   if (Fv && print) {
     const auto deX = (*Fv) * (Sx * *Fv);
@@ -397,7 +404,7 @@ GMatrix CorrelationPotential::formSigma_G(int kappa, double ev,
 
   auto Sd = exchange_seperately ?
               m_Gold->Sigma_direct(kappa, ev, m_fk, m_etak) :
-              m_Gold->Sigma_both(kappa, ev, m_fk, m_etak);
+              m_Gold->Sigma_both(kappa, ev, m_fk, m_etak, 99, m_fk_both_lines);
 
   double deD{0.0};
   if (Fv && print) {
@@ -407,7 +414,7 @@ GMatrix CorrelationPotential::formSigma_G(int kappa, double ev,
   }
 
   if (exchange_seperately) {
-    const auto Sx = m_Gold->Sigma_exchange(kappa, ev, m_fk);
+    const auto Sx = m_Gold->Sigma_exchange(kappa, ev, m_fk, m_fk_both_lines);
     if (Fv && print) {
       const auto deX = (*Fv) * (Sx * *Fv);
       fmt::print("+ {:.2f} = {:.2f}\n", deX * PhysConst::Hartree_invcm,

@@ -355,6 +355,11 @@ Wavefunction ampsci(const IO::InputBlock &input) {
             "scratch. []"},
      {"eta", "List of doubles. Hole-Particle factors. In Feynman method, "
              "used only for G part; Goldstone, used in direct also. []"},
+     {"fk_both_lines",
+      "Apply the screening factors fk to both Coulomb lines of the exchange "
+      "diagrams (f_k * f_l), rather than to the outer line only. By default, "
+      "one line only: the missing hole-particle exchange diagram "
+      "approximately cancels the second factor. [false]"},
      {"screening", "Include all-orders screening. Only applicable for "
                    "Feynman method [false]"},
      {"hole_particle",
@@ -465,6 +470,8 @@ Wavefunction ampsci(const IO::InputBlock &input) {
 
   const auto fk = input.get({"Correlations"}, "fk", std::vector<double>{});
   const auto etak = input.get({"Correlations"}, "eta", std::vector<double>{});
+  const auto fk_both_lines =
+    input.get({"Correlations"}, "fk_both_lines", false);
 
   // Also form dSigma/dE (for CI iterative_correction)
   const auto sigma_derivative =
@@ -488,7 +495,7 @@ Wavefunction ampsci(const IO::InputBlock &input) {
                  sigma_readwrite, sigma_filename, sigma_Feynman,
                  sigma_Screening, hole_particle, sigma_lmax, sigma_omre, w0,
                  wratio, complex_green, ek_Sig, ladder_file, sigma_derivative,
-                 print_de);
+                 print_de, fk_both_lines);
   }
 
   // Solve Brueckner orbitals (optionally, fit Sigma to exp energies)
