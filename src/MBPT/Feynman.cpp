@@ -23,7 +23,7 @@ namespace MBPT {
 Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
                  std::size_t size, const FeynmanOptions &options,
                  int n_min_core, bool include_G, bool verbose,
-                 const std::string &ident)
+                 const std::string &ident, bool form_qpq)
   : m_HF(vHF),
     m_grid(vHF->grid_sptr()),
     m_i0(i0),
@@ -74,23 +74,9 @@ Feynman::Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
   form_pa();
   form_vx();
 
-  // Construct polarisation operator
-  std::string prefix = ident.substr(0, ident.find('.'));
-
-  if (prefix == "" || prefix == "false") {
-    // Don't try to read
-    form_qpiq();
-  } else {
-    std::string qpqname = prefix + ".qpq" + (m_hole_particle ? "h" : "") +
-                          (m_screen_Coulomb ? "s" : "") +
-                          (m_HF->vBreit() == nullptr ? "" : "b") +
-                          std::to_string(m_min_core_n) + ".abf";
-    const auto readOK = readwrite_qpiq(IO::FRW::read, qpqname);
-    if (!readOK) {
-      form_qpiq();
-      const auto readOK2 = readwrite_qpiq(IO::FRW::write, qpqname);
-      assert(readOK2);
-    }
+  // Construct Q*Pi*Q (polarisation loop): the expensive step
+  if (form_qpq) {
+    form_qpiq(ident);
   }
 }
 
@@ -920,6 +906,29 @@ double best_omre(const std::vector<DiracSpinor> &core,
 }
 
 //==============================================================================
+std::string Feynman::qpiq_filename(const std::string &ident) const {
+  const auto prefix = ident.substr(0, ident.find('.'));
+  if (prefix == "" || prefix == "false")
+    return "";
+  return prefix + ".qpq" + (m_hole_particle ? "h" : "") +
+         (m_screen_Coulomb ? "s" : "") +
+         (m_HF->vBreit() == nullptr ? "" : "b") + std::to_string(m_min_core_n) +
+         ".abf";
+}
+
+//==============================================================================
+bool Feynman::read_qpiq(const std::string &ident) {
+  const auto fname = qpiq_filename(ident);
+  return fname.empty() ? false : readwrite_qpiq(IO::FRW::read, fname);
+}
+
+//==============================================================================
+bool Feynman::write_qpiq(const std::string &ident) {
+  const auto fname = qpiq_filename(ident);
+  return fname.empty() ? false : readwrite_qpiq(IO::FRW::write, fname);
+}
+
+//==============================================================================
 bool Feynman::readwrite_qpiq(IO::FRW::RoW rw, const std::string &fname) {
 
   const auto readQ = rw == IO::FRW::read;
@@ -1026,26 +1035,25 @@ bool Feynman::readwrite_qpiq(IO::FRW::RoW rw, const std::string &fname) {
 }
 
 //==============================================================================
-void Feynman::form_qpiq() {
-  std::cout << "Forming QPQ(w,k)";
-  if (m_hole_particle || m_screen_Coulomb) {
-    std::cout << " (w/ " << (m_screen_Coulomb ? "scr" : "")
-              << (m_hole_particle && m_screen_Coulomb ? " + " : "")
-              << (m_hole_particle ? "hp" : "") << ")";
-  }
-  std::cout << " .. " << std::flush;
+void Feynman::form_qpiq(const std::string &ident) {
+  if (read_qpiq(ident))
+    return;
+  form_qpiq(polarisation_wk());
+  write_qpiq(ident);
+}
 
-  const auto num_ks = std::size_t(m_max_k + 1);
+//==============================================================================
+std::vector<std::vector<ComplexRMatrix>> Feynman::polarisation_wk() const {
+  std::cout << "Forming Pi(w,k)" << (m_hole_particle ? " (w/ hp)" : "")
+            << " .. " << std::flush;
+
   const auto num_ws = m_wgrid_points.size();
 
-  m_qpiq_wk.resize(num_ws, num_ks,
-                   ComplexRMatrix{m_i0, m_stride, m_subgrid_points, m_grid});
-
-  // BLAS must run single-threaded inside the omp regions below
+  // BLAS must run single-threaded inside the omp region below
   const qip::SingleThreadBlas single_thread_blas{};
 
-  // Stage 1: polarisation operator for each (w, k): parallel over w only
-  // (Green's fns are computed once per w, and re-used across all k)
+  // Parallel over w only: Green's fns are computed once per w, and re-used
+  // across all k
   std::vector<std::vector<ComplexRMatrix>> pi_wk(num_ws);
 #pragma omp parallel for schedule(dynamic)
   for (auto iw = 0ul; iw < num_ws; ++iw) {
@@ -1053,8 +1061,28 @@ void Feynman::form_qpiq() {
     pi_wk[iw] = polarisation_each_k(omega, m_hole_particle);
   }
 
-  // Stage 2: q*pi*q products (+ screening): parallel over all (w, k)
-  // (this is near instant)
+  std::cout << " done\n" << std::flush;
+  return pi_wk;
+}
+
+//==============================================================================
+void Feynman::form_qpiq(const std::vector<std::vector<ComplexRMatrix>> &pi_wk) {
+
+  const auto num_ks = std::size_t(m_max_k + 1);
+  const auto num_ws = m_wgrid_points.size();
+
+  assert(pi_wk.size() == num_ws && "pi_wk must be on the same frequency grid");
+  assert(pi_wk.front().size() == num_ks && "pi_wk must have k = 0..max_k");
+  assert(pi_wk.front().front().size() == m_subgrid_points &&
+         "pi_wk must be on the same sub-grid");
+
+  m_qpiq_wk.resize(num_ws, num_ks,
+                   ComplexRMatrix{m_i0, m_stride, m_subgrid_points, m_grid});
+
+  // BLAS must run single-threaded inside the omp region below
+  const qip::SingleThreadBlas single_thread_blas{};
+
+  // q*pi*q products (+ screening): parallel over all (w, k); near instant
 #pragma omp parallel for collapse(2)
   for (auto iw = 0ul; iw < num_ws; ++iw) {
     for (auto k = 0ul; k < num_ks; ++k) {
@@ -1070,8 +1098,6 @@ void Feynman::form_qpiq() {
       }
     }
   }
-
-  std::cout << " done\n" << std::flush;
 }
 
 //==============================================================================
@@ -1111,6 +1137,8 @@ std::vector<GMatrix> Feynman::Sigma_direct_each_k(int kv, double env) const {
   // Green's functions are shared by all k, so calculating every k at once
   // costs the same as a single k (used for the effective screening factors
   // fk, which need the ratio of each k term separately).
+
+  assert(has_qpiq() && "Q*Pi*Q must be formed (form_qpiq) before Sigma_direct");
 
   const auto num_ks = std::size_t(m_max_k + 1);
   const GMatrix zero(m_i0, m_stride, m_subgrid_points, m_include_G, m_grid);

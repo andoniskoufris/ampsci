@@ -103,10 +103,15 @@ public:
   //! w_ratio is ratio used for logarithic omega grid (integration);
   //! scr_option and hp_option are screening and hole-particle interactions;
   //! max_l is maximum l to include for internal lines (Green's functions);
-  //! n_min_core is minimum n to include in polarisation loop
+  //! n_min_core is minimum n to include in polarisation loop;
+  //! ident is the file prefix for the Q*Pi*Q disk cache ("" or "false": no
+  //! cache); form_qpq=false skips forming Q*Pi*Q (the expensive step: only
+  //! needed for Sigma_direct; the Green's functions etc. do not need it),
+  //! which can be formed later with form_qpiq()
   Feynman(const HF::HartreeFock *vHF, std::size_t i0, std::size_t stride,
           std::size_t size, const FeynmanOptions &options, int n_min_core,
-          bool include_G, bool verbose = true, const std::string &ident = "");
+          bool include_G, bool verbose = true, const std::string &ident = "",
+          bool form_qpq = true);
 
   bool screening() const { return m_screen_Coulomb; }
   bool hole_particle() const { return m_hole_particle; }
@@ -141,6 +146,34 @@ public:
   //! summed). Green's functions are computed once and re-used across all k.
   std::vector<ComplexRMatrix> polarisation_each_k(std::complex<double> omega,
                                                   bool hole_particle) const;
+
+  //! Calculates and returns the polarisation operator pi^k(w) at every point
+  //! of the frequency grid, for each k (indexed [iw][k]). Nothing is stored:
+  //! pass the result to form_qpiq(pi_wk) to form Q*Pi*Q (for this object, or
+  //! for another that differs only in screening). This is the expensive stage
+  //! of forming Q*Pi*Q; depends on the hole-particle option, not on screening
+  std::vector<std::vector<ComplexRMatrix>> polarisation_wk() const;
+
+  //! Forms Q*Pi*Q along the frequency grid (required by Sigma_direct).
+  //! With ident, reads from the disk cache if a matching file exists, else
+  //! forms and writes it (see read_qpiq/write_qpiq)
+  void form_qpiq(const std::string &ident = "");
+
+  //! Forms Q*Pi*Q (with screening, if set) from a given polarisation operator
+  //! pi_wk (from polarisation_wk()), which may be shared between Feynman
+  //! objects that differ only in screening. Must be on the same sub-grid and
+  //! frequency grid
+  void form_qpiq(const std::vector<std::vector<ComplexRMatrix>> &pi_wk);
+
+  //! True once Q*Pi*Q has been formed
+  bool has_qpiq() const { return m_qpiq_wk.size() != 0; }
+
+  //! Reads Q*Pi*Q from the disk cache for ident (file prefix); false if no
+  //! matching file (or ident is "" or "false")
+  bool read_qpiq(const std::string &ident);
+
+  //! Writes Q*Pi*Q to the disk cache for ident; false if not written
+  bool write_qpiq(const std::string &ident);
 
   //! Calculate Direct part of correlation potential
   GMatrix Sigma_direct(int kappa_v, double en_v,
@@ -177,8 +210,9 @@ private:
   // composite Simpson's rule in ln(u) on the log grid [w0, wmax], trapezoid
   // panel for [0, w0], and u^-3 tail correction beyond wmax
   void form_w_quadrature(double w0, double wratio);
-  // Constructs the Q*Pi*Q Matrix along w grid, for each k
-  void form_qpiq();
+  // Disk-cache filename for Q*Pi*Q (encodes the options it depends on);
+  // "" if caching is disabled for this ident
+  std::string qpiq_filename(const std::string &ident) const;
 
   bool readwrite_qpiq(IO::FRW::RoW rw, const std::string &fname);
 

@@ -452,30 +452,35 @@ void CorrelationPotential::setup_Feynman() {
                    m_includeG, true, m_fname);
   }
 
-  if (m_calculate_fk && !m_Fy0) {
+  if (m_calculate_fk && !m_Fy0 && m_Fy->screening()) {
 
-    // Allow slightly larger stride for calculating effective screening
-    const auto stride_scale = 1.0;
-    const auto t_stride = std::size_t(stride_scale * double(m_stride));
-    const auto t_size = (m_HF->grid().getIndex(m_rmax) - m_i0) / t_stride + 1;
-
+    // Fy with no screening (+no hp)
     auto t_Foptions0{m_Foptions};
+    t_Foptions0.screening = Screening::exclude;
+    t_Foptions0.hole_particle = HoleParticle::exclude;
+    m_Fy0 = Feynman(m_HF, m_i0, m_stride, m_size, t_Foptions0, m_n_min_core,
+                    m_includeG, false, m_fname, false);
+
+    // Fy with screening (but no hp)
     auto t_FoptionsX{m_Foptions};
+    t_FoptionsX.screening = Screening::include;
+    t_FoptionsX.hole_particle = HoleParticle::exclude;
+    m_FyX = m_Fy->hole_particle() ?
+              Feynman(m_HF, m_i0, m_stride, m_size, t_FoptionsX, m_n_min_core,
+                      m_includeG, false, m_fname, false) :
+              m_Fy;
 
-    if (m_Fy->screening()) {
-      // Fy with no screening (+no hp)
-      t_Foptions0.screening = Screening::exclude;
-      t_Foptions0.hole_particle = HoleParticle::exclude;
-      m_Fy0 = Feynman(m_HF, m_i0, t_stride, t_size, t_Foptions0, m_n_min_core,
-                      m_includeG, false, m_fname);
-
-      // Fy with screening (but no hp)
-      t_FoptionsX.screening = Screening::include;
-      t_FoptionsX.hole_particle = HoleParticle::exclude;
-      m_FyX = m_Fy->hole_particle() ?
-                Feynman(m_HF, m_i0, t_stride, t_size, t_FoptionsX, m_n_min_core,
-                        m_includeG, false, m_fname) :
-                m_Fy;
+    // Fy0 and FyX differ only in screening, so the polarisation loop (the
+    // expensive step) is formed once and handed from one to the other
+    std::optional<std::vector<std::vector<ComplexRMatrix>>> pi_wk{};
+    for (auto *Fy : {&*m_Fy0, &*m_FyX}) {
+      if (Fy->has_qpiq() || Fy->read_qpiq(m_fname))
+        continue;
+      if (!pi_wk) {
+        pi_wk = Fy->polarisation_wk();
+      }
+      Fy->form_qpiq(*pi_wk);
+      Fy->write_qpiq(m_fname);
     }
   }
 }

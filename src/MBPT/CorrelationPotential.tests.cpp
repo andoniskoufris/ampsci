@@ -181,16 +181,17 @@ TEST_CASE("MBPT: Feynman complex Green",
   const auto omre = -0.33 * wf.energy_gap();
   const int lmax = 4;
   const double w0{1.0};
-  const double wratio{100.0}; // don't need QPQ
+  const double wratio{100.0};
   const int n_min_core = 2;
 
   const auto i0 = wf.grid().getIndex(r0);
   const auto size = (wf.grid().getIndex(rmax) - i0) / stride + 1;
 
+  // Green's functions only: no need to form Q*Pi*Q
   const MBPT::Feynman Fy(wf.vHF(), i0, stride, size,
                          {MBPT::Screening::exclude, MBPT::HoleParticle::exclude,
                           lmax, omre, w0, wratio},
-                         n_min_core, true, false);
+                         n_min_core, true, false, "", false);
 
   // Test at typical energies: en_v + omre + iw, and e_core +/- (omre + iw)
   const std::vector<std::complex<double>> energies{{-0.5, 0.1},  {-0.5, 2.0},
