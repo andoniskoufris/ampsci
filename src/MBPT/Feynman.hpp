@@ -57,7 +57,10 @@ class Feynman {
   int m_max_k;
   // Lowest n to polarise in polarisation operator
   int m_min_core_n;
-  // Include relativistic components of the correlation potential?
+  // Include the small (g) spinor components: in the internal lines (Green's
+  // functions, exchange and projection matrices, polarisation loop) and in
+  // Sigma itself. Changes Sigma by ~0.05%, but costs ~8x in the linear
+  // algebra. Always on with Breit (Vx then mixes f and g)
   bool m_include_G;
   // real part of frequency for integration
   double m_omre;
