@@ -904,11 +904,14 @@ GMatrix Feynman::direct_dSigma_dE(int kv, double env,
       // Silly, but ig gB includes G, then so will gB_QPQ
       const auto gB =
         m_include_G ? green(kB, env + omega) : green(kB, env + omega).drop_g();
+      const auto gB2 = m_include_G ? green(kB, env + omega + 0.01) :
+                                     green(kB, env + omega + 0.01).drop_g();
 
       // derivative of the Green's function:
       // dG/dE = -G(E) * G(E)
       //       = -\sum_j G(ri,rj;E) * G(rj,rk;E)
-      const auto dG_dE = -1.0 * ((gB.drj()) * gB);
+      // const auto dG_dE = -1.0 * ((gB.drj()) * gB);
+      const auto dG_dE = (1.0 / 0.01) * (gB2 - gB);
 
       for (auto k = 0ul; int(k) <= m_max_k; k++) {
 
@@ -937,7 +940,7 @@ GMatrix Feynman::direct_dSigma_dE(int kv, double env,
   // Extra 2 from symmetric + / -w
   dSigma_dE *= (m_wgrid.du() / M_PI);
 
-  return dSigma_dE;
+  return dSigma_dE.drj();
 }
 
 } // namespace MBPT
