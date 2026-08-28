@@ -13,8 +13,12 @@ namespace Module {
 DiracSpinor FourierTransformF(const DiracSpinor &F,
                               std::shared_ptr<const Grid> pGrid);
 
+double rho(const double &p, const double &E);
 double aTerm(const double &p, const double &E);
 double bTerm(const double &p, const double &E);
+
+double aTerm_rho(const double &rho, const double &m);
+double bTerm_rho(const double &rho);
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
@@ -59,7 +63,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto r0 = wf.grid().r(i0);
   const auto rmax = wf.grid().r(i0 + stride * size);
   fmt::print(
-    "Grid for Green's function: {:.1e} - {:.1f} with {} points [stide = {}]\n",
+    "Grid for Green's function: {:.1e} - {:.1f} with {} points [stride = {}]\n",
     r0, rmax, size, stride);
 
   // We don't need QPQ (at least for now)
@@ -113,18 +117,22 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "\n";
   }
 
-  //========================================== CALCULATING SELF-ENERGY CORRECTIONS
-
+  //===========================================================================
+  //===========================================================================
+  // Calculating self-energy corrections
   std::cout << std::endl << std::endl;
 
   std::cout << "Calculating electron self-energy" << std::endl << std::endl;
   std::cout << "State " << "  \u03A3(0) " << "   "
             << "  \u03A3(1) " << "    " << "  \u03A3(2+) " << std::endl;
 
-  //! initialise momentum-space grid
+  // initialise momentum-space grid
   const auto pGrid = std::make_shared<const Grid>(
-    GridParameters{1000, 1e-2, 1e4, 4.0, "logarithmic", 0.0});
+    GridParameters{1000, 1.0e-2, 1.0e4, 4.0, "logarithmic", 0.0});
   const auto p = pGrid->r();
+
+  // lambda for sign
+  auto sign = [](double x) { return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0); };
 
   for (const auto &v : wf.valence()) {
 
@@ -133,31 +141,42 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     double E = 0.0;
 
     for (int i = 0; i < pGrid->num_points(); i++) {
-      E +=
-        PhysConst::alpha * p[i] * PhysConst::alpha * p[i] *
-        (aTerm(p[i], ev) *
-           (FourierFv.f(i) * FourierFv.f(i) - FourierFv.g(i) * FourierFv.g(i)) +
-         bTerm(p[i], ev) *
-           ((PhysConst::alpha2 * ev + 1.0) * (FourierFv.f(i) * FourierFv.f(i) +
-                                              FourierFv.g(i) * FourierFv.g(i)) +
-            2 * PhysConst::alpha * p[i] * FourierFv.f(i) * FourierFv.g(i))) *
-        pGrid->drdu(i) * pGrid->du();
+      // E +=
+      //   PhysConst::alpha * p[i] * PhysConst::alpha * p[i] *
+      //   (aTerm(p[i], ev) *
+      //      (FourierFv.f(i) * FourierFv.f(i) - FourierFv.g(i) * FourierFv.g(i)) +
+      //    bTerm(p[i], ev) *
+      //      ((ev + 1.0 / PhysConst::alpha2) * (FourierFv.f(i) * FourierFv.f(i) +
+      //                                         FourierFv.g(i) * FourierFv.g(i)) -
+      //       2 * sign(v.kappa()) * PhysConst::alpha * p[i] * FourierFv.f(i) *
+      //         FourierFv.g(i))) *
+      //   pGrid->drdu(i) * pGrid->du();
+      const auto En = sqrt(ev * ev + 1.0 / PhysConst::alpha2);
+      const auto Rho = rho(pGrid->r(i), ev);
+
+      E += (p[i] * p[i] / PhysConst::alpha2) *
+           (aTerm_rho(Rho, 1.0) * (FourierFv.f(i) * FourierFv.f(i) -
+                                   FourierFv.g(i) * FourierFv.g(i)) +
+            bTerm_rho(Rho) * (En * (FourierFv.f(i) * FourierFv.f(i) +
+                                    FourierFv.g(i) * FourierFv.g(i)) -
+                              2 * sign(v.kappa()) * (p[i] / PhysConst::alpha) *
+                                FourierFv.f(i) * FourierFv.g(i))) *
+           pGrid->drdu(i) * pGrid->du();
     }
 
     E *= PhysConst::alpha / (32.0 * pow(M_PI, 4));
 
-    // convert to atomic units and then print
-    std::cout << v.shortSymbol() << "     " << UnitConv::Energy_invcm_to_au * E
-              << std::endl;
+    // convert to atomic units (I think it's in atomic units already?) and then print
+    std::cout << v.shortSymbol() << "     " << E << std::endl;
   }
 
   std::cout << std::endl;
 
-  const auto Fv1s = wf.valence()[0];
-  const auto FvTransform1s = FourierTransformF(Fv1s, pGrid);
+  // const auto Fv1s = wf.valence()[0];
+  // const auto FvTransform1s = FourierTransformF(Fv1s, pGrid);
 
-  const auto Fv5g = wf.valence()[22];
-  const auto FvTransform5g = FourierTransformF(Fv5g, pGrid);
+  // const auto Fv5g = wf.valence()[22];
+  // const auto FvTransform5g = FourierTransformF(Fv5g, pGrid);
 
   //!Fourier wave function tests
 
@@ -181,6 +200,22 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 }
 
 //!============================== FUNCTIONS
+
+double rho(const double &p, const double &E) {
+  // dimensionless combination
+  // rho = (m^2 - p^2) / m^2
+  //     = (m^2 - E^2 + |p|^2) / m^2,
+  // where E = e_v and |p| is the magnitude of the 3-momentum
+  // note: |p| is an integration variable, and is not on the mass-shell
+
+  // put E and p into same units and then add back rest mass energy
+  const auto alphan2 = 1.0 / (PhysConst::alpha2);
+  const auto Enu2 = E * E + alphan2;
+  const auto pnu = p / PhysConst::alpha;
+
+  // return PhysConst::alpha2 * (alphan2 - Enu2 + pnu * pnu);
+  return 1.0 - PhysConst::alpha2 * Enu2 + p * p;
+}
 
 DiracSpinor FourierTransformF(const DiracSpinor &F,
                               std::shared_ptr<const Grid> pGrid) {
@@ -234,6 +269,16 @@ double bTerm(const double &p, const double &E) {
   return ((-1.0 - Enu * Enu + pnu * pnu) / (Enu * Enu - pnu * pnu)) *
          (1.0 + ((1.0 - Enu * Enu + pnu * pnu) / (Enu * Enu - pnu * pnu)) *
                   log(1.0 - Enu * Enu + pnu * pnu));
+}
+
+double aTerm_rho(const double &rho, const double &m) {
+
+  return 2.0 * m * (1.0 + 2.0 * (rho / (1.0 - rho)) * log(rho));
+}
+
+double bTerm_rho(const double &rho) {
+
+  return ((rho - 2.0) / (1.0 - rho)) * (1.0 + (rho / (1.0 - rho)) * log(rho));
 }
 
 } // namespace Module
