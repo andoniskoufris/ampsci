@@ -20,6 +20,9 @@ double bTerm(const double &p, const double &E);
 double aTerm_rho(const double &rho, const double &m);
 double bTerm_rho(const double &rho);
 
+// lambda for sign
+auto sign = [](const double &x) { return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0); };
+
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   input.check(
@@ -128,11 +131,10 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // initialise momentum-space grid
   const auto pGrid = std::make_shared<const Grid>(
-    GridParameters{1000, 1.0e-2, 1.0e4, 4.0, "logarithmic", 0.0});
+    GridParameters{5000, 1.0e-2, 1.0e4, 4.0, "linear", 0.0});
   const auto p = pGrid->r();
 
-  // lambda for sign
-  auto sign = [](double x) { return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0); };
+  const auto me_c2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
 
   for (const auto &v : wf.valence()) {
 
@@ -151,12 +153,12 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
       //       2 * sign(v.kappa()) * PhysConst::alpha * p[i] * FourierFv.f(i) *
       //         FourierFv.g(i))) *
       //   pGrid->drdu(i) * pGrid->du();
-      const auto En = sqrt(ev * ev + 1.0 / PhysConst::alpha2);
+      const auto En = ev + (1.0 / PhysConst::alpha2);
       const auto Rho = rho(pGrid->r(i), ev);
 
       E += (p[i] * p[i] / PhysConst::alpha2) *
-           (aTerm_rho(Rho, 1.0) * (FourierFv.f(i) * FourierFv.f(i) -
-                                   FourierFv.g(i) * FourierFv.g(i)) +
+           (aTerm_rho(Rho, me_c2) * (FourierFv.f(i) * FourierFv.f(i) -
+                                     FourierFv.g(i) * FourierFv.g(i)) +
             bTerm_rho(Rho) * (En * (FourierFv.f(i) * FourierFv.f(i) +
                                     FourierFv.g(i) * FourierFv.g(i)) -
                               2 * sign(v.kappa()) * (p[i] / PhysConst::alpha) *
@@ -205,16 +207,27 @@ double rho(const double &p, const double &E) {
   // dimensionless combination
   // rho = (m^2 - p^2) / m^2
   //     = (m^2 - E^2 + |p|^2) / m^2,
-  // where E = e_v and |p| is the magnitude of the 3-momentum
+  // where E = e_v is the physical energy and |p| is the magnitude of the 3-momentum
   // note: |p| is an integration variable, and is not on the mass-shell
 
-  // put E and p into same units and then add back rest mass energy
-  const auto alphan2 = 1.0 / (PhysConst::alpha2);
-  const auto Enu2 = E * E + alphan2;
-  const auto pnu = p / PhysConst::alpha;
+  // to do things in atomic units, E is assumed already to be in atomic units
+  // n.b. m_e = 1 and c = 1/α in a.u.
+  //  - E and m_e * c^2 have the same units; this means that E^2 and m^2 must
+  //    be added together as e_v^2 + 1/α^2
+  //  - E and p * c have the same units (I am letting p be dimensionless); E^2
+  //    and p^2 must be added as E^2 + p^2/α^2
+  // thus, rho = (α^{-4} - E^2 + p^2 * α^{-2})/α^{-4}
+  //           = 1 - α^4 * E^2 + α^2 * p^2
+  // note: to compare to Shabaev should add mc^2 to e_v (since ampsci subtracts
+  //       rest mass from H), so E = e_v + m_e * c^2 = e_v + 1/α^2 (in a.u.)
 
-  // return PhysConst::alpha2 * (alphan2 - Enu2 + pnu * pnu);
-  return 1.0 - PhysConst::alpha2 * Enu2 + p * p;
+  const auto alphan2 = 1.0 / (PhysConst::alpha2);
+  const auto alpha4 = PhysConst::alpha2 * PhysConst::alpha2;
+  const auto Enu = E + alphan2;
+  const auto Enu2 = alpha4 * Enu * Enu;
+  const auto pnu = PhysConst::alpha * p;
+
+  return 1.0 - Enu2 + pnu * pnu;
 }
 
 DiracSpinor FourierTransformF(const DiracSpinor &F,
@@ -227,19 +240,17 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
   const auto p = pGrid->r();
 
   for (int i = 0; i < pGrid->num_points(); i++) {
+    // in atomic units, r is in a.u. in which case what r actually is numerically is r/aB
+    // in atomic units aB = 1, but we want p * r to be dimensionless. This is only the case if we actually use alpha * p
+    const auto pi = p[i] / PhysConst::alpha;
+    const auto s_kappa = sign(F.kappa());
+
     for (int j = F.min_pt(); j < F.max_pt(); j++) {
-      FTransform.f(i) += r[j] * F.f(j) *
-                         SphericalBessel::JL(F.l(), p[i] * r[j]) *
+      FTransform.f(i) += r[j] * F.f(j) * SphericalBessel::JL(F.l(), pi * r[j]) *
                          grid.drdu(j) * grid.du();
-      if (FTransform.kappa() < 0) {
-        FTransform.g(i) += r[j] * F.g(j) *
-                           SphericalBessel::JL(F.l() + 1, p[i] * r[j]) *
-                           grid.drdu(j) * grid.du();
-      } else {
-        FTransform.g(i) += r[j] * F.g(j) *
-                           SphericalBessel::JL(F.l() - 1, p[i] * r[j]) *
-                           grid.drdu(j) * grid.du();
-      }
+      FTransform.g(i) += r[j] * F.g(j) *
+                         SphericalBessel::JL(F.l() - s_kappa, pi * r[j]) *
+                         grid.drdu(j) * grid.du();
     }
     FTransform.f(i) *= 4 * M_PI;
     FTransform.g(i) *= 4 * M_PI;
