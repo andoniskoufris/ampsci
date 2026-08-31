@@ -125,11 +125,10 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
   // + L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
   // L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
-  auto L23 = CC_expr ?
-               -1.0 * (L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) +
-                       L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i)) :
-               L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                 L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  auto L23 = CC_expr ? -L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) -
+                         L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i) :
+                       L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                         L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
   // auto L23 = 0.0;
 
   // auto L23 = CC_expr ? 0.0 : -0.0;
@@ -1000,8 +999,8 @@ void fill_Sk_mnib(Coulomb::LkTable *sk, const Coulomb::QkTable &qk,
     if (!is_excited[m.nk_index()] || !is_excited[n.nk_index()])
       return false;
     // Require i to be in {i}, and b to be in core
-    if (!is_i_orb[i.nk_index()] || !is_core[b.nk_index()])
-      return false;
+    // if (!is_i_orb[i.nk_index()] || !is_core[b.nk_index()])
+    //   return false;
     const auto [k0, kI] = Coulomb::k_minmax_Q(m, n, i, b);
     return k >= k0 && k <= kI;
   };
@@ -1172,12 +1171,14 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
     // Require m and n to be excited
     if (!is_excited[m.nk_index()] || !is_excited[n.nk_index()])
       return false;
-    // Require i to be in {i}, and b to be in core
-    // if (!is_i_orb[i.nk_index()])
-    // return false;
-    // relax the restriction that b is in the core for testing the regular LCCSD form of L2 & L3
-    // if (!is_core[b.nk_index()])
-    //   return false;
+
+    // Require i to be in {core} _and_ b to be in {i_orbs}, or the other way around
+    // looks a little funny but need to return false so at the end we can
+    // check that k is within the correct range, so it's the negation of these two statements
+    if ((!is_i_orb[i.nk_index()] && !is_core[b.nk_index()]) ||
+        (!is_core[i.nk_index()] && !is_i_orb[b.nk_index()])) {
+      return false;
+    }
     const auto [k0, kI] = Coulomb::k_minmax_Q(m, n, i, b);
     return k >= k0 && k <= kI;
   };
