@@ -8,10 +8,11 @@
 #include "fmt/format.hpp"
 #include <complex>
 
-namespace Module {
-
 DiracSpinor FourierTransformF(const DiracSpinor &F,
                               std::shared_ptr<const Grid> pGrid);
+
+double p_norm(const DiracSpinor &Fa);
+double p_braket(const DiracSpinor &Fa, const DiracSpinor &Fb);
 
 double rho(const double &p, const double &E);
 double aTerm(const double &p, const double &E);
@@ -22,6 +23,8 @@ double bTerm_rho(const double &rho);
 
 // lambda for sign
 auto sign = [](const double &x) { return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0); };
+
+namespace Module {
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
@@ -57,7 +60,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   } else {
     assert(in_size > 1 && "Cannot have num_points <= 1");
     size = in_size;
-    stride = stride = std::max(1ul, (imax - i0) / (size - 1));
+    stride = std::max(1ul, (imax - i0) / (size - 1));
   }
   assert(size > 1 && stride > 0);
 
@@ -124,84 +127,56 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   //===========================================================================
   // Calculating self-energy corrections
   std::cout << std::endl << std::endl;
-
   std::cout << "Calculating electron self-energy" << std::endl << std::endl;
-  std::cout << "State " << "  \u03A3(0) " << "   "
-            << "  \u03A3(1) " << "    " << "  \u03A3(2+) " << std::endl;
+  fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
+             "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
 
   // initialise momentum-space grid
   const auto pGrid = std::make_shared<const Grid>(
-    GridParameters{5000, 1.0e-2, 1.0e4, 4.0, "linear", 0.0});
+    GridParameters{10000, 1.0e-2, 2.0e6, 4.0, "linear", 0.0});
   const auto p = pGrid->r();
 
-  const auto me_c2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
+  const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
 
   for (const auto &v : wf.valence()) {
 
     const auto FourierFv = FourierTransformF(v, pGrid);
+    const auto vp_norm = p_norm(FourierFv);
     const auto ev = v.en();
     double E = 0.0;
 
-    for (int i = 0; i < pGrid->num_points(); i++) {
-      // E +=
-      //   PhysConst::alpha * p[i] * PhysConst::alpha * p[i] *
-      //   (aTerm(p[i], ev) *
-      //      (FourierFv.f(i) * FourierFv.f(i) - FourierFv.g(i) * FourierFv.g(i)) +
-      //    bTerm(p[i], ev) *
-      //      ((ev + 1.0 / PhysConst::alpha2) * (FourierFv.f(i) * FourierFv.f(i) +
-      //                                         FourierFv.g(i) * FourierFv.g(i)) -
-      //       2 * sign(v.kappa()) * PhysConst::alpha * p[i] * FourierFv.f(i) *
-      //         FourierFv.g(i))) *
-      //   pGrid->drdu(i) * pGrid->du();
+    for (auto i = 0ul; i < pGrid->num_points(); i++) {
+      // to compare to Shabev, E -> E + m_e * c^2 = E + 1/α^2 (in a.u.)
       const auto En = ev + (1.0 / PhysConst::alpha2);
-      const auto Rho = rho(pGrid->r(i), ev);
+      const auto Rho = rho(p[i], ev);
+      const auto a_rho = aTerm_rho(Rho, mec2);
+      const auto b_rho = bTerm_rho(Rho);
 
       E += (p[i] * p[i] / PhysConst::alpha2) *
-           (aTerm_rho(Rho, me_c2) * (FourierFv.f(i) * FourierFv.f(i) -
-                                     FourierFv.g(i) * FourierFv.g(i)) +
-            bTerm_rho(Rho) * (En * (FourierFv.f(i) * FourierFv.f(i) +
-                                    FourierFv.g(i) * FourierFv.g(i)) -
-                              2 * sign(v.kappa()) * (p[i] / PhysConst::alpha) *
-                                FourierFv.f(i) * FourierFv.g(i))) *
+           (a_rho * (FourierFv.f(i) * FourierFv.f(i) -
+                     FourierFv.g(i) * FourierFv.g(i)) +
+            b_rho * (En * (FourierFv.f(i) * FourierFv.f(i) +
+                           FourierFv.g(i) * FourierFv.g(i)) -
+                     2 * sign(v.kappa()) * (p[i] / PhysConst::alpha) *
+                       FourierFv.f(i) * FourierFv.g(i))) *
            pGrid->drdu(i) * pGrid->du();
     }
 
     E *= PhysConst::alpha / (32.0 * pow(M_PI, 4));
 
     // convert to atomic units (I think it's in atomic units already?) and then print
-    std::cout << v.shortSymbol() << "     " << E << std::endl;
+    fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}\n",
+               v.shortSymbol(), vp_norm, v.en(), E, grid.r(v.min_pt()),
+               grid.r(v.max_pt()));
   }
 
   std::cout << std::endl;
-
-  // const auto Fv1s = wf.valence()[0];
-  // const auto FvTransform1s = FourierTransformF(Fv1s, pGrid);
-
-  // const auto Fv5g = wf.valence()[22];
-  // const auto FvTransform5g = FourierTransformF(Fv5g, pGrid);
-
-  //!Fourier wave function tests
-
-  // std::cout << "p         1s+ wf                         5g+ wf" << std::endl;
-
-  // for (int i = 0; i < int(pGrid->num_points() / 10); i++) {
-  //   std::cout << p[10 * i] << "  (" << FvTransform1s.f(10 * i) << ", "
-  //             << FvTransform1s.g(10 * i) << ")        ("
-  //             << FvTransform5g.f(10 * i) << ", " << FvTransform5g.g(10 * i)
-  //             << ")" << std::endl;
-  // }
-
-  // std::cout << PhysConst::alpha2 * Fv.en() * Fv.en() << std::endl;
-
-  // for (int i = 0; i < int(pGrid->num_points() / 10); i++) {
-  //   std::cout << pGrid->r(10 * i) << "   " << FvTransform.f(10 * i) << "   "
-  //             << FvTransform.g(10 * i) << "   "
-  //             << aTerm(pGrid->r(10 * i), Fv.en()) << "   "
-  //             << bTerm(pGrid->r(10 * i), Fv.en()) << std::endl;
-  // }
 }
 
-//!============================== FUNCTIONS
+} // namespace Module
+
+//=============================================================================
+//=============================================================================
 
 double rho(const double &p, const double &E) {
   // dimensionless combination
@@ -230,6 +205,8 @@ double rho(const double &p, const double &E) {
   return 1.0 - Enu2 + pnu * pnu;
 }
 
+//=============================================================================
+
 DiracSpinor FourierTransformF(const DiracSpinor &F,
                               std::shared_ptr<const Grid> pGrid) {
   // initialise Fourier transform to be on momentum space grid
@@ -239,17 +216,18 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
   const auto r = F.grid().r();
   const auto p = pGrid->r();
 
-  for (int i = 0; i < pGrid->num_points(); i++) {
+  for (auto i = 0ul; i < pGrid->num_points(); i++) {
     // in atomic units, r is in a.u. in which case what r actually is numerically is r/aB
     // in atomic units aB = 1, but we want p * r to be dimensionless. This is only the case if we actually use alpha * p
-    const auto pi = p[i] / PhysConst::alpha;
+    const auto p_i = p[i]; // / PhysConst::alpha;
     const auto s_kappa = sign(F.kappa());
 
-    for (int j = F.min_pt(); j < F.max_pt(); j++) {
-      FTransform.f(i) += r[j] * F.f(j) * SphericalBessel::JL(F.l(), pi * r[j]) *
-                         grid.drdu(j) * grid.du();
+    for (auto j = F.min_pt(); j < F.max_pt(); j++) {
+      FTransform.f(i) += r[j] * F.f(j) *
+                         SphericalBessel::JL(F.l(), p_i * r[j]) * grid.drdu(j) *
+                         grid.du();
       FTransform.g(i) += r[j] * F.g(j) *
-                         SphericalBessel::JL(F.l() - s_kappa, pi * r[j]) *
+                         SphericalBessel::JL(F.l() - int(s_kappa), p_i * r[j]) *
                          grid.drdu(j) * grid.du();
     }
     FTransform.f(i) *= 4 * M_PI;
@@ -258,6 +236,48 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
 
   return FTransform;
 }
+
+//=============================================================================
+
+double p_norm(const DiracSpinor &Fa) {
+
+  const auto pGrid = &Fa.grid();
+  const auto p = pGrid->r();
+
+  double out = 0.0;
+
+  for (auto i = Fa.min_pt(); i < Fa.max_pt(); i++) {
+    const auto p_i = p[i]; // / PhysConst::alpha;
+
+    out += p_i * p_i * (Fa.f(i) * Fa.f(i) + Fa.g(i) * Fa.g(i)) *
+           pGrid->drdu(i) * pGrid->du();
+  }
+  return out / (8.0 * M_PI_2 * M_PI);
+}
+
+//=============================================================================
+
+double p_braket(const DiracSpinor &Fa, const DiracSpinor &Fb) {
+  const auto pGrid = &Fa.grid();
+  const auto p = pGrid->r();
+
+  double out = 0.0;
+
+  const auto [i_min, i_max] = std::pair<std::size_t, std::size_t>{
+    std::max(Fa.min_pt(), Fb.min_pt()), std::min(Fa.max_pt(), Fb.max_pt())};
+
+  if (i_min >= i_max) {
+    return 0.0;
+  }
+
+  for (auto i = i_min; i < i_max; i++) {
+    out += p[i] * p[i] * (Fa.f(i) * Fa.f(i) + Fa.g(i) * Fa.g(i)) *
+           pGrid->drdu(i) * pGrid->du();
+  }
+  return out / (8.0 * M_PI_2 * M_PI);
+}
+
+//=============================================================================
 
 double aTerm(const double &p, const double &E) {
   // put E and p into same units and then add back rest mass energy
@@ -271,6 +291,8 @@ double aTerm(const double &p, const double &E) {
                   log(1.0 - Enu * Enu + pnu * pnu));
 }
 
+//=============================================================================
+
 double bTerm(const double &p, const double &E) {
   // put E and p into same units and then add back rest mass energy
   const auto alphan2 = 1.0 / (PhysConst::alpha2);
@@ -282,14 +304,16 @@ double bTerm(const double &p, const double &E) {
                   log(1.0 - Enu * Enu + pnu * pnu));
 }
 
+//=============================================================================
+
 double aTerm_rho(const double &rho, const double &m) {
 
   return 2.0 * m * (1.0 + 2.0 * (rho / (1.0 - rho)) * log(rho));
 }
 
+//=============================================================================
+
 double bTerm_rho(const double &rho) {
 
   return ((rho - 2.0) / (1.0 - rho)) * (1.0 + (rho / (1.0 - rho)) * log(rho));
 }
-
-} // namespace Module
