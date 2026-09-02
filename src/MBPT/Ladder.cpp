@@ -125,11 +125,20 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
   // + L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
   // L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
+  //! implementing coupled-cluster versions of L2 and L3 by using Ben's L2 and L3 functions
+  // const auto L23 = CC_expr ?
+  //                    -L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) -
+  //                      L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i) :
+  //                    L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+  //                      L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+
+  //! implementing coupled-cluster versions of L2 and L3 with new functions
   const auto L23 = CC_expr ?
-                     -L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) -
-                       L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i) :
+                     L2_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                       L3_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
                      L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
                        L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+
   // auto L23 = 0.0;
 
   // auto L23 = CC_expr ? 0.0 : -0.0;
@@ -492,6 +501,99 @@ double L2(int k, const DiracSpinor &m, const DiracSpinor &n,
           const auto QL_lmrcj = QLl_mrcj[std::size_t(l)];
 
           l2 += (s_ul * s_rc * sj_c * sj_r) * Q_ucnir * QL_lmrcj * inv_e_cjmr;
+        }
+      }
+    }
+  }
+  l2 *= s_mnijk * tkp1;
+  return l2;
+}
+
+//------------------------------------------------------------------------------
+double L2_CC(int k, const DiracSpinor &m, const DiracSpinor &n,
+             const DiracSpinor &i, const DiracSpinor &j,
+             const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
+             const std::vector<DiracSpinor> &excited,
+             const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
+             std::optional<double> e_i, std::optional<double> e_m) {
+
+  // m (and n) must be excited states, as should 'excited'
+  // Therefore, can test:
+  // Ensured 'excited' is actually the excited orbitals
+  // and that m and n are excited orbitals
+  // assert(std::find(excited.cbegin(), excited.cend(), m) != excited.cend());
+  // assert(std::find(excited.cbegin(), excited.cend(), n) != excited.cend());
+  // assert(std::find(core.cbegin(), core.cend(), m) == core.cend());
+
+  double l2 = 0.0;
+  const double tkp1 = 2.0 * k + 1.0;
+  const auto s_mnijk =
+    Angular::neg1pow_2(2 + 2 * k + m.twoj() + n.twoj() + i.twoj() + j.twoj());
+  const auto eim = e_i.value_or(i.en()) - e_m.value_or(m.en());
+
+  // Cached recoupling 6j symbols (see SixJCache). sj_c = {m,j,k;u,l,c}
+  // and sj_r = {i,n,k;u,l,r} depend on the intermediate orbital only through
+  // its 2j; indexed by (2j, u, l); refilled only when (2j pair, k, dims)
+  // change. c is a core, r an excited orbital, so max_2j spans both.
+  const int max_2j =
+    std::max(DiracSpinor::max_tj(core), DiracSpinor::max_tj(excited));
+  const int kmax =
+    (std::max({m.twoj(), n.twoj(), j.twoj(), i.twoj()}) + max_2j) / 2;
+  static thread_local SixJCache sjc_cache, sjr_cache;
+  sjc_cache.update(m.twoj(), j.twoj(), k, max_2j, kmax, SJ);
+  sjr_cache.update(i.twoj(), n.twoj(), k, max_2j, kmax, SJ);
+
+  // (n,i) change on every call so a cross-call cache for Q^u_{cnir} would never
+  // hit; look up inline (only for pairs surviving selection rules).
+  const auto core_size = core.size();
+  const auto excited_size = excited.size();
+
+  for (auto ir = 0ul; ir < excited_size; ++ir) {
+    const auto &r = excited[ir];
+    for (auto ic = 0ul; ic < core_size; ++ic) {
+      const auto &c = core[ic];
+
+      const auto [u0, uI] = Coulomb::k_minmax_Q(c, n, j, r);
+      const auto [l0, lI] = Coulomb::k_minmax_Q(r, m, i, c);
+      if (uI < u0 || lI < l0)
+        continue;
+
+      const auto s_rc = Angular::neg1pow_2(r.twoj() + c.twoj());
+      const auto inv_e_cimr = 1.0 / (c.en() + eim - r.en());
+      const auto Qkey_cnjr = qk.NormalOrder(c, n, j, r);
+      const auto Qkey_rmic = qk.NormalOrder(r, m, i, c);
+      const auto Lkey_rmic = Lk ? Lk->NormalOrder(r, m, i, c) : 0ul;
+
+      // Cache (Q+L)^l_mrcj: depends only on l, used inside the u loop (see L1).
+      assert(lI < int(sk_array_size));
+      std::array<double, sk_array_size> QLl_rmic{};
+      for (auto l = l0; l <= lI; l += 2) {
+        QLl_rmic[std::size_t(l)] =
+          qk.Q(l, Qkey_rmic) + (Lk ? Lk->Q(l, Lkey_rmic) : 0.0);
+      }
+
+      for (auto u = u0; u <= uI; u += 2) {
+        const auto Q_ucnjr = qk.Q(u, Qkey_cnjr);
+        // Zero when parity or triangle selection rules forbid this u.
+        if (Q_ucnjr == 0.0)
+          continue;
+
+        // From 6J triads (this makes 1.5x speedup):
+        if (Coulomb::triangle(j, u, c) == 0 || Coulomb::triangle(n, u, r) == 0)
+          continue;
+
+        for (auto l = l0; l <= lI; l += 2) {
+
+          // 6j triad:
+          if (Angular::triangle(k, l, u) == 0)
+            continue;
+
+          const auto s_ul = Angular::neg1pow(u + l);
+          const auto sj_c = sjc_cache.get(c.twoj(), u, l);
+          const auto sj_r = sjr_cache.get(r.twoj(), u, l);
+          const auto QL_lrmic = QLl_rmic[std::size_t(l)];
+
+          l2 += (s_ul * s_rc * sj_c * sj_r) * Q_ucnjr * QL_lrmic * inv_e_cimr;
         }
       }
     }
@@ -1176,10 +1278,15 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
     // Require i to be in {core} _and_ b to be in {i_orbs}, or the other way around
     // looks a little funny but need to return false so at the end we can
     // check that k is within the correct range, so it's the negation of these two statements
-    if ((!is_i_orb[i.nk_index()] && !is_core[b.nk_index()]) ||
-        (!is_core[i.nk_index()] && !is_i_orb[b.nk_index()])) {
+    // if ((!is_i_orb[i.nk_index()] && !is_core[b.nk_index()]) ||
+    //     (!is_core[i.nk_index()] && !is_i_orb[b.nk_index()])) {
+    //   return false;
+    // }
+
+    if (!is_i_orb[i.nk_index()] || !is_core[b.nk_index()]) {
       return false;
     }
+
     const auto [k0, kI] = Coulomb::k_minmax_Q(m, n, i, b);
     return k >= k0 && k <= kI;
   };
