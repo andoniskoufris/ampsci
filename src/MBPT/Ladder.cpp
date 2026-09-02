@@ -2141,10 +2141,10 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
   };
   const auto filter = [&](const DiracSpinor &, const DiracSpinor &,
                           const DiracSpinor &i, const DiracSpinor &b) {
-    // return (in(update_set, i) && in(core_set, b)) ||
-    //        (in(update_set, b) && in(core_set, i));
+    return (in(update_set, i) && in(core_set, b)) ||
+           (in(update_set, b) && in(core_set, i));
     // return (in(update_set, i)) || (in(update_set, b));
-    return true;
+    // return true;
   };
 
   lk->update(basis, Lk_function, a_damp, print, filter);
