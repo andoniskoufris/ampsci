@@ -121,19 +121,20 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const bool CC_expr) {
 
   // nb: i energy enters only L1 and L3; m energy only L2 and L4
-  double l1 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i);
+  const double l1 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i);
   // + L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
   // L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
-  auto L23 = CC_expr ? -L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) -
-                         L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i) :
-                       L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                         L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  const auto L23 = CC_expr ?
+                     -L2(k, m, n, j, i, qk, core, excited, SJ, Lk, {}, e_m) -
+                       L3(k, m, n, j, i, qk, core, excited, SJ, Lk, e_i) :
+                     L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                       L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
   // auto L23 = 0.0;
 
   // auto L23 = CC_expr ? 0.0 : -0.0;
 
-  auto L123 = l1 + L23;
+  const auto L123 = l1 + L23;
 
   // Optionally include "4th" ladder diagram
   // nb: L4 not fully checked!

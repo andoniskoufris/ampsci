@@ -26,7 +26,8 @@ void check_L_symmetry(const std::vector<DiracSpinor> &core,
                       const std::vector<DiracSpinor> &valence,
                       const Coulomb::QkTable &qk, bool include_L4,
                       const Angular::SixJTable &sj,
-                      const Coulomb::LkTable *const lk = nullptr);
+                      const Coulomb::LkTable *const lk = nullptr,
+                      const bool &CC_expr = false);
 } // namespace
 
 //==============================================================================
@@ -476,7 +477,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // Use this to check the symmetries
   if (check_symmetry)
-    check_L_symmetry(holes, excited, valence, qk, include_L4, sjt, &lk);
+    check_L_symmetry(holes, excited, valence, qk, include_L4, sjt, &lk,
+                     CC_expr);
 }
 
 //==============================================================================
@@ -486,7 +488,7 @@ void check_L_symmetry(const std::vector<DiracSpinor> &core,
                       const std::vector<DiracSpinor> &valence,
                       const Coulomb::QkTable &qk, bool include_L4,
                       const Angular::SixJTable &sj,
-                      const Coulomb::LkTable *const lk) {
+                      const Coulomb::LkTable *const lk, const bool &CC_expr) {
   std::cout << "\ncheck_L_symmetry\n";
   std::random_device rd;
   std::mt19937 gen(rd());
@@ -519,9 +521,11 @@ void check_L_symmetry(const std::vector<DiracSpinor> &core,
       ++count;
       auto Qkmnab = qk.Q(k, m, n, a, b);
       auto lkmnab =
-        MBPT::Lkmnij(k, m, n, a, b, qk, core, excited, include_L4, sj);
+        MBPT::Lkmnij(k, m, n, a, b, qk, core, excited, include_L4, sj,
+                     (const Coulomb::LkTable *)nullptr, {}, {}, CC_expr);
       auto lknmba =
-        MBPT::Lkmnij(k, n, m, b, a, qk, core, excited, include_L4, sj);
+        MBPT::Lkmnij(k, n, m, b, a, qk, core, excited, include_L4, sj,
+                     (const Coulomb::LkTable *)nullptr, {}, {}, CC_expr);
 
       auto lkmnab_tab = lk ? lk->Q(k, m, n, a, b) : 0.0;
       auto lknmba_tab = lk ? lk->Q(k, n, m, b, a) : 0.0;
