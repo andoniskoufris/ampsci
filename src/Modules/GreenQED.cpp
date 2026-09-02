@@ -140,8 +140,8 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   for (const auto &v : wf.valence()) {
 
-    const auto FourierFv = FourierTransformF(v, pGrid);
-    const auto vp_norm = p_norm(FourierFv);
+    const auto vtild = FourierTransformF(v, pGrid);
+    const auto vp_norm = p_norm(vtild);
     const auto ev = v.en();
     double E = 0.0;
 
@@ -153,12 +153,10 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
       const auto b_rho = bTerm_rho(Rho);
 
       E += (p[i] * p[i] / PhysConst::alpha2) *
-           (a_rho * (FourierFv.f(i) * FourierFv.f(i) -
-                     FourierFv.g(i) * FourierFv.g(i)) +
-            b_rho * (En * (FourierFv.f(i) * FourierFv.f(i) +
-                           FourierFv.g(i) * FourierFv.g(i)) -
+           (a_rho * (vtild.f(i) * vtild.f(i) - vtild.g(i) * vtild.g(i)) +
+            b_rho * (En * (vtild.f(i) * vtild.f(i) + vtild.g(i) * vtild.g(i)) -
                      2 * sign(v.kappa()) * (p[i] / PhysConst::alpha) *
-                       FourierFv.f(i) * FourierFv.g(i))) *
+                       vtild.f(i) * vtild.g(i))) *
            pGrid->drdu(i) * pGrid->du();
     }
 
@@ -210,7 +208,7 @@ double rho(const double &p, const double &E) {
 DiracSpinor FourierTransformF(const DiracSpinor &F,
                               std::shared_ptr<const Grid> pGrid) {
   // initialise Fourier transform to be on momentum space grid
-  DiracSpinor FTransform(F.n(), F.kappa(), pGrid);
+  DiracSpinor FTransform = DiracSpinor(F.n(), F.kappa(), pGrid);
 
   const auto grid = F.grid();
   const auto r = F.grid().r();
