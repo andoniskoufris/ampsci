@@ -132,16 +132,14 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
   //                    L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
   //                      L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
-  //! implementing coupled-cluster versions of L2 and L3 with new functions
+  //! implementing coupled-cluster versions of L2 and L3 with new functions L2_CC and L3_CC
+  // these new functions allow me to always restrict j to be a core state in the fill and update functions
+  // much faster than the above method
   const auto L23 = CC_expr ?
                      L2_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
                        L3_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
                      L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
                        L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
-
-  // auto L23 = 0.0;
-
-  // auto L23 = CC_expr ? 0.0 : -0.0;
 
   const auto L123 = l1 + L23;
 
@@ -1275,6 +1273,9 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
     if (!is_excited[m.nk_index()] || !is_excited[n.nk_index()])
       return false;
 
+    //!! I need this to be uncommented when use Ben's versions of L2 and L3 recover the CC expressions
+    // (see below !! for what happens when I use L2_CC & L3_CC expressions)
+    // ((this is much slower than using the L2_CC and L3_CC expressions))
     // Require i to be in {core} _and_ b to be in {i_orbs}, or the other way around
     // looks a little funny but need to return false so at the end we can
     // check that k is within the correct range, so it's the negation of these two statements
@@ -1283,6 +1284,8 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
     //   return false;
     // }
 
+    //! If we use L2_CC and L3_CC then b is always going to be core
+    // c.f. trying to use ben's L2 and L3 to get the CC expressions; this requires using the commented out code above
     if (!is_i_orb[i.nk_index()] || !is_core[b.nk_index()]) {
       return false;
     }
