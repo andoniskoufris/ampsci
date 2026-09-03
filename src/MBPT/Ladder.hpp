@@ -112,6 +112,14 @@ double L2_CC(int k, const DiracSpinor &m, const DiracSpinor &n,
              const Coulomb::LkTable *const Lk = nullptr,
              std::optional<double> e_j = {}, std::optional<double> e_m = {});
 
+double
+L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
+          const DiracSpinor &i, const DiracSpinor &j,
+          const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
+          const std::vector<DiracSpinor> &excited, const Angular::SixJTable &SJ,
+          const Coulomb::LkTable *const Lk = nullptr,
+          std::optional<double> e_j = {}, std::optional<double> e_m = {});
+
 /*!
   @brief Exchange partner of L2; equals L2 with m,n and i,j swapped.
   @details
@@ -136,6 +144,17 @@ inline double L3_CC(int k, const DiracSpinor &m, const DiracSpinor &n,
                     const Coulomb::LkTable *const Lk = nullptr,
                     std::optional<double> e_i = {}) {
   return L2_CC(k, n, m, j, i, qk, core, excited, SJ, Lk, e_i);
+}
+
+inline double L3_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
+                        const DiracSpinor &i, const DiracSpinor &j,
+                        const Coulomb::QkTable &qk,
+                        const std::vector<DiracSpinor> &core,
+                        const std::vector<DiracSpinor> &excited,
+                        const Angular::SixJTable &SJ,
+                        const Coulomb::LkTable *const Lk = nullptr,
+                        std::optional<double> e_i = {}) {
+  return L2_CC_new(k, n, m, j, i, qk, core, excited, SJ, Lk, e_i);
 }
 
 /*!

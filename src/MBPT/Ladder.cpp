@@ -135,11 +135,17 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
   //! implementing coupled-cluster versions of L2 and L3 with new functions L2_CC and L3_CC
   // these new functions allow me to always restrict j to be a core state in the fill and update functions
   // much faster than the above method
-  const auto L23 = CC_expr ?
-                     L2_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                       L3_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
-                     L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                       L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  // const auto L23 = CC_expr ?
+  //                    L2_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+  //                      L3_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
+  //                    L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+  //                      L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+
+  const auto L23 =
+    CC_expr ? L2_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                L3_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
+              L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
   const auto L123 = l1 + L23;
 
@@ -515,14 +521,6 @@ double L2_CC(int k, const DiracSpinor &m, const DiracSpinor &n,
              const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
              std::optional<double> e_i, std::optional<double> e_m) {
 
-  // m (and n) must be excited states, as should 'excited'
-  // Therefore, can test:
-  // Ensured 'excited' is actually the excited orbitals
-  // and that m and n are excited orbitals
-  // assert(std::find(excited.cbegin(), excited.cend(), m) != excited.cend());
-  // assert(std::find(excited.cbegin(), excited.cend(), n) != excited.cend());
-  // assert(std::find(core.cbegin(), core.cend(), m) == core.cend());
-
   double l2 = 0.0;
   const double tkp1 = 2.0 * k + 1.0;
   const auto s_mnijk =
@@ -598,6 +596,42 @@ double L2_CC(int k, const DiracSpinor &m, const DiracSpinor &n,
   }
   l2 *= s_mnijk * tkp1;
   return l2;
+}
+
+//------------------------------------------------------------------------------
+double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
+                 const DiracSpinor &i, const DiracSpinor &j,
+                 const Coulomb::QkTable &qk,
+                 const std::vector<DiracSpinor> &core,
+                 const std::vector<DiracSpinor> &excited,
+                 const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
+                 std::optional<double> e_i, std::optional<double> e_m) {
+
+  double l2 = 0.0;
+  const auto s_k = Angular::neg1pow_2(2 * k) / (2.0 * k + 1.0);
+  const auto eim = e_i.value_or(i.en()) - e_m.value_or(m.en());
+
+  const auto core_size = core.size();
+  const auto excited_size = excited.size();
+
+  for (auto ir = 0ul; ir < excited_size; ++ir) {
+    const auto &r = excited[ir];
+    for (auto ic = 0ul; ic < core_size; ++ic) {
+      const auto &c = core[ic];
+
+      auto Pk_cnrj = qk.P(k, c, n, r, j, &SJ);
+      auto Mk_mric = (Lk ? Lk->P(k, m, r, i, c, &SJ) : 0.0);
+
+      if (Pk_cnrj == 0 || Mk_mric == 0) {
+        continue;
+      }
+
+      const auto inv_e_cimr = 1.0 / (c.en() + eim - r.en());
+      l2 += Pk_cnrj * Mk_mric * inv_e_cimr;
+    }
+  }
+
+  return s_k * l2;
 }
 
 //==============================================================================
