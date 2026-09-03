@@ -619,15 +619,16 @@ double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
     for (auto ic = 0ul; ic < core_size; ++ic) {
       const auto &c = core[ic];
 
-      auto Pk_cnrj = qk.P(k, c, n, r, j, &SJ);
-      auto Mk_mric = (Lk ? Lk->P(k, m, r, i, c, &SJ) : 0.0);
+      auto P_kcnrj = qk.P(k, c, n, r, j, &SJ);
+      auto PM_kmric =
+        qk.P(k, m, r, i, c) + (Lk ? Lk->P(k, m, r, i, c, &SJ) : 0.0);
 
-      if (Pk_cnrj == 0 || Mk_mric == 0) {
+      if (P_kcnrj == 0 || PM_kmric == 0) {
         continue;
       }
 
       const auto inv_e_cimr = 1.0 / (c.en() + eim - r.en());
-      l2 += Pk_cnrj * Mk_mric * inv_e_cimr;
+      l2 += P_kcnrj * PM_kmric * inv_e_cimr;
     }
   }
 
