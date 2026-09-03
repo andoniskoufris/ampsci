@@ -606,9 +606,19 @@ double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
                  const std::vector<DiracSpinor> &excited,
                  const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
                  std::optional<double> e_i, std::optional<double> e_m) {
+  auto s_k = Angular::neg1pow_2(2 * k) / (2.0 * k + 1.0);
+
+  // from 6-j symbol inside Pk_{cnrj} and Mk_{mric}
+  // are these technically already checked outside this loop maybe?
+  if (Coulomb::triangle(m, i, k) == 0 || Coulomb::triangle(k, n, j) == 0) {
+    return 0.0;
+  }
+  // evalauating Pk and Mk manually also requires two lots of multiplying by 2k+1
+  // comment this out if testing the calculations with Pk and Mk being calculated the slow way
+  s_k = s_k * (2.0 * k + 1.0) * (2.0 * k + 1.0);
 
   double l2 = 0.0;
-  const auto s_k = Angular::neg1pow_2(2 * k) / (2.0 * k + 1.0);
+
   const auto eim = e_i.value_or(i.en()) - e_m.value_or(m.en());
 
   const auto core_size = core.size();
@@ -619,16 +629,67 @@ double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
     for (auto ic = 0ul; ic < core_size; ++ic) {
       const auto &c = core[ic];
 
-      auto P_kcnrj = qk.P(k, c, n, r, j, &SJ);
-      auto PM_kmric =
-        qk.P(k, m, r, i, c) + (Lk ? Lk->P(k, m, r, i, c, &SJ) : 0.0);
-
-      if (P_kcnrj == 0 || PM_kmric == 0) {
+      // From 6J triads (this makes 1.5x speedup):
+      if (Coulomb::triangle(c, r, k) == 0 || Coulomb::triangle(k, r, c) == 0)
         continue;
-      }
+
+      // obtains min and max allowed mu and lambda for Q^mu_{cnjr} and Q/L^l_{rmic}
+      const auto [u0, uI] = Coulomb::k_minmax_Q(c, n, j, r);
+      const auto [l0, lI] = Coulomb::k_minmax_Q(r, m, i, c);
+      if (uI < u0 || lI < l0)
+        continue;
 
       const auto inv_e_cimr = 1.0 / (c.en() + eim - r.en());
-      l2 += P_kcnrj * PM_kmric * inv_e_cimr;
+
+      // hash keys for Q_{cnjr}, Q_{rmic} and L_{rmic}
+      const auto Qkey_cnjr = qk.NormalOrder(c, n, j, r);
+      const auto Qkey_rmic = qk.NormalOrder(r, m, i, c);
+      const auto Lkey_rmic = Lk ? Lk->NormalOrder(r, m, i, c) : 0ul;
+
+      // Cache (Q+L)^l_mrcj: depends only on l, used inside the u loop (see L1).
+      assert(lI < int(sk_array_size));
+      std::array<double, sk_array_size> QLl_rmic{};
+      for (auto l = l0; l <= lI; l += 2) {
+        QLl_rmic[std::size_t(l)] =
+          qk.Q(l, Qkey_rmic) + (Lk ? Lk->Q(l, Lkey_rmic) : 0.0);
+      }
+
+      for (auto u = u0; u <= uI; u += 2) {
+        const auto Q_ucnjr = qk.Q(u, Qkey_cnjr);
+        // Zero when parity or triangle selection rules forbid this u.
+        if (Q_ucnjr == 0.0)
+          continue;
+
+        // From 6J triads (this makes 1.5x speedup):
+        if (Coulomb::triangle(j, u, c) == 0 || Coulomb::triangle(r, n, u) == 0)
+          continue;
+
+        const auto sj_u = SJ.get(c, r, k, n, j, u);
+
+        for (auto l = l0; l <= lI; l += 2) {
+
+          // 6j triad:
+          if (Angular::triangle(k, l, u) == 0)
+            continue;
+
+          const auto sj_l = SJ.get(m, i, k, r, c, l);
+
+          const auto QL_lrmic = QLl_rmic[std::size_t(l)];
+
+          l2 += sj_u * sj_l * Q_ucnjr * QL_lrmic * inv_e_cimr;
+        }
+      }
+
+      // auto P_kcnrj = qk.P(k, c, n, r, j, &SJ);
+      // auto PM_kmric =
+      //   qk.P(k, m, r, i, c) + (Lk ? Lk->P(k, m, r, i, c, &SJ) : 0.0);
+
+      // if (P_kcnrj == 0 || PM_kmric == 0) {
+      //   continue;
+      // }
+
+      // const auto inv_e_cimr = 1.0 / (c.en() + eim - r.en());
+      // l2 += P_kcnrj * PM_kmric * inv_e_cimr;
     }
   }
 
