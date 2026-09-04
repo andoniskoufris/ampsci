@@ -118,7 +118,7 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const std::vector<DiracSpinor> &excited, bool include_L4,
               const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
               std::optional<double> e_i, std::optional<double> e_m,
-              const bool CC_expr) {
+              const bool CC_expr, const bool only_L1) {
 
   // nb: i energy enters only L1 and L3; m energy only L2 and L4
   const double l1 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i);
@@ -135,11 +135,16 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
   //! implementing coupled-cluster versions of L2 and L3 with new functions L2_CC and L3_CC
   // these new functions allow me to always restrict j to be a core state in the fill and update functions
   // much faster than the above method
-  auto L23 = CC_expr ?
-               L2_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                 L3_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
-               L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                 L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  double L23 = 0.0;
+  if (only_L1) {
+    L23 += 0.0;
+  } else {
+    L23 += CC_expr ?
+             L2_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+               L3_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
+             L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+               L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  }
 
   // L23 = 0.0;
   // const auto L23 =
@@ -1331,7 +1336,7 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                   const std::vector<DiracSpinor> &core,
                   const std::vector<DiracSpinor> &i_orbs, bool include_L4,
                   const Angular::SixJTable &sjt, int max_k, bool print,
-                  const bool CC_expr) {
+                  const bool CC_expr, const bool only_L1) {
 
   // const double a_damp = 0.35;
   // const double b_damp = 1.0 - a_damp;
@@ -1407,7 +1412,7 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
     return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, nullptr,
-                  {}, {}, CC_expr);
+                  {}, {}, CC_expr, only_L1);
   };
 
   lk->fill(basis, Lk_function, Lk_SR, kmax, print);
@@ -2201,7 +2206,7 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                     const std::vector<DiracSpinor> &update_i, bool include_L4,
                     const Angular::SixJTable &sjt,
                     const Coulomb::LkTable *const lk_prev, double a_damp,
-                    bool print, const bool CC_expr) {
+                    bool print, const bool CC_expr, const bool only_L1) {
 
   const auto basis = qip::merge(core, excited);
 
@@ -2210,7 +2215,7 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
     return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, lk_prev,
-                  {}, {}, CC_expr);
+                  {}, {}, CC_expr, only_L1);
   };
 
   // Empty update_i => update everything.

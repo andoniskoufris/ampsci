@@ -92,7 +92,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
      {"coupled_cluster_expr", "Evaluates L2 and L3 with the coupled-cluster "
                               "form of the expressions [false]"},
      {"check_CC",
-      "Randomly checks if L2(m,n,i,j) = -L2_CC(m,n,j,i) and likewise for L3"}});
+      "Randomly checks if L2(m,n,i,j) = -L2_CC(m,n,j,i) and likewise for L3"},
+     {"only_L1", "only will include L1 into the calculations."}});
   // If we are just requesting 'help', don't run:
   if (input.has_option("help")) {
     return;
@@ -110,6 +111,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto include_L4 = input.get("include_L4", false);
   const auto include_loops = input.get("include_loops", false);
   const auto CC_expr = input.get("coupled_cluster_expr", false);
+  const auto only_L1 = input.get("only_L1", false);
 
   // Method for Sigma_L: projection (single |v>, ladder basis, full basis),
   // Dzuba (no projection: rescale Sigma(2) terms by L/Q), or direct (no
@@ -272,7 +274,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   const auto n_lk_initial = lk.count();
   MBPT::fill_Lk_mnib(&lk, qk, excited, holes, core_and_val, include_L4, sjt,
-                     max_k, true, CC_expr);
+                     max_k, true, CC_expr, only_L1);
   if (include_loops) {
     MBPT::fill_Sk_mnib(&sk, qk, excited, holes, core_and_val, max_k, false);
     sk_next = sk;
@@ -314,7 +316,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
     std::cout << "\ncore it:" << it << "\n";
     if (!include_loops) {
       MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, holes, include_L4, sjt,
-                           &lk, a_damp, true, CC_expr);
+                           &lk, a_damp, true, CC_expr, only_L1);
     } else {
       MBPT::update_Lk_mnib_loops(&lk_next, qk, sk, excited, holes, holes,
                                  include_L4, sjt, &lk, a_damp, true);
