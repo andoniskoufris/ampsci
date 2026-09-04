@@ -49,13 +49,13 @@ double de_valence(const DiracSpinor &v, const Qintegrals &qk,
         for (int k = k0; k <= kI; k += 2) {
 
           const auto Q_kvamn = qk.Q(k, v, a, m, n);
-          const auto L_kvamn = LisQ ? Q_kvamn : lk.Q(k, m, n, v, a);
-          const auto P_kvamn = lk.P(k, n, m, a, v);
+          const auto L_kmnva = LisQ ? Q_kvamn : lk.Q(k, m, n, v, a);
+          const auto P_kmnva = lk.P(k, n, m, a, v);
 
           // diagram (a)
-          de_v += Q_kvamn * L_kvamn * inv_de / (2 * k + 1);
+          de_v += Q_kvamn * L_kmnva * inv_de / (2 * k + 1);
           // diagram (b) [exchange]
-          de_v += Q_kvamn * P_kvamn * inv_de / (2 * k + 1);
+          de_v += Q_kvamn * P_kmnva * inv_de / (2 * k + 1);
         } // k
       } // m
 

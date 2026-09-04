@@ -28,6 +28,12 @@ void check_L_symmetry(const std::vector<DiracSpinor> &core,
                       const Angular::SixJTable &sj,
                       const Coulomb::LkTable *const lk = nullptr,
                       const bool &CC_expr = false);
+
+void check_CC_symmetry(const std::vector<DiracSpinor> &core,
+                       const std::vector<DiracSpinor> &excited,
+                       const std::vector<DiracSpinor> &valence,
+                       const Coulomb::QkTable &qk,
+                       const Angular::SixJTable &sj);
 } // namespace
 
 //==============================================================================
@@ -84,7 +90,9 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
                        "iterations. Does so without overcounting diagrams "
                        "already in the correlation potential method [false]"},
      {"coupled_cluster_expr", "Evaluates L2 and L3 with the coupled-cluster "
-                              "form of the expressions [false]"}});
+                              "form of the expressions [false]"},
+     {"check_CC",
+      "Randomly checks if L2(m,n,i,j) = -L2_CC(m,n,j,i) and likewise for L3"}});
   // If we are just requesting 'help', don't run:
   if (input.has_option("help")) {
     return;
@@ -128,6 +136,7 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto include_G = input.get("include_G", false);
 
   const auto check_symmetry = input.get("check_symmetry", false);
+  const auto check_CC = input.get("check_CC", false);
 
   // Sort basis into core/excited/valence
   const auto en_core = wf.FermiLevel();
@@ -479,6 +488,10 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   if (check_symmetry)
     check_L_symmetry(holes, excited, valence, qk, include_L4, sjt, &lk,
                      CC_expr);
+
+  if (check_CC) {
+    check_CC_symmetry(holes, excited, valence, qk, sjt);
+  }
 }
 
 //==============================================================================
@@ -588,6 +601,92 @@ void check_L_symmetry(const std::vector<DiracSpinor> &core,
   } else {
     std::cout << "(no table -- skipping table comparisons)\n";
   }
+}
+
+//-----------------------------------------------------------------------------
+
+void check_CC_symmetry(const std::vector<DiracSpinor> &core,
+                       const std::vector<DiracSpinor> &excited,
+                       const std::vector<DiracSpinor> &valence,
+                       const Coulomb::QkTable &qk,
+                       const Angular::SixJTable &sj) {
+
+  std::cout << "\nCheck coupled-cluster symmetry\n";
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  if (excited.empty() || core.empty() || valence.empty())
+    return;
+  std::uniform_int_distribution<std::size_t> e_index(0, excited.size() - 1);
+  std::uniform_int_distribution<std::size_t> c_index(0, core.size() - 1);
+  std::uniform_int_distribution<std::size_t> v_index(0, valence.size() - 1);
+
+  const int num_to_test = 150000;
+
+  // worst-case trackers; init to -1 so first element always sets a result
+  double max1 = -1.0, max2 = -1.0;
+  std::string label1, label2, label3;
+  std::string info1, info2, info3;
+  int count = 0;
+
+  for (int tries = 0; tries < num_to_test; ++tries) {
+    const auto &m = excited[e_index(gen)];
+    const auto &n = excited[e_index(gen)];
+
+    // half the time: core, other, valence
+    const auto &a = tries % 2 == 0 ? core[c_index(gen)] : valence[v_index(gen)];
+
+    const auto &b = core[c_index(gen)];
+    auto sym = [](const auto &x) { return x.shortSymbol(); };
+
+    const auto [k0, kI] = Coulomb::k_minmax_Q(m, n, a, b);
+    for (int k = k0; k <= kI; k += 2) {
+      ++count;
+
+      auto l2kmnab_Ben = MBPT::L2(k, m, n, a, b, qk, core, excited, sj,
+                                  (const Coulomb::LkTable *)nullptr, {}, {});
+      auto nl2kmnba_CC =
+        -MBPT::L2_CC(k, m, n, b, a, qk, core, excited, sj,
+                     (const Coulomb::LkTable *)nullptr, {}, {});
+
+      auto lbl = "L^" + std::to_string(k) + "_(" + sym(m) + sym(n) + sym(a) +
+                 sym(b) + ")";
+
+      // 1: L2k_mnab_Ben vs -L2k_mnba_CC
+      auto d1 = std::abs(l2kmnab_Ben - nl2kmnba_CC);
+      if (d1 > max1) {
+        max1 = d1;
+        label1 = lbl;
+        info1 = fmt::format("L2k_mnab_Ben  =  {:12.5e}\n"
+                            "-L2k_mnba_CC  =  {:12.5e}\n"
+                            "del    = {:8.1e}",
+                            l2kmnab_Ben, nl2kmnba_CC, d1);
+      }
+
+      auto l3kmnab_Ben = MBPT::L3(k, m, n, a, b, qk, core, excited, sj,
+                                  (const Coulomb::LkTable *)nullptr, {});
+      auto nl3kmnba_CC = -MBPT::L3_CC(k, m, n, b, a, qk, core, excited, sj,
+                                      (const Coulomb::LkTable *)nullptr, {});
+
+      // 1: L2k_mnab_Ben vs -L2k_mnba_CC
+      auto d2 = std::abs(l2kmnab_Ben - nl2kmnba_CC);
+      if (d2 > max2) {
+        max2 = d2;
+        label2 = lbl;
+        info2 = fmt::format("L3k_mnab_Ben  =  {:12.5e}\n"
+                            "-L3k_mnba_CC  =  {:12.5e}\n"
+                            "del    = {:8.1e}",
+                            l3kmnab_Ben, nl3kmnba_CC, d2);
+      }
+    }
+  }
+
+  std::cout << "Checked " << count << " Lk elements (worst case shown)\n\n";
+
+  std::cout << "L2k_mnab_Ben vs -L2k_mnba_CC:\n  " << label1 << "\n"
+            << info1 << "\n\n";
+
+  std::cout << "L3k_mnab_Ben vs -L3k_mnba_CC:\n  " << label2 << "\n"
+            << info2 << "\n\n";
 }
 } // namespace
 

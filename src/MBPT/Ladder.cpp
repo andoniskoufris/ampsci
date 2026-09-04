@@ -135,17 +135,18 @@ double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
   //! implementing coupled-cluster versions of L2 and L3 with new functions L2_CC and L3_CC
   // these new functions allow me to always restrict j to be a core state in the fill and update functions
   // much faster than the above method
-  // const auto L23 = CC_expr ?
-  //                    L2_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-  //                      L3_CC(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
-  //                    L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-  //                      L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  auto L23 = CC_expr ?
+               L2_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                 L3_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
+               L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+                 L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
-  const auto L23 =
-    CC_expr ? L2_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                L3_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
-              L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  // L23 = 0.0;
+  // const auto L23 =
+  //   CC_expr ? L2_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+  //               L3_CC_new(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) :
+  //             L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
+  //               L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
 
   const auto L123 = l1 + L23;
 
@@ -606,16 +607,13 @@ double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
                  const std::vector<DiracSpinor> &excited,
                  const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
                  std::optional<double> e_i, std::optional<double> e_m) {
-  auto s_k = Angular::neg1pow_2(2 * k) / (2.0 * k + 1.0);
+  auto s_k = (2.0 * k + 1.0) * Angular::neg1pow_2(2 * k);
 
   // from 6-j symbol inside Pk_{cnrj} and Mk_{mric}
   // are these technically already checked outside this loop maybe?
   if (Coulomb::triangle(m, i, k) == 0 || Coulomb::triangle(k, n, j) == 0) {
     return 0.0;
   }
-  // evalauating Pk and Mk manually also requires two lots of multiplying by 2k+1
-  // comment this out if testing the calculations with Pk and Mk being calculated the slow way
-  s_k = s_k * (2.0 * k + 1.0) * (2.0 * k + 1.0);
 
   double l2 = 0.0;
 
@@ -630,8 +628,9 @@ double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
       const auto &c = core[ic];
 
       // From 6J triads (this makes 1.5x speedup):
-      if (Coulomb::triangle(c, r, k) == 0 || Coulomb::triangle(k, r, c) == 0)
+      if (Coulomb::triangle(c, r, k) == 0 || Coulomb::triangle(k, r, c) == 0) {
         continue;
+      }
 
       // obtains min and max allowed mu and lambda for Q^mu_{cnjr} and Q/L^l_{rmic}
       const auto [u0, uI] = Coulomb::k_minmax_Q(c, n, j, r);
@@ -661,8 +660,10 @@ double L2_CC_new(int k, const DiracSpinor &m, const DiracSpinor &n,
           continue;
 
         // From 6J triads (this makes 1.5x speedup):
-        if (Coulomb::triangle(j, u, c) == 0 || Coulomb::triangle(r, n, u) == 0)
+        if (Coulomb::triangle(j, u, c) == 0 ||
+            Coulomb::triangle(r, n, u) == 0) {
           continue;
+        }
 
         const auto sj_u = SJ.get(c, r, k, n, j, u);
 
