@@ -133,7 +133,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // initialise momentum-space grid
   const auto pGrid = std::make_shared<const Grid>(
-    GridParameters{10000, 1.0e-2, 2.0e6, 4.0, "linear", 0.0});
+    GridParameters{5000, 1.0e-4, 2.0e6, 4.0, "linear", 0.0});
   const auto p = pGrid->r();
 
   const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
@@ -218,7 +218,7 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
     // in atomic units, r is in a.u. in which case what r actually is numerically is r/aB
     // in atomic units aB = 1, but we want p * r to be dimensionless. This is only the case if we actually use alpha * p
     const auto p_i = p[i]; // / PhysConst::alpha;
-    const auto s_kappa = sign(F.kappa());
+    const auto s_kappa = sign(F.kappa()) + 0.001;
 
     for (auto j = F.min_pt(); j < F.max_pt(); j++) {
       FTransform.f(i) += r[j] * F.f(j) *
