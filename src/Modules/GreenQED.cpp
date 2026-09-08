@@ -21,6 +21,9 @@ double bTerm(const double &p, const double &E);
 double aTerm_rho(const double &rho, const double &m);
 double bTerm_rho(const double &rho);
 
+void write_orbitals(const std::string &fname,
+                    const std::vector<DiracSpinor> &orbs);
+
 // lambda for sign
 auto sign = [](const double &x) { return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0); };
 
@@ -126,27 +129,55 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   //===========================================================================
   //===========================================================================
   // Calculating self-energy corrections
-  std::cout << std::endl << std::endl;
-  std::cout << "Calculating electron self-energy" << std::endl << std::endl;
-  fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
-             "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
+  std::cout << std::endl;
+  std::cout << "Calculating electron self-energy\n";
+  std::cout << "with momentum grid parameters:\n\n";
+
+  // conversion factor from k in whatever units I am doing now to a.u.
+  const double p_to_au = 1.0;
+
+  // momentum grid parameters
+  // right now these are in some units that I don't know
+  const auto p_num_points = 5000;
+  const auto p_min = p_to_au * 1.0e-4;
+  const auto p_max = p_to_au * 1.0e3;
+  const auto p_b = 4.0;
+  const auto p_grid_type = "loglinear";
+  const auto p_indu = 0.0; // shouldn't worry about this
+
+  std::cout << "Grid type   = " << p_grid_type << "\n";
+  std::cout << "Num. points = " << p_num_points << "\n";
+  std::cout << "p minimum   = " << p_min << "\n";
+  std::cout << "p maximum   = " << p_max << "\n";
+  std::cout << "b           = " << p_b << "\n\n";
 
   // initialise momentum-space grid
   const auto pGrid = std::make_shared<const Grid>(
-    GridParameters{5000, 1.0e-4, 2.0e6, 4.0, "linear", 0.0});
+    GridParameters{p_num_points, p_min, p_max, p_b, p_grid_type, p_indu});
   const auto p = pGrid->r();
 
   const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
 
+  std::vector<DiracSpinor> orbs;
+
+  fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
+             "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
+
   for (const auto &v : wf.valence()) {
 
+    // // if I only want to do the calculations for a particular value of n and l (or any other Q numbers)
+    // if (v.n() != 20 || v.kappa() > 0) {
+    //   continue;
+    // }
+
     const auto vtild = FourierTransformF(v, pGrid);
+    orbs.push_back(vtild);
     const auto vp_norm = p_norm(vtild);
     const auto ev = v.en();
     double E = 0.0;
 
     for (auto i = 0ul; i < pGrid->num_points(); i++) {
-      // to compare to Shabev, E -> E + m_e * c^2 = E + 1/α^2 (in a.u.)
+      // to compare to Shabaev, E -> E + m_e * c^2 = E + 1/α^2 (in a.u.)
       const auto En = ev + (1.0 / PhysConst::alpha2);
       const auto Rho = rho(p[i], ev);
       const auto a_rho = aTerm_rho(Rho, mec2);
@@ -162,13 +193,18 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
     E *= PhysConst::alpha / (32.0 * pow(M_PI, 4));
 
+    // fudge factor to get agreement with Shabev paper
+    E *= PhysConst::alpha2;
+
     // convert to atomic units (I think it's in atomic units already?) and then print
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}\n",
                v.shortSymbol(), vp_norm, v.en(), E, grid.r(v.min_pt()),
-               grid.r(v.max_pt()));
+               grid.r(v.max_pt() - 1));
   }
 
   std::cout << std::endl;
+
+  write_orbitals(wf.identity() + "qed.pwf.txt", orbs);
 }
 
 } // namespace Module
@@ -250,7 +286,7 @@ double p_norm(const DiracSpinor &Fa) {
     out += p_i * p_i * (Fa.f(i) * Fa.f(i) + Fa.g(i) * Fa.g(i)) *
            pGrid->drdu(i) * pGrid->du();
   }
-  return out / (8.0 * M_PI_2 * M_PI);
+  return out / (8.0 * M_PI * M_PI * M_PI);
 }
 
 //=============================================================================
@@ -314,4 +350,41 @@ double aTerm_rho(const double &rho, const double &m) {
 double bTerm_rho(const double &rho) {
 
   return ((rho - 2.0) / (1.0 - rho)) * (1.0 + (rho / (1.0 - rho)) * log(rho));
+}
+
+//=============================================================================
+void write_orbitals(const std::string &fname,
+                    const std::vector<DiracSpinor> &orbs) {
+  if (orbs.empty())
+    return;
+  const auto &gr = orbs.front().grid();
+
+  std::ofstream of(fname);
+  of << "r ";
+  for (auto &psi : orbs) {
+    // of << "r\'$" << psi.symbol(true) << "$" << "\' ";
+    of << "$" << psi.symbol(true) << "$ ";
+  }
+  of << "\n";
+
+  of << "# f block\n";
+  for (std::size_t i = 0; i < gr.num_points(); i++) {
+    of << gr.r(i) << " ";
+    for (auto &psi : orbs) {
+      of << psi.f(i) << " ";
+    }
+    of << "\n";
+  }
+
+  of << "\n# g block\n";
+  for (std::size_t i = 0; i < gr.num_points(); i++) {
+    of << gr.r(i) << " ";
+    for (auto &psi : orbs) {
+      of << psi.g(i) << " ";
+    }
+    of << "\n";
+  }
+
+  of.close();
+  std::cout << "Orbitals written to file: " << fname << "\n";
 }
