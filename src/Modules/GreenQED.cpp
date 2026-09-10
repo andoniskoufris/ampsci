@@ -164,26 +164,29 @@ void write_orbitals(const std::string &fname,
   std::cout << "Orbitals written to file: " << fname << "\n";
 }
 
-double SE_ZeroPotential(const DiracSpinor &F_p, const double &mec2) {
-  const auto ev = F_p.en();
+//=============================================================================
+
+double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
+                        const double &mec2) {
   const auto pGrid = &F_p.grid();
   const auto p = pGrid->r();
+  // to compare to Shabaev, E -> E + m_e * c^2 = E + 1/α^2 (in a.u.)
+  const auto En = ev + (1.0 / PhysConst::alpha2);
 
   const auto f_p = F_p.f();
   const auto g_p = F_p.g();
 
   double E = 0.0;
 
-  for (auto i = 0ul; i < pGrid->num_points(); i++) {
-    // to compare to Shabaev, E -> E + m_e * c^2 = E + 1/α^2 (in a.u.)
-    const auto En = ev + (1.0 / PhysConst::alpha2);
+  for (auto i = F_p.min_pt(); i < F_p.max_pt(); i++) {
     const auto Rho = rho(p[i], ev);
     const auto a_rho = aTerm(Rho, mec2);
     const auto b_rho = bTerm(Rho);
 
+    //! need to check the sign of the last term
     E += (p[i] * p[i] / PhysConst::alpha2) *
          (a_rho * (f_p[i] * f_p[i] - g_p[i] * g_p[i]) +
-          b_rho * (En * (f_p[i] * f_p[i] + g_p[i] * g_p[i]) +
+          b_rho * (En * (f_p[i] * f_p[i] + g_p[i] * g_p[i]) -
                    2 * sign(F_p.kappa()) * (p[i] / PhysConst::alpha) * f_p[i] *
                      g_p[i])) *
          pGrid->drdu(i) * pGrid->du();
@@ -194,6 +197,241 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &mec2) {
   E *= PhysConst::alpha2;
 
   return E;
+}
+
+//=============================================================================
+
+double Feyn_denom(const double &ev, const double &y, const double &q,
+                  const double &p, const double &xi) {
+  double denom = 0.0;
+  denom += y * y * (ev * ev - q * q);
+  denom += 2 * y * (1.0 - y) * (ev * ev - p * q * xi);
+  denom += (1.0 - y) * (1.0 - y) * (ev * ev - p * p);
+
+  return denom;
+}
+
+//=============================================================================
+
+std::pair<double, double> Feyn_denom_zeros(const double &ev, const double &q,
+                                           const double &p, const double &xi) {
+  const double ev2 = ev * ev;
+  const double pq = p * q;
+  const double p2 = p * p;
+  const double q2 = q * q;
+  const double xi2 = xi * xi;
+
+  std::pair<double, double> out;
+
+  const double discr =
+    q2 * ev2 - 2.0 * pq * ev2 * xi + p2 * (ev2 + q2 * (xi2 - 1));
+  // make sure the zeroes are not in the interval if the discriminant is zero or if \vec{p} = \vec{q}
+  if (discr < 0 || (p == q && xi == 1)) {
+    out.first = -1.0;
+    out.second = -1.0;
+    return out;
+  }
+  const double A = p * (p - q * xi);
+  const double D = p2 + q2 - 2.0 * pq * xi;
+
+  if (discr == 0.0) {
+    out.first = A / D;
+    out.second = out.first;
+    return out;
+  }
+
+  const auto y1 = (A - sqrt(discr)) / D;
+  const auto y2 = (A + sqrt(discr)) / D;
+
+  out.first = y1;
+  out.second = y2;
+
+  return out;
+}
+
+//=============================================================================
+
+double Y(const double &m, const double &y, const double &ev, const double &q,
+         const double &p, const double &xi) {
+  double Y = 0.0;
+
+  Y += m * m - y * (ev * ev - q * q) - (1.0 - y) * (ev * ev - p * p);
+  Y *= 1.0 / (Feyn_denom(ev, y, p, q, xi));
+
+  return Y;
+}
+
+//=============================================================================
+
+double X(const double &m, const double &y, const double &ev, const double &q,
+         const double &p, const double &xi) {
+  return 1.0 + 1.0 / Y(m, y, ev, q, p, xi);
+}
+
+//=============================================================================
+// alternative definition of above
+double X(const double &Y) { return 1.0 + 1.0 / Y; }
+
+//=============================================================================
+
+double C0_u(const double &y, const double &m, const double &ev, const double &q,
+            const double &p, const double &xi) {
+  const double XX = X(m, y, ev, q, p, xi);
+  const double denom = Feyn_denom(ev, y, q, p, xi);
+
+  return -log(XX) / denom;
+}
+
+//=============================================================================
+
+double C11_u(const double &y, const double &m, const double &ev,
+             const double &q, const double &p, const double &xi) {
+  const double YY = X(m, y, ev, q, p, xi);
+  const double XX = X(YY);
+  const double denom = Feyn_denom(ev, y, q, p, xi);
+
+  return (1.0 - YY * log(XX)) * y / denom;
+}
+
+//=============================================================================
+
+double C12_u(const double &y, const double &m, const double &ev,
+             const double &q, const double &p, const double &xi) {
+  const double YY = X(m, y, ev, q, p, xi);
+  const double XX = X(YY);
+  const double denom = Feyn_denom(ev, y, q, p, xi);
+
+  return (1.0 - YY * log(XX)) * (1.0 - y) / denom;
+}
+
+//=============================================================================
+
+double C21_u(const double &y, const double &m, const double &ev,
+             const double &q, const double &p, const double &xi) {
+  const double YY = X(m, y, ev, q, p, xi);
+  const double XX = X(YY);
+  const double denom = Feyn_denom(ev, y, q, p, xi);
+
+  return (-0.5 + YY - YY * YY * log(XX)) * y * y / denom;
+}
+
+//=============================================================================
+
+double C22_u(const double &y, const double &m, const double &ev,
+             const double &q, const double &p, const double &xi) {
+  const double YY = X(m, y, ev, q, p, xi);
+  const double XX = X(YY);
+  const double denom = Feyn_denom(ev, y, q, p, xi);
+
+  return (-0.5 + YY - YY * YY * log(XX)) * (1.0 - y) * (1.0 - y) / denom;
+}
+
+//=============================================================================
+
+double C23_u(const double &y, const double &m, const double &ev,
+             const double &q, const double &p, const double &xi) {
+  const double YY = X(m, y, ev, q, p, xi);
+  const double XX = X(YY);
+  const double denom = Feyn_denom(ev, y, q, p, xi);
+
+  return (-0.5 + YY - YY * YY * log(XX)) * y * (1.0 - y) / denom;
+}
+
+//=============================================================================
+
+double C24_u(const double &y, const double &m, const double &q, const double &p,
+             const double &xi) {
+  const double k2 = 2 * p * q * xi - p * p - q * q;
+  const double m2 = m * m;
+
+  const double x = y * (y - 1) * (k2 / m2) + 1.0;
+
+  return -log(x);
+}
+
+//=============================================================================
+
+double Cij(const double &m, const double &ev, const double &q, const double &p,
+           const double &xi,
+           std::function<double(double, double, double, double, double, double)>
+             Cij_func,
+           double &delta) {
+  const double y_min = 0.0;
+  const double y_max = 1.0;
+  const size_t num_y_points = 1000;
+  const double dy = (y_max - y_min) / double(num_y_points);
+  double y = y_min;
+
+  const double abs_delta = abs(delta);
+
+  // determine the zeros in the denominator
+  const auto [y1_zero, y2_zero] = Feyn_denom_zeros(ev, q, p, xi);
+
+  double out = 0.0;
+
+  // if both zeroes are below y = 0 or above y = 1 then integrate like normal
+  if ((y1_zero < 0.0 && y2_zero < 0.0) || (y1_zero > 1.0 && y2_zero > 1.0)) {
+    for (auto i = 0ul; i < num_y_points; i++) {
+      y += dy;
+      out += Cij_func(y, m, ev, q, p, xi) * dy;
+    }
+  } else if (0.0 < y1_zero && y1_zero < 1.0 && y2_zero > 1.0) {
+    // if we have one zero then we avoid that single zero within some radius
+    const double y1_lower = y1_zero - abs_delta;
+    const double y1_upper = y1_zero + abs_delta;
+    for (auto i = 0ul; i < num_y_points; i++) {
+      y += dy;
+      if (y1_lower < y && y < y1_upper) {
+        continue;
+      }
+      out += Cij_func(y, m, ev, q, p, xi) * dy;
+    }
+  } else if (y1_zero < 0.0 && 0.0 < y2_zero && y2_zero < 1.0) {
+    // if we have one zero then we avoid that single zero within some radius
+    const double y2_lower = y2_zero - abs_delta;
+    const double y2_upper = y2_zero + abs_delta;
+    for (auto i = 0ul; i < num_y_points; i++) {
+      y += dy;
+      if (y2_lower < y && y < y2_upper) {
+        continue;
+      }
+      out += Cij_func(y, m, ev, q, p, xi) * dy;
+    }
+  } else {
+    // if we have two zeroes we need to avoid both
+    const double y1_lower = y1_zero - abs_delta;
+    const double y1_upper = y1_zero + abs_delta;
+    const double y2_lower = y1_zero - abs_delta;
+    const double y2_upper = y1_zero + abs_delta;
+    for (auto i = 0ul; i < num_y_points; i++) {
+      y += dy;
+      if ((y1_lower < y && y < y1_upper) || (y2_lower < y && y < y2_upper)) {
+        continue;
+      }
+      out += Cij_func(y, m, ev, q, p, xi) * dy;
+    }
+  }
+
+  return out;
+}
+
+//=============================================================================
+
+double C24(const double &m, const double &q, const double &p,
+           const double &xi) {
+  const double y_min = 0.0;
+  const double y_max = 1.0;
+  const size_t num_y_points = 1000;
+  const double dy = (y_max - y_min) / double(num_y_points);
+  double y = y_min;
+
+  double out = 0.0;
+  for (auto i = 0ul; i < num_y_points; i++) {
+    y += dy;
+    out += C24_u(y, m, q, p, xi) * dy;
+  }
+
+  return out;
 }
 
 //=============================================================================
@@ -325,55 +563,44 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     GridParameters{p_num_points, p_min, p_max, p_b, p_grid_type, p_indu});
   const auto p = pGrid->r();
 
-  const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
+  // const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
 
-  std::vector<DiracSpinor> orbs;
+  // std::vector<DiracSpinor> orbs;
 
-  fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
-             "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
+  // fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
+  //            "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
 
-  for (const auto &v : wf.valence()) {
+  // for (const auto &v : wf.valence()) {
 
-    // // if I only want to do the calculations for a particular value of n and l (or any other Q numbers)
-    // if (v.n() != 20 || v.kappa() > 0) {
-    //   continue;
-    // }
+  //   // // if I only want to do the calculations for a particular value of n and l (or any other Q numbers)
+  //   // if (v.n() != 20 || v.kappa() > 0) {
+  //   //   continue;
+  //   // }
 
-    const auto vtild = FourierTransformF(v, pGrid);
-    orbs.push_back(vtild);
-    const auto vp_norm = p_norm(vtild);
-    const auto ev = v.en();
-    double E = 0.0;
+  //   const auto vtild = FourierTransformF(v, pGrid);
+  //   orbs.push_back(vtild);
+  //   const auto vp_norm = p_norm(vtild);
+  //   const auto ev = v.en();
+  //   double E = SE_ZeroPotential(vtild, ev, mec2);
 
-    for (auto i = 0ul; i < pGrid->num_points(); i++) {
-      // to compare to Shabaev, E -> E + m_e * c^2 = E + 1/α^2 (in a.u.)
-      const auto En = ev + (1.0 / PhysConst::alpha2);
-      const auto Rho = rho(p[i], ev);
-      const auto a_rho = aTerm(Rho, mec2);
-      const auto b_rho = bTerm(Rho);
+  //   // convert to atomic units (I think it's in atomic units already?) and then print
+  //   fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}\n",
+  //              v.shortSymbol(), vp_norm, v.en(), E, grid.r(v.min_pt()),
+  //              grid.r(v.max_pt() - 1));
+  // }
 
-      E += (p[i] * p[i] / PhysConst::alpha2) *
-           (a_rho * (vtild.f(i) * vtild.f(i) - vtild.g(i) * vtild.g(i)) +
-            b_rho * (En * (vtild.f(i) * vtild.f(i) + vtild.g(i) * vtild.g(i)) -
-                     2 * sign(v.kappa()) * (p[i] / PhysConst::alpha) *
-                       vtild.f(i) * vtild.g(i))) *
-           pGrid->drdu(i) * pGrid->du();
-    }
+  // std::cout << std::endl;
 
-    E *= PhysConst::alpha / (32.0 * pow(M_PI, 4));
+  // write_orbitals(wf.identity() + "qed.pwf.txt", orbs);
 
-    // fudge factor to get agreement with Shabev paper
-    E *= PhysConst::alpha2;
+  // Testing one-potential term
 
-    // convert to atomic units (I think it's in atomic units already?) and then print
-    fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}\n",
-               v.shortSymbol(), vp_norm, v.en(), E, grid.r(v.min_pt()),
-               grid.r(v.max_pt() - 1));
-  }
-
-  std::cout << std::endl;
-
-  write_orbitals(wf.identity() + "qed.pwf.txt", orbs);
+  const auto [y1, y2] = Feyn_denom_zeros(-3.0, 3.6, 12.0, 0.27);
+  std::cout << "y1 = " << y1
+            << " ; D(y1) = " << Feyn_denom(-3.0, y1, 3.6, 12.0, 0.27)
+            << std::endl;
+  std::cout << "y2 = " << y2
+            << " ; D(y2) = " << Feyn_denom(-3.0, y2, 3.6, 12.0, 0.27) << "\n";
 }
 
 } // namespace Module
