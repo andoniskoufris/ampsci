@@ -28,6 +28,10 @@ void write_orbitals(const std::string &fname,
 double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
                         const double &mec2);
 
+double SE_OnePotential(const DiracSpinor &F_p, const double &ev,
+                       const double &mec2, const size_t &xi_num_points,
+                       const size_t &num_y_pts);
+
 double Feyn_denom(const double &ev, const double &y, const double &q,
                   const double &p, const double &xi);
 

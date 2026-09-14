@@ -7,6 +7,7 @@
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
 #include <complex>
+#include <gsl/gsl_integration.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <memory>
 
@@ -271,7 +272,7 @@ double X(const double &m, const double &y, const double &ev, const double &q,
 }
 
 //=============================================================================
-// alternative definition of above
+// overload definition of above
 double X(const double &Y) { return 1.0 + 1.0 / Y; }
 
 //=============================================================================
@@ -376,7 +377,8 @@ double Cij(const double &m, const double &ev, const double &q, const double &p,
       y += dy;
       out += Cij_func(y, m, ev, q, p, xi) * dy;
     }
-  } else if (0.0 < y1_zero && y1_zero < 1.0 && y2_zero > 1.0) {
+  } else if (0.0 < y1_zero && y1_zero < 1.0 &&
+             (y2_zero > 1.0 || y2_zero < 0.0)) {
     // if we have one zero then we avoid that single zero within some radius
     const double y1_lower = y1_zero - abs_delta;
     const double y1_upper = y1_zero + abs_delta;
@@ -387,7 +389,8 @@ double Cij(const double &m, const double &ev, const double &q, const double &p,
       }
       out += Cij_func(y, m, ev, q, p, xi) * dy;
     }
-  } else if (y1_zero < 0.0 && 0.0 < y2_zero && y2_zero < 1.0) {
+  } else if ((y1_zero < 0.0 || y1_zero > 1.0) && 0.0 < y2_zero &&
+             y2_zero < 1.0) {
     // if we have one zero then we avoid that single zero within some radius
     const double y2_lower = y2_zero - abs_delta;
     const double y2_upper = y2_zero + abs_delta;
@@ -555,6 +558,35 @@ double F2(const double &q, const size_t &q_i, const double &p,
   return f2;
 }
 
+// //=============================================================================
+
+// // this is stupid
+// // function definition for OnePotential constructor
+// OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
+//                            const size_t &q_i, const double &p,
+//                            const size_t &p_i, const double &xi,
+//                            const double &ev, const double &m,
+//                            const size_t &num_y_pts, const double &y_delta)
+//   : m_c0(Cij(m, ev, q, p, xi, &C0_u, num_y_pts, y_delta)),
+//     m_c11(Cij(m, ev, q, p, xi, &C11_u, num_y_pts, y_delta)),
+//     m_c12(Cij(m, ev, q, p, xi, &C12_u, num_y_pts, y_delta)),
+//     m_c21(Cij(m, ev, q, p, xi, &C21_u, num_y_pts, y_delta)),
+//     m_c22(Cij(m, ev, q, p, xi, &C22_u, num_y_pts, y_delta)),
+//     m_c23(Cij(m, ev, q, p, xi, &C23_u, num_y_pts, y_delta)),
+//     m_c24(C24(m, q, p, xi, num_y_pts)),
+//     m_a(A(q, p, m, ev, m_c0, m_c11, m_c12, m_c24, xi)),
+//     m_b1(B1(m_c11, m_c21)),
+//     m_b2(B2(m_c0, m_c11, m_c12, m_c23)),
+//     m_c1(C1(m_c0, m_c11, m_c12, m_c23)),
+//     m_c2(C2(m_c12, m_c22)),
+//     m_d(D(m_c0, m_c11, m_c12)),
+//     m_h1(H1(m, m_c0, m_c11)),
+//     m_h2(H2(m, m_c0, m_c12)),
+//     m_F1(
+//       F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev)),
+//     m_F2(F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
+//             ev)) {};
+
 //=============================================================================
 
 // this is stupid
@@ -564,25 +596,121 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
                            const size_t &p_i, const double &xi,
                            const double &ev, const double &m,
                            const size_t &num_y_pts, const double &y_delta)
-  : m_c0(Cij(m, ev, q, p, xi, &C0_u, num_y_pts, y_delta)),
-    m_c11(Cij(m, ev, q, p, xi, &C11_u, num_y_pts, y_delta)),
-    m_c12(Cij(m, ev, q, p, xi, &C12_u, num_y_pts, y_delta)),
-    m_c21(Cij(m, ev, q, p, xi, &C21_u, num_y_pts, y_delta)),
-    m_c22(Cij(m, ev, q, p, xi, &C22_u, num_y_pts, y_delta)),
-    m_c23(Cij(m, ev, q, p, xi, &C23_u, num_y_pts, y_delta)),
-    m_c24(C24(m, q, p, xi, num_y_pts)),
-    m_a(A(q, p, m, ev, m_c0, m_c11, m_c12, m_c24, xi)),
-    m_b1(B1(m_c11, m_c21)),
-    m_b2(B2(m_c0, m_c11, m_c12, m_c23)),
-    m_c1(C1(m_c0, m_c11, m_c12, m_c23)),
-    m_c2(C2(m_c12, m_c22)),
-    m_d(D(m_c0, m_c11, m_c12)),
-    m_h1(H1(m, m_c0, m_c11)),
-    m_h2(H2(m, m_c0, m_c12)),
-    m_F1(
-      F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev)),
-    m_F2(F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
-            ev)) {};
+  : m_c0(0.0),
+    m_c11(0.0),
+    m_c12(0.0),
+    m_c21(0.0),
+    m_c22(0.0),
+    m_c23(0.0),
+    m_c24(0.0),
+    m_a(0.0),
+    m_b1(0.0),
+    m_b2(0.0),
+    m_c1(0.0),
+    m_c2(0.0),
+    m_d(0.0),
+    m_h1(0.0),
+    m_h2(0.0),
+    m_F1(0.0),
+    m_F2(0.0) {
+
+  const double y_min = 0.0;
+  const double y_max = 1.0;
+  const double dy = (y_max - y_min) / double(num_y_pts);
+  double y = y_min;
+
+  const double abs_delta = abs(y_delta);
+
+  // determine the zeros in the denominator
+  const auto [y1_zero, y2_zero] = Feyn_denom_zeros(ev, q, p, xi);
+
+  // perform integrations for c0, c11, c12, c21, c22, c23
+  // if both zeroes are below y = 0 or above y = 1 then integrate like normal
+  if ((y1_zero < 0.0 && y2_zero < 0.0) || (y1_zero > 1.0 && y2_zero > 1.0)) {
+    for (auto i = 0ul; i < num_y_pts; i++) {
+      y += dy;
+      m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
+      m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
+      m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
+      m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
+      m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
+      m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
+    }
+  } else if (0.0 < y1_zero && y1_zero < 1.0 &&
+             (y2_zero > 1.0 || y2_zero < 0.0)) {
+    // if we have one zero then we avoid that single zero within some radius
+    // const double y1_lower = y1_zero - abs_delta;
+    // const double y1_upper = y1_zero + abs_delta;
+    for (auto i = 0ul; i < num_y_pts; i++) {
+      y += dy;
+      if (std::abs(y - y1_zero) < abs_delta) {
+        continue;
+      }
+      m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
+      m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
+      m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
+      m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
+      m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
+      m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
+    }
+  } else if ((y1_zero < 0.0 || y1_zero > 1.0) && 0.0 < y2_zero &&
+             y2_zero < 1.0) {
+    // if we have one zero then we avoid that single zero within some radius
+    // const double y2_lower = y2_zero - abs_delta;
+    // const double y2_upper = y2_zero + abs_delta;
+    for (auto i = 0ul; i < num_y_pts; i++) {
+      y += dy;
+      if (std::abs(y - y2_zero < abs_delta)) {
+        continue;
+      }
+      m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
+      m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
+      m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
+      m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
+      m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
+      m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
+    }
+  } else {
+    // if we have two zeroes we need to avoid both
+    // const double y1_lower = y1_zero - abs_delta;
+    // const double y1_upper = y1_zero + abs_delta;
+    // const double y2_lower = y1_zero - abs_delta;
+    // const double y2_upper = y1_zero + abs_delta;
+    for (auto i = 0ul; i < num_y_pts; i++) {
+      y += dy;
+      if (std::abs(y - y1_zero) < abs_delta ||
+          std::abs(y - y2_zero) < abs_delta) {
+        continue;
+      }
+      m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
+      m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
+      m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
+      m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
+      m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
+      m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
+    }
+  }
+
+  // integrate C24
+  y = 0.0;
+  for (auto i = 0ul; i < num_y_pts; i++) {
+    y += dy;
+    m_c24 += C24_u(y, m, q, p, xi) * dy;
+  }
+
+  m_a = A(q, p, m, ev, m_c0, m_c11, m_c12, m_c24, xi);
+  m_b1 = B1(m_c11, m_c21);
+  m_b2 = B2(m_c0, m_c11, m_c12, m_c23);
+  m_c1 = C1(m_c0, m_c11, m_c12, m_c23);
+  m_c2 = C2(m_c12, m_c22);
+  m_d = D(m_c0, m_c11, m_c12);
+  m_h1 = H1(m, m_c0, m_c11);
+  m_h2 = H2(m, m_c0, m_c12);
+  m_F1 =
+    F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev);
+  m_F2 =
+    F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev);
+};
 
 //=============================================================================
 
@@ -800,7 +928,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto vp_norm = p_norm(vtild);
     const auto ev = v.en();
     double E0 = SE_ZeroPotential(vtild, ev, mec2);
-    double E1 = wf.Znuc() * SE_OnePotential(vtild, ev, mec2, 500, 500);
+    double E1 = wf.Znuc() * SE_OnePotential(vtild, ev, mec2, 100, 100);
     // double E1 = 0.0;
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
