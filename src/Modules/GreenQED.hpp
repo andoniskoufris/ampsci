@@ -67,4 +67,24 @@ public:
   double f2() { return m_F2; }
 };
 
+struct OnePotentialParams {
+private:
+  const double m_me;
+  const double m_ev;
+  const double m_q;
+  const double m_p;
+  const double m_xi;
+
+public:
+  OnePotentialParams(const double &m, const double &ev, const double &q,
+                     const double &p, const double &xi)
+    : m_me(m), m_ev(ev), m_q(q), m_p(p), m_xi(xi) {}
+
+  double m() const { return m_me; }
+  double ev() const { return m_ev; }
+  double q() const { return m_q; }
+  double p() const { return m_p; }
+  double xi() const { return m_xi; }
+};
+
 } // namespace Module
