@@ -589,7 +589,43 @@ double F2(const double &q, const size_t &q_i, const double &p,
 
 //=============================================================================
 
-std::pair<double, double> quad_integrate() {}
+template <typename F>
+double quad_integrate(F func, const std::pair<double, double> &range,
+                      const std::pair<double, double> &zeros,
+                      const Params &params, double epsabs = 1.49e-8,
+                      double epsrel = 1.49e-8, int limit = 50) {
+
+  gsl_integration_workspace *work = gsl_integration_workspace_alloc(1000);
+
+  gsl_function F;
+  F.function = &func;
+  F.params = nullptr;
+
+  const double xmin = range.first;
+  const double xmax = range.second;
+
+  const double zero_1 = zeros.first;
+  const double zero_2 = zeros.second;
+
+  std::vector<double> pts;
+  pts.push_back(xmin);
+  if (zero_1 > xmin && zero_1 < xmax) {
+    pts.push_back(zero_1);
+  }
+  if (zero_2 > xmin && zero_2 < xmax) {
+    pts.push_back(zero_2);
+  }
+  pts.push_back(xmax);
+
+  double result, error;
+
+  gsl_integration_qapg(&F, pts.data(), pts.size(), epsabs, epsrel, limit, work,
+                       &result, &error);
+
+  std::pair<double, double> out = {result, error};
+
+  return out;
+}
 
 //=============================================================================
 
