@@ -589,6 +589,10 @@ double F2(const double &q, const size_t &q_i, const double &p,
 
 //=============================================================================
 
+std::pair<double, double> quad_integrate() {}
+
+//=============================================================================
+
 // this is stupid
 // function definition for OnePotential constructor
 OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
