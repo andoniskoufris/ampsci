@@ -7,12 +7,10 @@
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
 #include <complex>
+#include <gsl/gsl_sf_legendre.h>
 #include <memory>
 
 namespace Module {
-
-// lambda for sign
-auto sign = [](const double &x) { return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0); };
 
 double rho(const double &p, const double &E) {
   // dimensionless combination
@@ -48,6 +46,11 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
   // initialise Fourier transform to be on momentum space grid
   DiracSpinor FTransform = DiracSpinor(F.n(), F.kappa(), pGrid);
 
+  // lambda for sign
+  auto sign = [](const double &x) {
+    return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
+  };
+
   const auto grid = F.grid();
   const auto r = F.grid().r();
   const auto p = pGrid->r();
@@ -67,7 +70,7 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
                          grid.drdu(j) * grid.du();
     }
     FTransform.f(i) *= 4 * M_PI;
-    FTransform.g(i) *= 4 * M_PI;
+    FTransform.g(i) *= -4 * M_PI * sign(F.kappa());
   }
 
   return FTransform;
@@ -183,12 +186,11 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
     const auto a_rho = aTerm(Rho, mec2);
     const auto b_rho = bTerm(Rho);
 
-    //! need to check the sign of the last term
+    //! triple check the sign of the last term
     E += (p[i] * p[i] / PhysConst::alpha2) *
          (a_rho * (f_p[i] * f_p[i] - g_p[i] * g_p[i]) +
-          b_rho * (En * (f_p[i] * f_p[i] + g_p[i] * g_p[i]) -
-                   2 * sign(F_p.kappa()) * (p[i] / PhysConst::alpha) * f_p[i] *
-                     g_p[i])) *
+          b_rho * (En * (f_p[i] * f_p[i] + g_p[i] * g_p[i]) +
+                   2 * (p[i] / PhysConst::alpha) * f_p[i] * g_p[i])) *
          pGrid->drdu(i) * pGrid->du();
   }
 
@@ -355,10 +357,9 @@ double Cij(const double &m, const double &ev, const double &q, const double &p,
            const double &xi,
            std::function<double(double, double, double, double, double, double)>
              Cij_func,
-           double &delta) {
+           const size_t &num_y_points, const double &delta) {
   const double y_min = 0.0;
   const double y_max = 1.0;
-  const size_t num_y_points = 1000;
   const double dy = (y_max - y_min) / double(num_y_points);
   double y = y_min;
 
@@ -417,11 +418,10 @@ double Cij(const double &m, const double &ev, const double &q, const double &p,
 
 //=============================================================================
 
-double C24(const double &m, const double &q, const double &p,
-           const double &xi) {
+double C24(const double &m, const double &q, const double &p, const double &xi,
+           const size_t &num_y_points) {
   const double y_min = 0.0;
   const double y_max = 1.0;
-  const size_t num_y_points = 1000;
   const double dy = (y_max - y_min) / double(num_y_points);
   double y = y_min;
 
@@ -430,6 +430,224 @@ double C24(const double &m, const double &q, const double &p,
     y += dy;
     out += C24_u(y, m, q, p, xi) * dy;
   }
+
+  return out;
+}
+
+// should put these all in a struct
+//=============================================================================
+
+double A(const double &q, const double &p, const double &m, const double &ev,
+         const double &c0, const double &c11, const double &c12,
+         const double &c24, const double &xi) {
+  const double ev2 = ev * ev;
+  const double m2 = m * m;
+  // 3-vector dot products denoted with single letters
+  const double q2 = q * q;
+  const double p2 = p * p;
+  const double pq = p * q;
+  // 4-vector dot products denoted with double letters
+  const double qq2 = ev2 - q2;
+  const double pp2 = ev2 - p2;
+  const double pp_dot_qq = ev2 - pq * xi;
+
+  double out = c24 - 2 + qq2 * c11 + pp2 * c12;
+  out += 4 * pp_dot_qq * (c0 + c11 + c12) + m2 * (2.0 * c0 + c11 + c12);
+
+  return out;
+}
+
+//=============================================================================
+
+inline double B1(const double &c11, const double &c21) {
+  return -4.0 * (c11 + c21);
+}
+
+//=============================================================================
+
+inline double B2(const double &c0, const double &c11, const double &c12,
+                 const double &c23) {
+  return -4.0 * (c0 + c11 + c12 + c23);
+}
+
+//=============================================================================
+
+inline double C1(const double &c0, const double &c11, const double &c12,
+                 const double &c23) {
+  return -4.0 * (c0 + c11 + c12 + c23);
+}
+
+//=============================================================================
+
+inline double C2(const double &c12, const double &c22) {
+  return -4.0 * (c12 + c22);
+}
+
+//=============================================================================
+
+inline double D(const double &c0, const double &c11, const double &c12) {
+  return 2.0 * (c0 + c11 + c12);
+}
+
+//=============================================================================
+
+inline double H1(const double &m, const double &c0, const double &c11) {
+  return 4.0 * m * (c0 + 2.0 * c11);
+}
+
+//=============================================================================
+
+inline double H2(const double &m, const double &c0, const double &c12) {
+  return 4.0 * m * (c0 + 2.0 * c12);
+}
+
+//=============================================================================
+
+double F1(const double &q, const size_t &q_i, const double &p,
+          const size_t &p_i, const double &a, const double &b1,
+          const double &b2, const double &c1, const double &c2, const double &d,
+          const double &h1, const double &h2, const DiracSpinor &Fv,
+          const double &ev) {
+  const double f_q = Fv.f(q_i);
+  const double f_p = Fv.f(p_i);
+  const double g_q = Fv.g(q_i);
+  const double g_p = Fv.g(p_i);
+
+  double f1 = 0.0;
+
+  // first row
+  f1 += a * f_q * f_p + ev * (b1 + b2) * (ev * f_q * f_p + q * g_q * f_p);
+  // second row
+  f1 += ev * (c1 + c2) * (ev * f_q * f_p + p * f_q * g_p);
+  // third row
+  f1 += d * (ev * ev * f_q * f_p + ev * q * g_q * f_p + ev * p * f_q * g_p -
+             p * q * g_q * g_p);
+  // fourth row
+  f1 += ev * (h1 + h2) * f_q * f_p;
+
+  return f1;
+}
+
+//=============================================================================
+
+double F2(const double &q, const size_t &q_i, const double &p,
+          const size_t &p_i, const double &a, const double &b1,
+          const double &b2, const double &c1, const double &c2, const double &d,
+          const double &h1, const double &h2, const DiracSpinor &Fv,
+          const double &ev) {
+  const double f_q = Fv.f(q_i);
+  const double f_p = Fv.f(p_i);
+  const double g_q = Fv.g(q_i);
+  const double g_p = Fv.g(p_i);
+
+  double f2 = 0.0;
+
+  // first row
+  f2 += a * g_q * g_p + ev * (b1 + b2) * (ev * g_q * g_p + q * f_q * g_p);
+  // second row
+  f2 += ev * (c1 + c2) * (ev * g_q * g_p + p * g_q * f_p);
+  // third row
+  f2 += d * (ev * ev * g_q * g_p + ev * q * f_q * g_p + ev * p * g_q * f_p -
+             p * q * f_q * f_p);
+  // fourth row
+  f2 += -1.0 * ev * (h1 + h2) * g_q * g_p;
+
+  return f2;
+}
+
+//=============================================================================
+
+// this is stupid
+// function definition for OnePotential constructor
+OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
+                           const size_t &q_i, const double &p,
+                           const size_t &p_i, const double &xi,
+                           const double &ev, const double &m,
+                           const size_t &num_y_pts, const double &y_delta)
+  : m_c0(Cij(m, ev, q, p, xi, &C0_u, num_y_pts, y_delta)),
+    m_c11(Cij(m, ev, q, p, xi, &C11_u, num_y_pts, y_delta)),
+    m_c12(Cij(m, ev, q, p, xi, &C12_u, num_y_pts, y_delta)),
+    m_c21(Cij(m, ev, q, p, xi, &C21_u, num_y_pts, y_delta)),
+    m_c22(Cij(m, ev, q, p, xi, &C22_u, num_y_pts, y_delta)),
+    m_c23(Cij(m, ev, q, p, xi, &C23_u, num_y_pts, y_delta)),
+    m_c24(C24(m, q, p, xi, num_y_pts)),
+    m_a(A(q, p, m, ev, m_c0, m_c11, m_c12, m_c24, xi)),
+    m_b1(B1(m_c11, m_c21)),
+    m_b2(B2(m_c0, m_c11, m_c12, m_c23)),
+    m_c1(C1(m_c0, m_c11, m_c12, m_c23)),
+    m_c2(C2(m_c12, m_c22)),
+    m_d(D(m_c0, m_c11, m_c12)),
+    m_h1(H1(m, m_c0, m_c11)),
+    m_h2(H2(m, m_c0, m_c12)),
+    m_F1(
+      F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev)),
+    m_F2(F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
+            ev)) {};
+
+//=============================================================================
+
+double SE_OnePotential(const DiracSpinor &F_p, const double &ev,
+                       const double &mec2, const size_t &xi_num_points,
+                       const size_t &num_y_pts) {
+
+  const double xi_min = -1.0;
+  const double xi_max = 1.0;
+  const double dxi = (xi_max - xi_min) / double(xi_num_points);
+
+  const auto pGrid = F_p.grid();
+  const auto pr = pGrid.r();
+  const auto dpdu = pGrid.drdu();
+  const auto dp = pGrid.du();
+  const auto dq = dp;
+
+  std::vector<double> xi_grid(xi_num_points);
+
+  for (auto i = 0ul; i < xi_num_points; i++) {
+    xi_grid[i] = xi_min + dxi;
+  }
+
+  // lambda for sign
+  auto sign = [](const double &x) {
+    return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
+  };
+
+  const auto s_kappa = sign(F_p.kappa()) + 0.001;
+
+  double out = 0.0;
+
+  for (auto x = 0ul; x < xi_num_points; x++) { // loop over xi
+    const double xi = xi_grid[x];
+    const double P_l = gsl_sf_legendre_Pl(F_p.l(), xi);
+    const double P_lbar = gsl_sf_legendre_Pl(F_p.l() - int(s_kappa), xi);
+
+    double out1 = 0.0;
+    double out2 = 0.0;
+
+    for (auto q_i = F_p.min_pt(); q_i < F_p.max_pt(); q_i++) { // loop over q
+      // can multiply this by whatever we want depending on choice of units
+      const double q = pr[q_i] / PhysConst::alpha;
+      for (auto p_j = F_p.min_pt(); p_j < F_p.max_pt(); p_j++) { // loop over p
+        // can multiply this by whatever we want depending on choice of units
+        const double p = pr[p_j] / PhysConst::alpha;
+        const double qpxi_factor =
+          q * q * p * p / (p * p + q * q - 2.0 * p * q * xi);
+
+        OnePotential OnePIntegrals(F_p, q, q_i, p, p_j, xi, ev, mec2, num_y_pts,
+                                   0.05);
+        const double f1 = OnePIntegrals.f1();
+        const double f2 = OnePIntegrals.f2();
+
+        out1 += qpxi_factor * f1 * dpdu[p_j] * dp;
+        out2 += qpxi_factor * f2 * dpdu[p_j] * dp;
+      } // p
+      out1 *= dpdu[q_i] * dq;
+      out2 *= dpdu[q_i] * dq;
+    } // q
+    out += (P_l * out1 + P_lbar * out2) * dxi;
+    std::cout << double(x) / double(xi_num_points) << "\n";
+  } // xi
+
+  out *= -PhysConst::alpha2 / (32.0 * pow(M_PI, 5));
 
   return out;
 }
@@ -545,7 +763,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // momentum grid parameters
   // right now these are in some units that I don't know
-  const auto p_num_points = 5000;
+  const auto p_num_points = 1000;
   const auto p_min = p_to_au * 1.0e-4;
   const auto p_max = p_to_au * 1.0e3;
   const auto p_b = 4.0;
@@ -563,38 +781,39 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     GridParameters{p_num_points, p_min, p_max, p_b, p_grid_type, p_indu});
   const auto p = pGrid->r();
 
-  // const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
+  const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
 
-  // std::vector<DiracSpinor> orbs;
+  std::vector<DiracSpinor> orbs;
 
-  // fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
-  //            "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
+  fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
+             "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
 
-  // for (const auto &v : wf.valence()) {
+  for (const auto &v : wf.valence()) {
 
-  //   // // if I only want to do the calculations for a particular value of n and l (or any other Q numbers)
-  //   // if (v.n() != 20 || v.kappa() > 0) {
-  //   //   continue;
-  //   // }
+    // // if I only want to do the calculations for a particular value of n and l (or any other Q numbers)
+    // if (v.n() != 20 || v.kappa() > 0) {
+    //   continue;
+    // }
 
-  //   const auto vtild = FourierTransformF(v, pGrid);
-  //   orbs.push_back(vtild);
-  //   const auto vp_norm = p_norm(vtild);
-  //   const auto ev = v.en();
-  //   double E = SE_ZeroPotential(vtild, ev, mec2);
+    const auto vtild = FourierTransformF(v, pGrid);
+    orbs.push_back(vtild);
+    const auto vp_norm = p_norm(vtild);
+    const auto ev = v.en();
+    double E0 = SE_ZeroPotential(vtild, ev, mec2);
+    double E1 = wf.Znuc() * SE_OnePotential(vtild, ev, mec2, 500, 500);
+    // double E1 = 0.0;
 
-  //   // convert to atomic units (I think it's in atomic units already?) and then print
-  //   fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}  {:>+7.7f}\n",
-  //              v.shortSymbol(), vp_norm, v.en(), E, grid.r(v.min_pt()),
-  //              grid.r(v.max_pt() - 1));
-  // }
+    fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
+               "{:>+7.7f}\n",
+               v.shortSymbol(), vp_norm, v.en(), E0, E1, grid.r(v.min_pt()),
+               grid.r(v.max_pt() - 1));
+  }
 
-  // std::cout << std::endl;
+  std::cout << std::endl;
 
-  // write_orbitals(wf.identity() + "qed.pwf.txt", orbs);
+  write_orbitals(wf.identity() + "qed.pwf.txt", orbs);
 
-  // Testing one-potential term
-
+  //! Testing one-potential term
   const auto [y1, y2] = Feyn_denom_zeros(-3.0, 3.6, 12.0, 0.27);
   std::cout << "y1 = " << y1
             << " ; D(y1) = " << Feyn_denom(-3.0, y1, 3.6, 12.0, 0.27)

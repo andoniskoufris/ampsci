@@ -39,4 +39,28 @@ double X(const double &m, const double &y, const double &ev, const double &q,
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf);
 
+class OnePotential {
+private:
+  double m_c0;
+  double m_c11, m_c12;
+  double m_c21, m_c22, m_c23;
+  double m_c24;
+  double m_a;
+  double m_b1, m_b2;
+  double m_c1, m_c2;
+  double m_d;
+  double m_h1, m_h2;
+  double m_F1, m_F2;
+
+  //separately pass in q and its index, and same for p, so that we can multiply p and q without messing up the indexing
+public:
+  OnePotential(const DiracSpinor &Fv, const double &q, const size_t &q_i,
+               const double &p, const size_t &p_i, const double &xi,
+               const double &ev, const double &m, const size_t &num_y_pts,
+               const double &y_delta);
+
+  double f1() { return m_F1; }
+  double f2() { return m_F2; }
+};
+
 } // namespace Module
