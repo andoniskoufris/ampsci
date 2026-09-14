@@ -285,6 +285,10 @@ double C0_u(const double &y, const double &m, const double &ev, const double &q,
   return -log(XX) / denom;
 }
 
+double C0_u(const double &y, const OnePotentialParams &params) {
+  return C0_u(y, params.m(), params.ev(), params.q(), params.p(), params.xi());
+}
+
 //=============================================================================
 
 double C11_u(const double &y, const double &m, const double &ev,
@@ -294,6 +298,10 @@ double C11_u(const double &y, const double &m, const double &ev,
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
   return (1.0 - YY * log(XX)) * y / denom;
+}
+
+double C11_u(const double &y, const OnePotentialParams &params) {
+  return C11_u(y, params.m(), params.ev(), params.q(), params.p(), params.xi());
 }
 
 //=============================================================================
@@ -307,6 +315,10 @@ double C12_u(const double &y, const double &m, const double &ev,
   return (1.0 - YY * log(XX)) * (1.0 - y) / denom;
 }
 
+double C12_u(const double &y, const OnePotentialParams &params) {
+  return C12_u(y, params.m(), params.ev(), params.q(), params.p(), params.xi());
+}
+
 //=============================================================================
 
 double C21_u(const double &y, const double &m, const double &ev,
@@ -316,6 +328,10 @@ double C21_u(const double &y, const double &m, const double &ev,
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
   return (-0.5 + YY - YY * YY * log(XX)) * y * y / denom;
+}
+
+double C21_u(const double &y, const OnePotentialParams &params) {
+  return C21_u(y, params.m(), params.ev(), params.q(), params.p(), params.xi());
 }
 
 //=============================================================================
@@ -329,6 +345,10 @@ double C22_u(const double &y, const double &m, const double &ev,
   return (-0.5 + YY - YY * YY * log(XX)) * (1.0 - y) * (1.0 - y) / denom;
 }
 
+double C22_u(const double &y, const OnePotentialParams &params) {
+  return C22_u(y, params.m(), params.ev(), params.q(), params.p(), params.xi());
+}
+
 //=============================================================================
 
 double C23_u(const double &y, const double &m, const double &ev,
@@ -338,6 +358,10 @@ double C23_u(const double &y, const double &m, const double &ev,
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
   return (-0.5 + YY - YY * YY * log(XX)) * y * (1.0 - y) / denom;
+}
+
+double C23_u(const double &y, const OnePotentialParams &params) {
+  return C23_u(y, params.m(), params.ev(), params.q(), params.p(), params.xi());
 }
 
 //=============================================================================
@@ -350,6 +374,10 @@ double C24_u(const double &y, const double &m, const double &q, const double &p,
   const double x = y * (y - 1) * (k2 / m2) + 1.0;
 
   return -log(x);
+}
+
+double C24_u(const double &y, const OnePotentialParams &params) {
+  return C24_u(y, params.m(), params.q(), params.p(), params.xi());
 }
 
 //=============================================================================
@@ -590,16 +618,20 @@ double F2(const double &q, const size_t &q_i, const double &p,
 //=============================================================================
 
 template <typename F>
-double quad_integrate(F func, const std::pair<double, double> &range,
-                      const std::pair<double, double> &zeros,
-                      const Params &params, double epsabs = 1.49e-8,
-                      double epsrel = 1.49e-8, int limit = 50) {
+std::pair<double, double>
+quad_integrate(F func, const std::pair<double, double> &range,
+               const std::pair<double, double> &zeros,
+               const OnePotentialParams &params, double epsabs = 1.49e-8,
+               double epsrel = 1.49e-8, int limit = 50) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(1000);
 
-  gsl_function F;
-  F.function = &func;
-  F.params = nullptr;
+  double parameters[] = {params.m(), params.ev(), params.q(), params.p(),
+                         params.xi()};
+
+  gsl_function f;
+  f.function = &func;
+  f.params = parameters;
 
   const double xmin = range.first;
   const double xmax = range.second;
@@ -619,7 +651,7 @@ double quad_integrate(F func, const std::pair<double, double> &range,
 
   double result, error;
 
-  gsl_integration_qapg(&F, pts.data(), pts.size(), epsabs, epsrel, limit, work,
+  gsl_integration_qagp(&f, pts.data(), pts.size(), epsabs, epsrel, limit, work,
                        &result, &error);
 
   std::pair<double, double> out = {result, error};
