@@ -6,6 +6,7 @@
 #include "Physics/UnitConv_conversions.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
+#include <cassert>
 #include <complex>
 #include <gsl/gsl_integration.h>
 #include <gsl/gsl_sf_legendre.h>
@@ -973,6 +974,55 @@ double SE_OnePotential(const DiracSpinor &F_p, const double &ev,
   return out;
 }
 
+//==============================================================================
+
+std::vector<double> pq_to_x_grid(const std::vector<double> &p_grid,
+                                 const std::vector<double> &q_grid) {
+
+  std::vector<double> x_grid;
+
+  assert(p_grid.size() == q_grid.size() &&
+         "The x and y grids must be the same size!");
+
+  for (auto i = 0ul; i < p_grid.size(); i++) {
+    for (auto j = 0ul; j < i; j++) {
+      x_grid.push_back(p_grid[i] + q_grid[j]);
+    }
+    x_grid.push_back(2.0 * p_grid[i]);
+  }
+
+  return x_grid;
+}
+
+//==============================================================================
+
+std::vector<double> pq_to_y_grid(const std::vector<double> &p_grid,
+                                 const std::vector<double> &q_grid) {
+
+  std::vector<double> y_grid;
+
+  assert(p_grid.size() == q_grid.size() &&
+         "The x and y grids must be the same size!");
+
+  for (auto i = 0ul; i < p_grid.size(); i++) {
+    for (auto j = 0ul; j < i; j++) {
+      y_grid.push_back(p_grid[i] - q_grid[j]);
+    }
+    y_grid.push_back(0.0);
+  }
+
+  return y_grid;
+}
+
+//==============================================================================
+
+void clean_grid(std::vector<double> &vec) {
+
+  // sort and clean
+  sort(vec.begin(), vec.end());
+  vec.erase(unique(vec.begin(), vec.end()), vec.end());
+}
+
 //=============================================================================
 //=============================================================================
 
@@ -1084,7 +1134,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // momentum grid parameters
   // right now these are in some units that I don't know
-  const auto p_num_points = 1000;
+  const auto p_num_points = 2000;
   const auto p_min = p_to_au * 1.0e-4;
   const auto p_max = p_to_au * 1.0e3;
   const auto p_b = 4.0;
@@ -1121,8 +1171,8 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto vp_norm = p_norm(vtild);
     const auto ev = v.en();
     double E0 = SE_ZeroPotential(vtild, ev, mec2);
-    double E1 = wf.Znuc() * SE_OnePotential(vtild, ev, mec2, 500, 100);
-    // double E1 = 0.0;
+    // double E1 = wf.Znuc() * SE_OnePotential(vtild, ev, mec2, 500, 100);
+    double E1 = 0.0;
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
                "{:>+7.7f}\n",
@@ -1164,6 +1214,9 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // std::cout << "Result: " << test_int << "\n";
   // std::cout << "Delta: " << expected - test_int << "\n";
   // std::cout << "eps: " << (expected - test_int) / expected << "\n";
+
+  // std::cout << "#    x    y\n";
+  // for (auto )
 }
 
 } // namespace Module
