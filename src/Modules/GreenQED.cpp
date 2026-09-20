@@ -53,6 +53,8 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
     return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
   };
 
+  const auto l_tilde = F.kappa() < 0 ? F.l() + 1 : F.l() - 1;
+
   const auto grid = F.grid();
   const auto r = F.grid().r();
   const auto p = pGrid->r();
@@ -68,7 +70,7 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
                          SphericalBessel::JL(F.l(), p_i * r[j]) * grid.drdu(j) *
                          grid.du();
       FTransform.g(i) += r[j] * F.g(j) *
-                         SphericalBessel::JL(F.l() - int(s_kappa), p_i * r[j]) *
+                         SphericalBessel::JL(l_tilde, p_i * r[j]) *
                          grid.drdu(j) * grid.du();
     }
     FTransform.f(i) *= 4 * M_PI;
@@ -76,6 +78,49 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
   }
 
   return FTransform;
+}
+
+//=============================================================================
+
+double FourierTransform_f(const DiracSpinor &F, const double &p) {
+
+  const auto grid = F.grid();
+  const auto r = F.grid().r();
+
+  double out = 0.0;
+
+  for (auto j = F.min_pt(); j < F.max_pt(); j++) {
+    out += r[j] * F.f(j) * SphericalBessel::JL(F.l(), p * r[j]) * grid.drdu(j) *
+           grid.du();
+  }
+  out *= 4 * M_PI;
+
+  return out;
+}
+
+//=============================================================================
+
+double FourierTransform_g(const DiracSpinor &F, const double &p) {
+
+  // lambda for sign
+  auto sign = [](const double &x) {
+    return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
+  };
+
+  const auto l_tilde = F.kappa() < 0 ? F.l() + 1 : F.l() - 1;
+
+  const auto grid = F.grid();
+  const auto r = F.grid().r();
+
+  double out = 0.0;
+
+  for (auto j = F.min_pt(); j < F.max_pt(); j++) {
+    out += r[j] * F.g(j) * SphericalBessel::JL(l_tilde, p * r[j]) *
+           grid.drdu(j) * grid.du();
+  }
+  out *= -4 * M_PI * sign(F.kappa());
+
+  return out;
 }
 
 //=============================================================================
@@ -205,47 +250,47 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
 
 //=============================================================================
 
-double Feyn_denom(const double &ev, const double &y, const double &q,
-                  const double &p, const double &xi) {
-  double denom = 0.0;
-  denom += y * y * (ev * ev - q * q);
-  denom += 2 * y * (1.0 - y) * (ev * ev - p * q * xi);
-  denom += (1.0 - y) * (1.0 - y) * (ev * ev - p * p);
+double Feyn_denom(const double &y, const double &ev, const double &q,
+                  const double &p, const double &v) {
+  const double ev2 = ev * ev;
+  const double q2 = q * q;
+  const double p2 = p * p;
+  const double ym1 = y - 1.0;
 
-  return denom;
+  return ev2 - y * q2 + ym1 * p - y * ym1 * exp(-2.0 * v);
 }
 
 //=============================================================================
 
+// double-check that Mathematica gave me the correct expression for this
 std::pair<double, double> Feyn_denom_zeros(const double &ev, const double &q,
-                                           const double &p, const double &xi) {
+                                           const double &p, const double &v) {
   const double ev2 = ev * ev;
-  const double pq = p * q;
   const double p2 = p * p;
   const double q2 = q * q;
-  const double xi2 = xi * xi;
 
   std::pair<double, double> out;
 
-  const double discr =
-    q2 * ev2 - 2.0 * pq * ev2 * xi + p2 * (ev2 + q2 * (xi2 - 1));
-  // make sure the zeroes are not in the interval if the discriminant is zero or if \vec{p} = \vec{q}
-  if (discr < 0 || (p == q && xi == 1)) {
+  const double sq_root = exp(-4.0 * v) + (p2 - q2) * (p2 - q2) -
+                         2.0 * exp(-2.0 * v) * (p2 + q2 - 2.0 * ev2);
+  // make sure the zeroes are not in the interval if the discriminant is zero
+  // y is being integrated between 0 and 1 so we can safely set the zeros to -1.0
+  if (sq_root < 0) {
     out.first = -1.0;
     out.second = -1.0;
     return out;
   }
-  const double A = p * (p - q * xi);
-  const double D = p2 + q2 - 2.0 * pq * xi;
+  const double A = std::abs(exp(2.0 * v) * (p2 - q2 + sq_root));
 
-  if (discr == 0.0) {
-    out.first = A / D;
+  // is this really where the zero is?? does not seem right
+  if (A == 0.0) {
+    out.first = 0.5;
     out.second = out.first;
     return out;
   }
 
-  const auto y1 = (A - sqrt(discr)) / D;
-  const auto y2 = (A + sqrt(discr)) / D;
+  const auto y1 = (1.0 - A) / 2.0;
+  const auto y2 = (1.0 + A) / 2.0;
 
   out.first = y1;
   out.second = y2;
@@ -255,60 +300,57 @@ std::pair<double, double> Feyn_denom_zeros(const double &ev, const double &q,
 
 //=============================================================================
 
-double Y(const double &m, const double &y, const double &ev, const double &q,
-         const double &p, const double &xi) {
-  double Y = 0.0;
+double Y(const double &y, const double &ev, const double &m, const double &q,
+         const double &p, const double &v) {
+  const double numerator = m * m + y * q * q + (1.0 - y) * p * p;
 
-  Y += m * m - y * (ev * ev - q * q) - (1.0 - y) * (ev * ev - p * p);
-  Y *= 1.0 / (Feyn_denom(ev, y, p, q, xi));
-
-  return Y;
+  return numerator / Feyn_denom(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
-double X(const double &m, const double &y, const double &ev, const double &q,
-         const double &p, const double &xi) {
+double X(const double &y, const double &ev, const double &m, const double &q,
+         const double &p, const double &v) {
   const double m2 = m * m;
   const double ev2 = ev * ev;
   const double q2 = q * q;
   const double p2 = p * p;
-  const double qp = q * p;
 
-  const double numerator = m2 + y * (y - 1.0) * (2 * qp * xi - q2 - p2);
-  const double denominator = m2 - y * (ev2 - q2) - (1.0 - y) * (ev2 - p2);
+  const double numerator = m2 + ev * ev + y * (1.0 - y) * exp(-2.0 * v);
+  const double denominator = m * m + y * q * q + (1.0 - y) * p * p;
 
   return numerator / denominator;
 }
 
 //=============================================================================
 
-double C0_u(const double &y, const double &m, const double &ev, const double &q,
-            const double &p, const double &xi) {
-  const double XX = X(m, y, ev, q, p, xi);
-  const double denom = Feyn_denom(ev, y, q, p, xi);
+double C0_u(const double &y, const double &ev, const double &m, const double &q,
+            const double &p, const double &v) {
+  const double XX = X(y, ev, m, q, p, v);
+  const double denom = Feyn_denom(y, ev, q, p, v);
 
   return -log(XX) / denom;
 }
 
+// come back to this
 double C0_i(double y, void *params) {
 
   const double m = ((double *)params)[0];
   const double ev = ((double *)params)[1];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C0_u(y, m, ev, q, p, xi);
+  return C0_u(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
-double C11_u(const double &y, const double &m, const double &ev,
-             const double &q, const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
-  const double XX = X(m, y, ev, q, p, xi);
-  const double denom = Feyn_denom(ev, y, q, p, xi);
+double C11_u(const double &y, const double &ev, const double &m,
+             const double &q, const double &p, const double &v) {
+  const double YY = Y(y, ev, m, q, p, v);
+  const double XX = X(y, ev, m, q, p, v);
+  const double denom = Feyn_denom(y, ev, q, p, v);
 
   return (1.0 - YY * log(XX)) * y / denom;
 }
@@ -319,18 +361,18 @@ double C11_i(double y, void *params) {
   const double ev = ((double *)params)[1];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C11_u(y, m, ev, q, p, xi);
+  return C11_u(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
-double C12_u(const double &y, const double &m, const double &ev,
-             const double &q, const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
-  const double XX = X(m, y, ev, q, p, xi);
-  const double denom = Feyn_denom(ev, y, q, p, xi);
+double C12_u(const double &y, const double &ev, const double &m,
+             const double &q, const double &p, const double &v) {
+  const double YY = Y(y, ev, m, q, p, v);
+  const double XX = X(y, ev, m, q, p, v);
+  const double denom = Feyn_denom(y, ev, q, p, v);
 
   return (1.0 - YY * log(XX)) * (1.0 - y) / denom;
 }
@@ -341,18 +383,18 @@ double C12_i(double y, void *params) {
   const double ev = ((double *)params)[1];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C12_u(y, m, ev, q, p, xi);
+  return C12_u(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
-double C21_u(double y, const double &m, const double &ev, const double &q,
-             const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
-  const double XX = X(m, y, ev, q, p, xi);
-  const double denom = Feyn_denom(ev, y, q, p, xi);
+double C21_u(double y, const double &ev, const double &m, const double &q,
+             const double &p, const double &v) {
+  const double YY = Y(y, ev, m, q, p, v);
+  const double XX = X(y, ev, m, q, p, v);
+  const double denom = Feyn_denom(y, ev, q, p, v);
 
   return (-0.5 + YY * (1.0 - YY * log(XX))) * y * y / denom;
 }
@@ -363,18 +405,18 @@ double C21_i(double y, void *params) {
   const double ev = ((double *)params)[1];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C21_u(y, m, ev, q, p, xi);
+  return C21_u(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
-double C22_u(const double &y, const double &m, const double &ev,
-             const double &q, const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
-  const double XX = X(m, y, ev, q, p, xi);
-  const double denom = Feyn_denom(ev, y, q, p, xi);
+double C22_u(const double &y, const double &ev, const double &m,
+             const double &q, const double &p, const double &v) {
+  const double YY = Y(y, ev, m, q, p, v);
+  const double XX = X(y, ev, m, q, p, v);
+  const double denom = Feyn_denom(y, ev, q, p, v);
 
   return (-0.5 + YY * (1.0 - YY * log(XX))) * (1.0 - y) * (1.0 - y) / denom;
 }
@@ -385,18 +427,18 @@ double C22_i(double y, void *params) {
   const double ev = ((double *)params)[1];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C22_u(y, m, ev, q, p, xi);
+  return C22_u(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
-double C23_u(double y, const double &m, const double &ev, const double &q,
-             const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
-  const double XX = X(m, y, ev, q, p, xi);
-  const double denom = Feyn_denom(ev, y, q, p, xi);
+double C23_u(double y, const double &ev, const double &m, const double &q,
+             const double &p, const double &v) {
+  const double YY = Y(y, ev, m, q, p, v);
+  const double XX = X(y, ev, m, q, p, v);
+  const double denom = Feyn_denom(y, ev, q, p, v);
 
   return (-0.5 + YY * (1.0 - YY * log(XX))) * y * (1.0 - y) / denom;
 }
@@ -407,19 +449,20 @@ double C23_i(double y, void *params) {
   const double ev = ((double *)params)[1];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C23_u(y, m, ev, q, p, xi);
+  return C23_u(y, ev, m, q, p, v);
 }
 
 //=============================================================================
 
 double C24_u(const double &y, const double &m, const double &q, const double &p,
-             const double &xi) {
-  const double k2 = 2 * p * q * xi - p * p - q * q;
+             const double &v) {
+  const double k2 = -exp(-2.0 * v);
   const double m2 = m * m;
 
-  const double x = y * (y - 1) * (k2 / m2) + 1.0;
+  // (y^2 * k^2 / m^2) - y * k^2 / m^2 + 1 = [y * (y - 1) * k^2 + m^2] / m^2
+  const double x = (y * (y - 1) * k2 + m2) / m2;
 
   return -log(x);
 }
@@ -429,102 +472,16 @@ double C24_i(double y, void *params) {
   const double m = ((double *)params)[0];
   const double q = ((double *)params)[2];
   const double p = ((double *)params)[3];
-  const double xi = ((double *)params)[4];
+  const double v = ((double *)params)[4];
 
-  return C24_u(y, m, q, p, xi);
+  return C24_u(y, m, q, p, v);
 }
 
 //=============================================================================
 
-double Cij(const double &m, const double &ev, const double &q, const double &p,
-           const double &xi,
-           std::function<double(double, double, double, double, double, double)>
-             Cij_func,
-           const size_t &num_y_points, const double &delta) {
-  const double y_min = 0.0;
-  const double y_max = 1.0;
-  const double dy = (y_max - y_min) / double(num_y_points);
-  double y = y_min;
-
-  const double abs_delta = abs(delta);
-
-  // determine the zeros in the denominator
-  const auto [y1_zero, y2_zero] = Feyn_denom_zeros(ev, q, p, xi);
-
-  double out = 0.0;
-
-  // if both zeroes are below y = 0 or above y = 1 then integrate like normal
-  if ((y1_zero < 0.0 && y2_zero < 0.0) || (y1_zero > 1.0 && y2_zero > 1.0)) {
-    for (auto i = 0ul; i < num_y_points; i++) {
-      y += dy;
-      out += Cij_func(y, m, ev, q, p, xi) * dy;
-    }
-  } else if (0.0 < y1_zero && y1_zero < 1.0 &&
-             (y2_zero > 1.0 || y2_zero < 0.0)) {
-    // if we have one zero then we avoid that single zero within some radius
-    const double y1_lower = y1_zero - abs_delta;
-    const double y1_upper = y1_zero + abs_delta;
-    for (auto i = 0ul; i < num_y_points; i++) {
-      y += dy;
-      if (y1_lower < y && y < y1_upper) {
-        continue;
-      }
-      out += Cij_func(y, m, ev, q, p, xi) * dy;
-    }
-  } else if ((y1_zero < 0.0 || y1_zero > 1.0) && 0.0 < y2_zero &&
-             y2_zero < 1.0) {
-    // if we have one zero then we avoid that single zero within some radius
-    const double y2_lower = y2_zero - abs_delta;
-    const double y2_upper = y2_zero + abs_delta;
-    for (auto i = 0ul; i < num_y_points; i++) {
-      y += dy;
-      if (y2_lower < y && y < y2_upper) {
-        continue;
-      }
-      out += Cij_func(y, m, ev, q, p, xi) * dy;
-    }
-  } else {
-    // if we have two zeroes we need to avoid both
-    const double y1_lower = y1_zero - abs_delta;
-    const double y1_upper = y1_zero + abs_delta;
-    const double y2_lower = y1_zero - abs_delta;
-    const double y2_upper = y1_zero + abs_delta;
-    for (auto i = 0ul; i < num_y_points; i++) {
-      y += dy;
-      if ((y1_lower < y && y < y1_upper) || (y2_lower < y && y < y2_upper)) {
-        continue;
-      }
-      out += Cij_func(y, m, ev, q, p, xi) * dy;
-    }
-  }
-
-  return out;
-}
-
-//=============================================================================
-
-double C24(const double &m, const double &q, const double &p, const double &xi,
-           const size_t &num_y_points) {
-  const double y_min = 0.0;
-  const double y_max = 1.0;
-  const double dy = (y_max - y_min) / double(num_y_points);
-  double y = y_min;
-
-  double out = 0.0;
-  for (auto i = 0ul; i < num_y_points; i++) {
-    y += dy;
-    out += C24_u(y, m, q, p, xi) * dy;
-  }
-
-  return out;
-}
-
-// should put these all in a struct
-//=============================================================================
-
-double A(const double &q, const double &p, const double &m, const double &ev,
+double A(const double &q, const double &p, const double &ev, const double &m,
          const double &c0, const double &c11, const double &c12,
-         const double &c24, const double &xi) {
+         const double &c24, const double &v) {
   const double ev2 = ev * ev;
   const double m2 = m * m;
   // 3-vector dot products denoted with single letters
@@ -534,7 +491,7 @@ double A(const double &q, const double &p, const double &m, const double &ev,
   // 4-vector dot products denoted with double letters
   const double qq2 = ev2 - q2;
   const double pp2 = ev2 - p2;
-  const double pp_dot_qq = ev2 - pq * xi;
+  const double pp_dot_qq = (2 * ev2 + exp(-2.0 * v) - p2 - q2) / (pq);
 
   double out = c24 - 2 + qq2 * c11 + pp2 * c12;
   out += 4 * pp_dot_qq * (c0 + c11 + c12) + m2 * (2.0 * c0 + c11 + c12);
@@ -588,15 +545,40 @@ inline double H2(const double &m, const double &c0, const double &c12) {
 
 //=============================================================================
 
+// takes in a real space wave function and calculates the Fourier components
+// should _NOT_ ever be used with Fourier space wave function
 double F1(const double &q, const size_t &q_i, const double &p,
           const size_t &p_i, const double &a, const double &b1,
           const double &b2, const double &c1, const double &c2, const double &d,
           const double &h1, const double &h2, const DiracSpinor &Fv,
-          const double &ev) {
-  const double f_q = Fv.f(q_i);
-  const double f_p = Fv.f(p_i);
-  const double g_q = Fv.g(q_i);
-  const double g_p = Fv.g(p_i);
+          const double &ev, bool each_iter) {
+  const double f_q = each_iter ? FourierTransform_f(Fv, q_i) : Fv.f(q_i);
+  const double f_p = each_iter ? FourierTransform_f(Fv, p_i) : Fv.f(p_i);
+  const double g_q = each_iter ? FourierTransform_g(Fv, q_i) : Fv.g(q_i);
+  const double g_p = each_iter ? FourierTransform_g(Fv, p_i) : Fv.g(p_i);
+
+  double f1 = 0.0;
+
+  // first row
+  f1 += a * f_q * f_p + ev * (b1 + b2) * (ev * f_q * f_p + q * g_q * f_p);
+  // second row
+  f1 += ev * (c1 + c2) * (ev * f_q * f_p + p * f_q * g_p);
+  // third row
+  f1 += d * (ev * ev * f_q * f_p + ev * q * g_q * f_p + ev * p * f_q * g_p -
+             p * q * g_q * g_p);
+  // fourth row
+  f1 += ev * (h1 + h2) * f_q * f_p;
+
+  return f1;
+}
+
+// overload in case we have the spinor components
+double F1(const double &q, const size_t &q_i, const double &p,
+          const size_t &p_i, const double &a, const double &b1,
+          const double &b2, const double &c1, const double &c2, const double &d,
+          const double &h1, const double &h2, const double &f_q,
+          const double &g_q, const double &f_p, const double &g_p,
+          const double &ev, bool each_iter) {
 
   double f1 = 0.0;
 
@@ -615,15 +597,18 @@ double F1(const double &q, const size_t &q_i, const double &p,
 
 //=============================================================================
 
+// takes in a wave function and calculates F1 and F2
+// will use existing Fourier components if each_iter is false, otherwise will calculate them from scratch
+// should _NOT_ ever pass Fourier space wave function with each_iter = true
 double F2(const double &q, const size_t &q_i, const double &p,
           const size_t &p_i, const double &a, const double &b1,
           const double &b2, const double &c1, const double &c2, const double &d,
           const double &h1, const double &h2, const DiracSpinor &Fv,
-          const double &ev) {
-  const double f_q = Fv.f(q_i);
-  const double f_p = Fv.f(p_i);
-  const double g_q = Fv.g(q_i);
-  const double g_p = Fv.g(p_i);
+          const double &ev, bool each_iter) {
+  const double f_q = each_iter ? FourierTransform_f(Fv, q_i) : Fv.f(q_i);
+  const double f_p = each_iter ? FourierTransform_f(Fv, p_i) : Fv.f(p_i);
+  const double g_q = each_iter ? FourierTransform_g(Fv, q_i) : Fv.g(q_i);
+  const double g_p = each_iter ? FourierTransform_g(Fv, p_i) : Fv.g(p_i);
 
   double f2 = 0.0;
 
@@ -640,48 +625,89 @@ double F2(const double &q, const size_t &q_i, const double &p,
   return f2;
 }
 
-// //=============================================================================
+// overload in case we have the spinor components
+double F2(const double &q, const size_t &q_i, const double &p,
+          const size_t &p_i, const double &a, const double &b1,
+          const double &b2, const double &c1, const double &c2, const double &d,
+          const double &h1, const double &h2, const double &f_q,
+          const double &g_q, const double &f_p, const double &g_p,
+          const double &ev, bool each_iter) {
 
-// // this is stupid
-// // function definition for OnePotential constructor
-// OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
-//                            const size_t &q_i, const double &p,
-//                            const size_t &p_i, const double &xi,
-//                            const double &ev, const double &m,
-//                            const size_t &num_y_pts, const double &y_delta)
-//   : m_c0(Cij(m, ev, q, p, xi, &C0_u, num_y_pts, y_delta)),
-//     m_c11(Cij(m, ev, q, p, xi, &C11_u, num_y_pts, y_delta)),
-//     m_c12(Cij(m, ev, q, p, xi, &C12_u, num_y_pts, y_delta)),
-//     m_c21(Cij(m, ev, q, p, xi, &C21_u, num_y_pts, y_delta)),
-//     m_c22(Cij(m, ev, q, p, xi, &C22_u, num_y_pts, y_delta)),
-//     m_c23(Cij(m, ev, q, p, xi, &C23_u, num_y_pts, y_delta)),
-//     m_c24(C24(m, q, p, xi, num_y_pts)),
-//     m_a(A(q, p, m, ev, m_c0, m_c11, m_c12, m_c24, xi)),
-//     m_b1(B1(m_c11, m_c21)),
-//     m_b2(B2(m_c0, m_c11, m_c12, m_c23)),
-//     m_c1(C1(m_c0, m_c11, m_c12, m_c23)),
-//     m_c2(C2(m_c12, m_c22)),
-//     m_d(D(m_c0, m_c11, m_c12)),
-//     m_h1(H1(m, m_c0, m_c11)),
-//     m_h2(H2(m, m_c0, m_c12)),
-//     m_F1(
-//       F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev)),
-//     m_F2(F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
-//             ev)) {};
+  double f2 = 0.0;
+
+  // first row
+  f2 += a * g_q * g_p + ev * (b1 + b2) * (ev * g_q * g_p + q * f_q * g_p);
+  // second row
+  f2 += ev * (c1 + c2) * (ev * g_q * g_p + p * g_q * f_p);
+  // third row
+  f2 += d * (ev * ev * g_q * g_p + ev * q * f_q * g_p + ev * p * g_q * f_p -
+             p * q * f_q * f_p);
+  // fourth row
+  f2 += -1.0 * ev * (h1 + h2) * g_q * g_p;
+
+  return f2;
+}
 
 //=============================================================================
 
+// function for integrating with a Gaussian quadrature scheme
+// uses fortran QUADPACK QAGS routine
+// good for when the function has singularities on the boundary
 template <typename F>
 std::pair<double, double>
 quad_integrate(F func, const std::pair<double, double> &range,
-               const std::pair<double, double> &zeros,
+               double parameters[], double epsabs = 1.49e-5,
+               double epsrel = 1.49e-5, size_t limit = 2000) {
+
+  gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
+
+  gsl_function f;
+  f.function = func;
+  f.params = parameters;
+
+  const double xmin = range.first;
+  const double xmax = range.second;
+
+  double result, error;
+
+  gsl_integration_qags(&f, range.first, range.second, epsabs, epsrel, limit,
+                       work, &result, &error);
+
+  std::pair<double, double> out = {result, error};
+
+  gsl_integration_workspace_free(work);
+
+  return out;
+}
+
+// overload for when we are integrating a function that happens to take in just {ev, m, q, p, v}
+// probably will be useless??
+template <typename F>
+std::pair<double, double>
+quad_integrate(F func, const std::pair<double, double> &range,
                const OnePotentialParams &params, double epsabs = 1.49e-5,
                double epsrel = 1.49e-5, size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
 
-  double parameters[] = {params.m(), params.ev(), params.q(), params.p(),
-                         params.xi()};
+  double parameters[] = {params.ev(), params.m(), params.q(), params.p(),
+                         params.v()};
+
+  return quad_integrate(func, range, parameters, epsabs, epsrel, limit);
+}
+
+//=============================================================================
+
+// function for integrating a function with a _pair_ of zeros
+// will not work for a function with possibly more than two zeros
+template <typename F>
+std::pair<double, double>
+quad_integrate_zeros(F func, const std::pair<double, double> &range,
+                     const std::pair<double, double> &zeros,
+                     double parameters[], double epsabs = 1.49e-5,
+                     double epsrel = 1.49e-5, size_t limit = 2000) {
+
+  gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
 
   gsl_function f;
   f.function = func;
@@ -693,6 +719,7 @@ quad_integrate(F func, const std::pair<double, double> &range,
   const double zero_1 = zeros.first;
   const double zero_2 = zeros.second;
 
+  // goes through and forms a vector with a list of points starting from the initial integration point, to the last integration point and will add any zeros inbetween if they are in the integration range
   std::vector<double> pts;
   pts.push_back(xmin);
   if (zero_1 > xmin && zero_1 < xmax) {
@@ -723,15 +750,134 @@ double test_func(double x, void *params) {
   return (x - a) / ((x - a) * (x - b));
 }
 
+// overload for when we are integrating a function that happens to take in just {ev, m, q, p, v}
+// probably will be useless??
+template <typename F>
+std::pair<double, double>
+quad_integrate_zeros(F func, const std::pair<double, double> &range,
+                     const std::pair<double, double> &zeros,
+                     const OnePotentialParams &params, double epsabs = 1.49e-5,
+                     double epsrel = 1.49e-5, size_t limit = 2000) {
+
+  double parameters[] = {params.ev(), params.m(), params.q(), params.p(),
+                         params.v()};
+
+  return quad_integrate_zeros(func, range, zeros, params, epsabs, epsrel,
+                              limit);
+}
+
+// testing the integration function I made
+double test_func(double x, void *params) {
+  const double a = ((double *)params)[0];
+  const double b = ((double *)params)[1];
+
+  return (x - a) / ((x - a) * (x - b));
+}
+
+//=============================================================================
+
+// v_integrand = F_1 * P_l(xi) + F_2 * P_{~l}(xi),
+// with xi = (p^2 + q^2 - e^{-2v}) / (2 * p * q)
+double v_integrand(double v, void *v_params) {
+
+  // need to calculate F1 and F2 inside this function, as this is the innermost integrand
+  // i.e. this function should take in v as the first argument, and then also take in {p,m,ev,F_p(?)} as parameters
+  OnePotentialParams *params = static_cast<OnePotentialParams *>(v_params);
+
+  const auto F_p = params->Fv();
+  const auto q = params->q();
+  const auto q_i = params->q_i();
+  const auto p = params->p();
+  const auto p_i = params->p_i();
+  const auto ev = params->ev();
+  const auto m = params->m();
+  const auto v = params->v();
+
+  const auto l = F_p.l();
+  const auto l_tilde = F_p.kappa() < 0 ? l + 1 : l - 1;
+
+  auto OnePIntegrals = OnePotential(F_p, q, q_i, p, p_i, ev, m, v);
+
+  const double xi = (p * p + q * q - exp(-2.0 * v)) / (2.0 * p * q);
+
+  const double F1 = OnePIntegrals.f1();
+  const double F2 = OnePIntegrals.f2();
+
+  return F1 * gsl_sf_legendre_Pl(l, xi) + F2 * gsl_sf_legendre_Pl(l_tilde, xi);
+}
+
+//=============================================================================
+
+// g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]},
+double g_qp(double p, void *p_params) {
+
+  const double q = ((double *)p_params)[0];
+  const double q_i = ((double *)p_params)[1];
+  const double ev = ((double *)p_params)[2];
+  const double m = ((double *)p_params)[3];
+  const double l = ((double *)p_params)[4];
+  const double l_tilde = ((double *)p_params)[5];
+
+  const double f_q = ((double *)p_params)[6];
+  const double g_q = ((double *)p_params)[7];
+
+  const auto v_lims =
+    std::pair<double, double>(-log(p + q), -log(std::abs(p - q)));
+
+  double v_params[] = {};
+
+  const std::pair<double, double> v_int =
+    quad_integrate(v_integrand, v_lims, (double *)p_params);
+
+  return v_int.first;
+}
+
+//=============================================================================
+
+// p_integrand = 2 * g(q, p),
+// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+double p_integrand(double p, void *p_params) { return 2.0 * g_qp(p, p_params); }
+
+//=============================================================================
+
+// p_integral = \int_{0}^{q} [2 * g(q, p)] dp,
+// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+double p_integral(double q, void *params) {
+
+  const auto p_lims = std::pair<double, double>(0.0, q);
+
+  const std::pair<double, double> p_int =
+    quad_integrate(p_integrand, p_lims, (double *)params);
+
+  return p_int.first;
+}
+
+//=============================================================================
+
+// should have only m and ev as parameters
+double q_integrand(double q, void *params) { return p_integral(q, params); }
+
+//=============================================================================
+
+// should have only m and ev as parameters
+double q_integral(const DiracSpinor &F_p, void *params) {
+
+  const auto q_lims = std::pair<double, double>(F_p.min_pt(), F_p.max_pt());
+
+  const std::pair<double, double> q_int =
+    quad_integrate(q_integrand, q_lims, (double *)params);
+
+  return q_int.first;
+}
+
 //=============================================================================
 
 // this is stupid
 // function definition for OnePotential constructor
 OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
                            const size_t &q_i, const double &p,
-                           const size_t &p_i, const double &xi,
-                           const double &ev, const double &m,
-                           const size_t &num_y_pts, const double &y_delta)
+                           const size_t &p_i, const double &ev, const double &m,
+                           const double &v, bool each_iter)
   : m_c0(0.0),
     m_c11(0.0),
     m_c12(0.0),
@@ -750,107 +896,27 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
     m_F1(0.0),
     m_F2(0.0) {
 
-  // const double y_min = 0.0;
-  // const double y_max = 1.0;
-  // const double dy = (y_max - y_min) / double(num_y_pts);
-  // double y = y_min;
-
-  // const double abs_delta = abs(y_delta);
-
   // determine the zeros in the denominator
-  const auto zeros = Feyn_denom_zeros(ev, q, p, xi);
+  const auto zeros = Feyn_denom_zeros(ev, q, p, v);
 
-  // // perform integrations for c0, c11, c12, c21, c22, c23
-  // // if both zeroes are below y = 0 or above y = 1 then integrate like normal
-  // if ((y1_zero < 0.0 && y2_zero < 0.0) || (y1_zero > 1.0 && y2_zero > 1.0)) {
-  //   for (auto i = 0ul; i < num_y_pts; i++) {
-  //     y += dy;
-  //     m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
-  //     m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
-  //     m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
-  //     m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
-  //     m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
-  //     m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
-  //   }
-  // } else if (0.0 < y1_zero && y1_zero < 1.0 &&
-  //            (y2_zero > 1.0 || y2_zero < 0.0)) {
-  //   // if we have one zero then we avoid that single zero within some radius
-  //   // const double y1_lower = y1_zero - abs_delta;
-  //   // const double y1_upper = y1_zero + abs_delta;
-  //   for (auto i = 0ul; i < num_y_pts; i++) {
-  //     y += dy;
-  //     if (std::abs(y - y1_zero) < abs_delta) {
-  //       continue;
-  //     }
-  //     m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
-  //     m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
-  //     m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
-  //     m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
-  //     m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
-  //     m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
-  //   }
-  // } else if ((y1_zero < 0.0 || y1_zero > 1.0) && 0.0 < y2_zero &&
-  //            y2_zero < 1.0) {
-  //   // if we have one zero then we avoid that single zero within some radius
-  //   // const double y2_lower = y2_zero - abs_delta;
-  //   // const double y2_upper = y2_zero + abs_delta;
-  //   for (auto i = 0ul; i < num_y_pts; i++) {
-  //     y += dy;
-  //     if (std::abs(y - y2_zero < abs_delta)) {
-  //       continue;
-  //     }
-  //     m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
-  //     m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
-  //     m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
-  //     m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
-  //     m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
-  //     m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
-  //   }
-  // } else {
-  //   // if we have two zeroes we need to avoid both
-  //   // const double y1_lower = y1_zero - abs_delta;
-  //   // const double y1_upper = y1_zero + abs_delta;
-  //   // const double y2_lower = y1_zero - abs_delta;
-  //   // const double y2_upper = y1_zero + abs_delta;
-  //   for (auto i = 0ul; i < num_y_pts; i++) {
-  //     y += dy;
-  //     if (std::abs(y - y1_zero) < abs_delta ||
-  //         std::abs(y - y2_zero) < abs_delta) {
-  //       continue;
-  //     }
-  //     m_c0 += C0_u(y, m, ev, q, p, xi) * dy;
-  //     m_c11 += C11_u(y, m, ev, q, p, xi) * dy;
-  //     m_c12 += C12_u(y, m, ev, q, p, xi) * dy;
-  //     m_c21 += C21_u(y, m, ev, q, p, xi) * dy;
-  //     m_c22 += C22_u(y, m, ev, q, p, xi) * dy;
-  //     m_c23 += C23_u(y, m, ev, q, p, xi) * dy;
-  //   }
-  // }
-
-  // // integrate C24
-  // y = 0.0;
-  // for (auto i = 0ul; i < num_y_pts; i++) {
-  //   y += dy;
-  //   m_c24 += C24_u(y, m, q, p, xi) * dy;
-  // }
-
-  OnePotentialParams params(m, ev, q, p, xi);
+  const auto params = OnePotentialParams(ev, m, q, q_i, p, p_i, v, Fv);
   const std::pair<double, double> y_lims(0.0, 1.0);
 
+  // calculates C_ij integrals
   const std::pair<double, double> c0_int =
-    quad_integrate(C0_i, y_lims, zeros, params);
+    quad_integrate_zeros(C0_i, y_lims, zeros, params);
   const std::pair<double, double> c11_int =
-    quad_integrate(C11_i, y_lims, zeros, params);
+    quad_integrate_zeros(C11_i, y_lims, zeros, params);
   const std::pair<double, double> c12_int =
-    quad_integrate(C12_i, y_lims, zeros, params);
+    quad_integrate_zeros(C12_i, y_lims, zeros, params);
   const std::pair<double, double> c21_int =
-    quad_integrate(C21_i, y_lims, zeros, params);
+    quad_integrate_zeros(C21_i, y_lims, zeros, params);
   const std::pair<double, double> c22_int =
-    quad_integrate(C22_i, y_lims, zeros, params);
+    quad_integrate_zeros(C22_i, y_lims, zeros, params);
   const std::pair<double, double> c23_int =
-    quad_integrate(C23_i, y_lims, zeros, params);
+    quad_integrate_zeros(C23_i, y_lims, zeros, params);
   const std::pair<double, double> c24_int =
-    quad_integrate(C24_i, y_lims, zeros, params);
+    quad_integrate_zeros(C24_i, y_lims, zeros, params);
 
   m_c0 = c0_int.first;
   m_c11 = c11_int.first;
@@ -860,7 +926,78 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
   m_c23 = c23_int.first;
   m_c24 = c24_int.first;
 
-  m_a = A(q, p, m, ev, m_c0, m_c11, m_c12, m_c24, xi);
+  // calculates the constants that go into F_1 and F_2
+  m_a = A(q, p, ev, m, m_c0, m_c11, m_c12, m_c24, v);
+  m_b1 = B1(m_c11, m_c21);
+  m_b2 = B2(m_c0, m_c11, m_c12, m_c23);
+  m_c1 = C1(m_c0, m_c11, m_c12, m_c23);
+  m_c2 = C2(m_c12, m_c22);
+  m_d = D(m_c0, m_c11, m_c12);
+  m_h1 = H1(m, m_c0, m_c11);
+  m_h2 = H2(m, m_c0, m_c12);
+  m_F1 = F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
+            ev, each_iter);
+  m_F2 = F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
+            ev, each_iter);
+};
+
+//=============================================================================
+
+// function definition for OnePotential constructor
+OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
+                           const size_t &q_i, const double &p,
+                           const size_t &p_i, const double &ev, const double &m,
+                           const double &v, bool each_iter)
+  : m_c0(0.0),
+    m_c11(0.0),
+    m_c12(0.0),
+    m_c21(0.0),
+    m_c22(0.0),
+    m_c23(0.0),
+    m_c24(0.0),
+    m_a(0.0),
+    m_b1(0.0),
+    m_b2(0.0),
+    m_c1(0.0),
+    m_c2(0.0),
+    m_d(0.0),
+    m_h1(0.0),
+    m_h2(0.0),
+    m_F1(0.0),
+    m_F2(0.0) {
+
+  // determine the zeros in the denominator
+  const auto zeros = Feyn_denom_zeros(ev, q, p, v);
+
+  OnePotentialParams params(ev, m, q, q_i, p, p_i, v, Fv);
+  const std::pair<double, double> y_lims(0.0, 1.0);
+
+  // calculates C_ij integrals
+  const std::pair<double, double> c0_int =
+    quad_integrate_zeros(C0_i, y_lims, zeros, params);
+  const std::pair<double, double> c11_int =
+    quad_integrate_zeros(C11_i, y_lims, zeros, params);
+  const std::pair<double, double> c12_int =
+    quad_integrate_zeros(C12_i, y_lims, zeros, params);
+  const std::pair<double, double> c21_int =
+    quad_integrate_zeros(C21_i, y_lims, zeros, params);
+  const std::pair<double, double> c22_int =
+    quad_integrate_zeros(C22_i, y_lims, zeros, params);
+  const std::pair<double, double> c23_int =
+    quad_integrate_zeros(C23_i, y_lims, zeros, params);
+  const std::pair<double, double> c24_int =
+    quad_integrate_zeros(C24_i, y_lims, zeros, params);
+
+  m_c0 = c0_int.first;
+  m_c11 = c11_int.first;
+  m_c12 = c12_int.first;
+  m_c21 = c21_int.first;
+  m_c22 = c22_int.first;
+  m_c23 = c23_int.first;
+  m_c24 = c24_int.first;
+
+  // calculates the constants that go into F_1 and F_2
+  m_a = A(q, p, ev, m, m_c0, m_c11, m_c12, m_c24, v);
   m_b1 = B1(m_c11, m_c21);
   m_b2 = B2(m_c0, m_c11, m_c12, m_c23);
   m_c1 = C1(m_c0, m_c11, m_c12, m_c23);
@@ -905,113 +1042,33 @@ double SE_OnePotential(const DiracSpinor &F_p, const double &ev,
 
   double out = 0.0;
 
-  // for (auto x = 0ul; x < xi_num_points; x++) { // loop over xi
-  //   const double xi = xi_grid[x];
-  //   const double P_l = gsl_sf_legendre_Pl(F_p.l(), xi);
-  //   const double P_lbar = gsl_sf_legendre_Pl(F_p.l() - int(s_kappa), xi);
+#pragma omp parallel for
+  for (auto q_i = F_p.min_pt(); q_i < F_p.max_pt(); q_i++) { // q integration
+    // can multiply this by whatever we want depending on choice of units
+    const double q = pr[q_i] / PhysConst::alpha;
 
-  //   double out1 = 0.0;
-  //   double out2 = 0.0;
+    // v integration
+    const double v_min = -1.0 * log(std::abs(p - q));
+    const double v_max = -1.0 * log(p + q);
 
-  //   for (auto q_i = F_p.min_pt(); q_i < F_p.max_pt(); q_i++) { // loop over q
-  //     // can multiply this by whatever we want depending on choice of units
-  //     const double q = pr[q_i] / PhysConst::alpha;
-  //     for (auto p_j = F_p.min_pt(); p_j < F_p.max_pt(); p_j++) { // loop over p
-  //       // can multiply this by whatever we want depending on choice of units
-  //       const double p = pr[p_j] / PhysConst::alpha;
-  //       const double qpxi_factor =
-  //         q * q * p * p / (p * p + q * q - 2.0 * p * q * xi);
+    // can multiply this by whatever we want depending on choice of units
+    const double p = pr[p_j] / PhysConst::alpha;
+    const double qpxi_factor =
+      q * q * p * p / (p * p + q * q - 2.0 * p * q * xi);
 
-  //       OnePotential OnePIntegrals(F_p, q, q_i, p, p_j, xi, ev, mec2, num_y_pts,
-  //                                  0.05);
-  //       const double f1 = OnePIntegrals.f1();
-  //       const double f2 = OnePIntegrals.f2();
+    OnePotential OnePIntegrals(F_p, q, q_i, p, p_j, xi, ev, mec2, num_y_pts,
+                               0.05);
+    const double f1 = OnePIntegrals.f1();
+    const double f2 = OnePIntegrals.f2();
 
-  //       out1 += qpxi_factor * f1 * dpdu[p_j] * dp;
-  //       out2 += qpxi_factor * f2 * dpdu[p_j] * dp;
-  //     } // p
-  //     out1 *= dpdu[q_i] * dq;
-  //     out2 *= dpdu[q_i] * dq;
-  //   } // q
-  //   out += (P_l * out1 + P_lbar * out2) * dxi;
-  //   std::cout << double(x) / double(xi_num_points) << "\n";
-  // } // xi
+  } // p
+} // q
+out += (P_l * out1 + P_lbar * out2) * dxi;
+std::cout << double(x) / double(xi_num_points) << "\n";
 
-  for (auto x = 0ul; x < xi_num_points; x++) { // loop over xi
-    const double xi = xi_grid[x];
-    const double P_l = gsl_sf_legendre_Pl(F_p.l(), xi);
-    const double P_lbar = gsl_sf_legendre_Pl(F_p.l() - int(s_kappa), xi);
+out *= -PhysConst::alpha2 / (32.0 * pow(M_PI, 5));
 
-    double out1 = 0.0;
-    double out2 = 0.0;
-#pragma omp parallel for collapse(2) reduction(+ : out1) reduction(+ : out2)
-    for (auto q_i = F_p.min_pt(); q_i < F_p.max_pt(); q_i++) {   // loop over q
-      for (auto p_j = F_p.min_pt(); p_j < F_p.max_pt(); p_j++) { // loop over p
-        // can multiply this by whatever we want depending on choice of units
-        const double q = pr[q_i] / PhysConst::alpha;
-        // can multiply this by whatever we want depending on choice of units
-        const double p = pr[p_j] / PhysConst::alpha;
-        const double qpxi_factor =
-          q * q * p * p / (p * p + q * q - 2.0 * p * q * xi);
-
-        OnePotential OnePIntegrals(F_p, q, q_i, p, p_j, xi, ev, mec2, num_y_pts,
-                                   0.05);
-        const double f1 = OnePIntegrals.f1();
-        const double f2 = OnePIntegrals.f2();
-
-        out1 += qpxi_factor * f1 * dpdu[p_j] * dp;
-        out2 += qpxi_factor * f2 * dpdu[p_j] * dp;
-      } // p
-      out1 *= dpdu[q_i] * dq;
-      out2 *= dpdu[q_i] * dq;
-    } // q
-    out += (P_l * out1 + P_lbar * out2) * dxi;
-    std::cout << double(x) / double(xi_num_points) << "\n";
-  } // xi
-
-  out *= -PhysConst::alpha2 / (32.0 * pow(M_PI, 5));
-
-  return out;
-}
-
-//==============================================================================
-
-std::vector<double> pq_to_x_grid(const std::vector<double> &p_grid,
-                                 const std::vector<double> &q_grid) {
-
-  std::vector<double> x_grid;
-
-  assert(p_grid.size() == q_grid.size() &&
-         "The x and y grids must be the same size!");
-
-  for (auto i = 0ul; i < p_grid.size(); i++) {
-    for (auto j = 0ul; j < i; j++) {
-      x_grid.push_back(p_grid[i] + q_grid[j]);
-    }
-    x_grid.push_back(2.0 * p_grid[i]);
-  }
-
-  return x_grid;
-}
-
-//==============================================================================
-
-std::vector<double> pq_to_y_grid(const std::vector<double> &p_grid,
-                                 const std::vector<double> &q_grid) {
-
-  std::vector<double> y_grid;
-
-  assert(p_grid.size() == q_grid.size() &&
-         "The x and y grids must be the same size!");
-
-  for (auto i = 0ul; i < p_grid.size(); i++) {
-    for (auto j = 0ul; j < i; j++) {
-      y_grid.push_back(p_grid[i] - q_grid[j]);
-    }
-    y_grid.push_back(0.0);
-  }
-
-  return y_grid;
+return out;
 }
 
 //==============================================================================
@@ -1207,7 +1264,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // const double expected = log((x2 - b) / (x1 - b));
 
   // const auto [test_int, test_err] =
-  //   quad_integrate(test_func, x_lims, zeros, parameters);
+  //   quad_integrate_zeros(test_func, x_lims, zeros, parameters);
 
   // std::cout << "\nTesting the integration function:\n";
   // std::cout << "Expected: " << expected << "\n";
