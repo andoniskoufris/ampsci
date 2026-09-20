@@ -305,7 +305,7 @@ double C0_i(double y, void *params) {
 
 double C11_u(const double &y, const double &m, const double &ev,
              const double &q, const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
+  const double YY = Y(m, y, ev, q, p, xi);
   const double XX = X(m, y, ev, q, p, xi);
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
@@ -327,7 +327,7 @@ double C11_i(double y, void *params) {
 
 double C12_u(const double &y, const double &m, const double &ev,
              const double &q, const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
+  const double YY = Y(m, y, ev, q, p, xi);
   const double XX = X(m, y, ev, q, p, xi);
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
@@ -349,7 +349,7 @@ double C12_i(double y, void *params) {
 
 double C21_u(double y, const double &m, const double &ev, const double &q,
              const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
+  const double YY = Y(m, y, ev, q, p, xi);
   const double XX = X(m, y, ev, q, p, xi);
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
@@ -371,7 +371,7 @@ double C21_i(double y, void *params) {
 
 double C22_u(const double &y, const double &m, const double &ev,
              const double &q, const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
+  const double YY = Y(m, y, ev, q, p, xi);
   const double XX = X(m, y, ev, q, p, xi);
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
@@ -393,7 +393,7 @@ double C22_i(double y, void *params) {
 
 double C23_u(double y, const double &m, const double &ev, const double &q,
              const double &p, const double &xi) {
-  const double YY = X(m, y, ev, q, p, xi);
+  const double YY = Y(m, y, ev, q, p, xi);
   const double XX = X(m, y, ev, q, p, xi);
   const double denom = Feyn_denom(ev, y, q, p, xi);
 
