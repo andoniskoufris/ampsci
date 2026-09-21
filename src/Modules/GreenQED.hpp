@@ -1,4 +1,5 @@
 #pragma once
+#include "Wavefunction/DiracSpinor.hpp"
 #include <memory>
 #include <vector>
 
@@ -28,18 +29,18 @@ void write_orbitals(const std::string &fname,
 double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
                         const double &mec2);
 
-double SE_OnePotential(const DiracSpinor &F_p, const double &ev,
-                       const double &mec2, const size_t &xi_num_points,
-                       const size_t &num_y_pts);
+// double SE_OnePotential(const DiracSpinor &F_p, const double &ev,
+//                        const double &mec2, const size_t &xi_num_points,
+//                        const size_t &num_y_pts);
 
-double Feyn_denom(const double &y, const double &ev, const double &m,
-                  const double &q, const double &p, const double &v);
+// double Feyn_denom(const double &y, const double &ev, const double &m,
+//                   const double &q, const double &p, const double &v);
 
-double Y(const double &m, const double &y, const double &ev, const double &q,
-         const double &p, const double &xi);
+// double Y(const double &m, const double &y, const double &ev, const double &q,
+//          const double &p, const double &xi);
 
-double X(const double &m, const double &y, const double &ev, const double &q,
-         const double &p, const double &xi);
+// double X(const double &m, const double &y, const double &ev, const double &q,
+//          const double &p, const double &xi);
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf);
 
@@ -58,51 +59,86 @@ private:
 
   //separately pass in q and its index, and same for p, so that we can multiply p and q without messing up the indexing
 public:
-  OnePotential(const DiracSpinor &Fv, const double &q, const size_t &q_i,
-               const double &p, const size_t &p_i, const double &ev,
-               const double &m, const double &v, bool each_iter = false);
+  OnePotential(const DiracSpinor &Fv, const double &q, const double &p,
+               const double &p_to_index, const double &ev, const double &m,
+               const double &v);
 
   OnePotential(const double &f_q, const double &g_q, const double &f_p,
                const double &g_p, const double &q, const size_t &q_i,
                const double &p, const size_t &p_i, const double &ev,
                const double &m, const double &v);
 
-  const double f1() { return m_F1; }
-  const double f2() { return m_F2; }
+  double f1() { return m_F1; }
+  double f2() { return m_F2; }
 };
 
-struct OnePotentialParams {
+//=============================================================================
+
+struct v_Params {
 private:
   const double m_ev;
   const double m_me;
   const double m_q;
-  const double m_qi;
   const double m_p;
-  const double m_pi;
-  const double m_v;
+  const double m_p_to_index;
   const DiracSpinor m_Fv;
 
 public:
-  OnePotentialParams(const double &ev, const double &m, const double &q,
-                     const double &q_i, const double &p, const double &p_i,
-                     const double &v, const DiracSpinor &Fv)
-    : m_me(m),
-      m_ev(ev),
-      m_q(q),
-      m_qi(q_i),
-      m_p(p),
-      m_pi(p_i),
-      m_v(v),
-      m_Fv(Fv) {}
+  v_Params(const double &ev, const double &m, const double &q, const double &p,
+           const double &p_to_index, const DiracSpinor &Fv)
+    : m_ev(ev), m_me(m), m_q(q), m_p(p), m_p_to_index(p_to_index), m_Fv(Fv) {}
 
   const double &m() { return m_me; }
   const double &ev() { return m_ev; }
   const double &q() { return m_q; }
-  const double &q_i() { return m_qi; }
   const double &p() { return m_p; }
-  const double &p_i() { return m_pi; }
-  const double &v() { return m_v; }
+  const double &p_to_index() { return m_p_to_index; }
   const DiracSpinor &Fv() { return m_Fv; }
+  operator void *() { return this; }
+};
+
+//=============================================================================
+
+struct p_Params {
+private:
+  const double m_ev;
+  const double m_me;
+  const double m_q;
+  const double m_p_to_index;
+  const DiracSpinor m_Fv;
+
+public:
+  p_Params(const double &ev, const double &m, const double &q,
+           const double &p_to_index, const DiracSpinor &Fv)
+    : m_ev(ev), m_me(m), m_q(q), m_p_to_index(p_to_index), m_Fv(Fv) {}
+
+  const double &m() { return m_me; }
+  const double &ev() { return m_ev; }
+  const double &q() { return m_q; }
+  const double &p_to_index() { return m_p_to_index; }
+  const DiracSpinor &Fv() { return m_Fv; }
+  operator void *() { return this; }
+};
+
+//=============================================================================
+
+struct q_Params {
+private:
+  const double m_ev;
+  const double m_me;
+  const double m_p_to_index;
+  const DiracSpinor m_Fv;
+
+public:
+  q_Params(const double &ev, const double &m, const double &p_to_index,
+           const DiracSpinor &Fv)
+    : m_ev(ev), m_me(m), m_p_to_index(p_to_index), m_Fv(Fv) {}
+
+  const double &m() { return m_me; }
+  const double &ev() { return m_ev; }
+  const double &p_to_index() { return m_p_to_index; }
+  const DiracSpinor &Fv() { return m_Fv; }
+  operator void *() { return this; }
 };
 
 } // namespace Module
