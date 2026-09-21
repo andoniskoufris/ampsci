@@ -867,7 +867,13 @@ inline double q_integrand(double q, void *q_params) {
 // should have only m and ev as parameters
 double q_integral(const DiracSpinor &F_p, void *q_params) {
 
-  const auto q_lims = std::pair<double, double>(F_p.min_pt(), F_p.max_pt());
+  // cast q_params to q_Params type
+  q_Params *params = static_cast<q_Params *>(q_params);
+
+  const auto p_to_index = params->p_to_index();
+
+  const auto q_lims = std::pair<double, double>(p_to_index * F_p.min_pt(),
+                                                p_to_index * F_p.max_pt());
 
   const std::pair<double, double> q_int =
     quad_integrate(q_integrand, q_lims, q_params);
@@ -1245,7 +1251,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
     double E0 = SE_ZeroPotential(vtild, ev, mec2);
     double E1 =
-      wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, PhysConst::alpha);
+      wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, 1.0 / PhysConst::alpha);
     // double E1 = 0.0;
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
