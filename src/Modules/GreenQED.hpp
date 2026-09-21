@@ -94,7 +94,6 @@ public:
   const double &p() { return m_p; }
   const double &p_to_index() { return m_p_to_index; }
   const DiracSpinor &Fv() { return m_Fv; }
-  operator void *() { return this; }
 };
 
 //=============================================================================
@@ -117,7 +116,6 @@ public:
   const double &q() { return m_q; }
   const double &p_to_index() { return m_p_to_index; }
   const DiracSpinor &Fv() { return m_Fv; }
-  operator void *() { return this; }
 };
 
 //=============================================================================
@@ -138,7 +136,6 @@ public:
   const double &ev() { return m_ev; }
   const double &p_to_index() { return m_p_to_index; }
   const DiracSpinor &Fv() { return m_Fv; }
-  operator void *() { return this; }
 };
 
 } // namespace Module

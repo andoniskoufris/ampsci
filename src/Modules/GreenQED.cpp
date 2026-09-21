@@ -43,6 +43,7 @@ double rho(const double &p, const double &E) {
 
 //=============================================================================
 
+// could be improved with quadrature?
 DiracSpinor FourierTransformF(const DiracSpinor &F,
                               std::shared_ptr<const Grid> pGrid) {
   // initialise Fourier transform to be on momentum space grid
@@ -53,17 +54,16 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
     return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
   };
 
-  const auto l_tilde = F.kappa() < 0 ? F.l() + 1 : F.l() - 1;
-
   const auto grid = F.grid();
   const auto r = F.grid().r();
   const auto p = pGrid->r();
+
+  const auto l_tilde = F.kappa() < 0 ? F.l() + 1 : F.l() - 1;
 
   for (auto i = 0ul; i < pGrid->num_points(); i++) {
     // in atomic units, r is in a.u. in which case what r actually is numerically is r/aB
     // in atomic units aB = 1, but we want p * r to be dimensionless. This is only the case if we actually use alpha * p
     const auto p_i = p[i]; // / PhysConst::alpha;
-    const auto s_kappa = sign(F.kappa()) + 0.001;
 
     for (auto j = F.min_pt(); j < F.max_pt(); j++) {
       FTransform.f(i) += r[j] * F.f(j) *
@@ -74,7 +74,7 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
                          grid.drdu(j) * grid.du();
     }
     FTransform.f(i) *= 4 * M_PI;
-    FTransform.g(i) *= -4 * M_PI * s_kappa;
+    FTransform.g(i) *= -4 * M_PI * sign(F.kappa());
   }
 
   return FTransform;
@@ -125,6 +125,7 @@ double FourierTransform_g(const DiracSpinor &F, const double &p) {
 
 //=============================================================================
 
+// could be improved with quadrature?
 double p_norm(const DiracSpinor &Fa) {
 
   const auto pGrid = &Fa.grid();
@@ -793,7 +794,7 @@ double v_integrand(double v, void *v_params) {
 // g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]},
 double g_qp(double p, void *p_params) {
 
-  // cast p_params to p_Params type
+  // cast p_params (void pointer) to p_Params type
   p_Params *params = static_cast<p_Params *>(p_params);
 
   const DiracSpinor Fv = params->Fv();
@@ -834,7 +835,7 @@ inline double p_integrand(double p, void *p_params) {
 // with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
 double p_integral(double q, void *q_params) {
 
-  // cast q_params to q_Params type
+  // cast q_params (void pointer) to q_Params type
   q_Params *params = static_cast<q_Params *>(q_params);
 
   const auto p_lims = std::pair<double, double>(0.0, q);
@@ -867,90 +868,19 @@ inline double q_integrand(double q, void *q_params) {
 // should have only m and ev as parameters
 double q_integral(const DiracSpinor &F_p, void *q_params) {
 
-  // cast q_params to q_Params type
+  // cast q_params (void pointer) to q_Params type
   q_Params *params = static_cast<q_Params *>(q_params);
 
   const auto p_to_index = params->p_to_index();
 
-  const auto q_lims = std::pair<double, double>(p_to_index * F_p.min_pt(),
-                                                p_to_index * F_p.max_pt());
+  const auto q_lims = std::pair<double, double>(
+    double(F_p.min_pt()) / p_to_index, double(F_p.max_pt()) / p_to_index);
 
   const std::pair<double, double> q_int =
     quad_integrate(q_integrand, q_lims, q_params);
 
   return q_int.first;
 }
-
-//=============================================================================
-
-// // this is stupid
-// // function definition for OnePotential constructor
-// OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
-//                            const size_t &q_i, const double &p,
-//                            const size_t &p_i, const double &ev, const double &m,
-//                            const double &v, bool each_iter)
-//   : m_c0(0.0),
-//     m_c11(0.0),
-//     m_c12(0.0),
-//     m_c21(0.0),
-//     m_c22(0.0),
-//     m_c23(0.0),
-//     m_c24(0.0),
-//     m_a(0.0),
-//     m_b1(0.0),
-//     m_b2(0.0),
-//     m_c1(0.0),
-//     m_c2(0.0),
-//     m_d(0.0),
-//     m_h1(0.0),
-//     m_h2(0.0),
-//     m_F1(0.0),
-//     m_F2(0.0) {
-
-//   // determine the zeros in the denominator
-//   const auto zeros = Feyn_denom_zeros(ev, q, p, v);
-
-//   const auto params = v_Params(ev, m, q, q_i, p, p_i, v, Fv);
-//   const std::pair<double, double> y_lims(0.0, 1.0);
-
-//   // calculates C_ij integrals
-//   const std::pair<double, double> c0_int =
-//     quad_integrate_zeros(C0_i, y_lims, zeros, params);
-//   const std::pair<double, double> c11_int =
-//     quad_integrate_zeros(C11_i, y_lims, zeros, params);
-//   const std::pair<double, double> c12_int =
-//     quad_integrate_zeros(C12_i, y_lims, zeros, params);
-//   const std::pair<double, double> c21_int =
-//     quad_integrate_zeros(C21_i, y_lims, zeros, params);
-//   const std::pair<double, double> c22_int =
-//     quad_integrate_zeros(C22_i, y_lims, zeros, params);
-//   const std::pair<double, double> c23_int =
-//     quad_integrate_zeros(C23_i, y_lims, zeros, params);
-//   const std::pair<double, double> c24_int =
-//     quad_integrate_zeros(C24_i, y_lims, zeros, params);
-
-//   m_c0 = c0_int.first;
-//   m_c11 = c11_int.first;
-//   m_c12 = c12_int.first;
-//   m_c21 = c21_int.first;
-//   m_c22 = c22_int.first;
-//   m_c23 = c23_int.first;
-//   m_c24 = c24_int.first;
-
-//   // calculates the constants that go into F_1 and F_2
-//   m_a = A(q, p, ev, m, m_c0, m_c11, m_c12, m_c24, v);
-//   m_b1 = B1(m_c11, m_c21);
-//   m_b2 = B2(m_c0, m_c11, m_c12, m_c23);
-//   m_c1 = C1(m_c0, m_c11, m_c12, m_c23);
-//   m_c2 = C2(m_c12, m_c22);
-//   m_d = D(m_c0, m_c11, m_c12);
-//   m_h1 = H1(m, m_c0, m_c11);
-//   m_h2 = H2(m, m_c0, m_c12);
-//   m_F1 = F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
-//             ev, each_iter);
-//   m_F2 = F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv,
-//             ev, each_iter);
-// };
 
 //=============================================================================
 
@@ -1093,11 +1023,28 @@ double SE_OnePotential(const DiracSpinor &Fv, const DiracSpinor &F_p,
 
 //==============================================================================
 
-void clean_grid(std::vector<double> &vec) {
+class test_class {
+private:
+  int m_int;
+  double m_double;
+  std::vector<double> m_vec;
 
-  // sort and clean
-  sort(vec.begin(), vec.end());
-  vec.erase(unique(vec.begin(), vec.end()), vec.end());
+public:
+  test_class(int in_int, double in_double, const std::vector<double> &in_vec)
+    : m_int(in_int), m_double(in_double), m_vec(in_vec) {}
+
+  int getInt_mem() { return m_int; }
+  double getDouble_mem() { return m_double; }
+  double getSecondVec() { return m_vec[1]; }
+};
+
+//==============================================================================
+
+double test_pointers(void *object) {
+  // cast q_params to q_Params type
+  test_class *test = static_cast<test_class *>(object);
+
+  return test->getSecondVec();
 }
 
 //=============================================================================
@@ -1213,7 +1160,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // right now these are in some units that I don't know
   const auto p_num_points = 2000;
   const auto p_min = p_to_au * 1.0e-4;
-  const auto p_max = p_to_au * 1.0e3;
+  const auto p_max = p_to_au * 4.0e3; // for U^{91+}, p_max = 4.0e3 is best
   const auto p_b = 4.0;
   const auto p_grid_type = "loglinear";
   const auto p_indu = 0.0; // shouldn't worry about this
@@ -1297,6 +1244,14 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // std::cout << "#    x    y\n";
   // for (auto )
+
+  //! Testing casting to void pointers and classes and back
+  // const auto test_vec = std::vector<double>{2.0, -6.34, 0.983};
+
+  // const auto test_thing = test_class(4, 9.645, test_vec);
+
+  // std::cout << "Testing cast to void pointer\n Expected: " << 9.645
+  //           << "\n Result: " << test_pointers((void *)&test_thing);
 }
 
 } // namespace Module
