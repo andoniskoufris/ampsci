@@ -251,6 +251,89 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
 
 //=============================================================================
 
+// function for integrating with a Gaussian quadrature scheme
+// uses fortran QUADPACK QAGS routine
+// good for when the function has singularities on the boundary
+template <typename F>
+std::pair<double, double>
+quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
+               double epsabs = 1.49e-5, double epsrel = 1.49e-5,
+               size_t limit = 2000) {
+
+  gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
+
+  gsl_function f;
+  f.function = func;
+  f.params = parameters;
+
+  double result, error;
+
+  gsl_integration_qags(&f, range.first, range.second, epsabs, epsrel, limit,
+                       work, &result, &error);
+
+  std::pair<double, double> out = {result, error};
+
+  gsl_integration_workspace_free(work);
+
+  return out;
+}
+
+//=============================================================================
+
+// function for integrating a function with a _pair_ of zeros
+// will not work for a function with possibly more than two zeros
+template <typename F>
+std::pair<double, double>
+quad_integrate_zeros(F func, const std::pair<double, double> &range,
+                     const std::pair<double, double> &zeros, void *parameters,
+                     double epsabs = 1.49e-5, double epsrel = 1.49e-5,
+                     size_t limit = 2000) {
+
+  gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
+
+  gsl_function f;
+  f.function = func;
+  f.params = parameters;
+
+  const double xmin = range.first;
+  const double xmax = range.second;
+
+  const double zero_1 = zeros.first;
+  const double zero_2 = zeros.second;
+
+  // goes through and forms a vector with a list of points starting from the initial integration point, to the last integration point and will add any zeros inbetween if they are in the integration range
+  std::vector<double> pts;
+  pts.push_back(xmin);
+  if (zero_1 > xmin && zero_1 < xmax) {
+    pts.push_back(zero_1);
+  }
+  if (zero_2 > xmin && zero_2 < xmax) {
+    pts.push_back(zero_2);
+  }
+  pts.push_back(xmax);
+
+  double result, error;
+
+  gsl_integration_qagp(&f, pts.data(), pts.size(), epsabs, epsrel, limit, work,
+                       &result, &error);
+
+  std::pair<double, double> out = {result, error};
+
+  gsl_integration_workspace_free(work);
+
+  return out;
+}
+
+// testing the integration function I made
+double test_func(double x, void *params) {
+  const double a = ((double *)params)[0];
+  const double b = ((double *)params)[1];
+
+  return (x - a) / ((x - a) * (x - b));
+}
+
+//=============================================================================
+
 double Feyn_denom(const double &y, const double &ev, const double &q,
                   const double &p, const double &v) {
   const double ev2 = ev * ev;
@@ -548,12 +631,10 @@ inline double H2(const double &m, const double &c0, const double &c12) {
 double F1(const double &q, const double &q_i, const double &p,
           const double &p_i, const double &a, const double &b1,
           const double &b2, const double &c1, const double &c2, const double &d,
-          const double &h1, const double &h2, const DiracSpinor &Fv,
-          const double &ev) {
-  const double f_q = FourierTransform_f(Fv, q_i);
-  const double f_p = FourierTransform_f(Fv, p_i);
-  const double g_q = FourierTransform_g(Fv, q_i);
-  const double g_p = FourierTransform_g(Fv, p_i);
+          const double &h1, const double &h2, const double &f_p,
+          const double &g_p, const double &ev, const DiracSpinor &Fp) {
+  const double f_q = Fp.f(int(q_i));
+  const double g_q = Fp.g(int(q_i));
 
   double f1 = 0.0;
 
@@ -570,41 +651,16 @@ double F1(const double &q, const double &q_i, const double &p,
   return f1;
 }
 
-// // overload in case we have the spinor components
-// double F1(const double &q, const size_t &q_i, const double &p,
-//           const size_t &p_i, const double &a, const double &b1,
-//           const double &b2, const double &c1, const double &c2, const double &d,
-//           const double &h1, const double &h2, const double &f_q,
-//           const double &g_q, const double &f_p, const double &g_p,
-//           const double &ev, bool each_iter) {
-
-//   double f1 = 0.0;
-
-//   // first row
-//   f1 += a * f_q * f_p + ev * (b1 + b2) * (ev * f_q * f_p + q * g_q * f_p);
-//   // second row
-//   f1 += ev * (c1 + c2) * (ev * f_q * f_p + p * f_q * g_p);
-//   // third row
-//   f1 += d * (ev * ev * f_q * f_p + ev * q * g_q * f_p + ev * p * f_q * g_p -
-//              p * q * g_q * g_p);
-//   // fourth row
-//   f1 += ev * (h1 + h2) * f_q * f_p;
-
-//   return f1;
-// }
-
 //=============================================================================
 
 // takes in a _real_space_ wave function and calculates F1 and F2
 double F2(const double &q, const double &q_i, const double &p,
           const double &p_i, const double &a, const double &b1,
           const double &b2, const double &c1, const double &c2, const double &d,
-          const double &h1, const double &h2, const DiracSpinor &Fv,
-          const double &ev) {
-  const double f_q = FourierTransform_f(Fv, q_i);
-  const double f_p = FourierTransform_f(Fv, p_i);
-  const double g_q = FourierTransform_g(Fv, q_i);
-  const double g_p = FourierTransform_g(Fv, p_i);
+          const double &h1, const double &h2, const double &f_p,
+          const double &g_p, const double &ev, const DiracSpinor &Fp) {
+  const double f_q = Fp.f(int(q_i));
+  const double g_q = Fp.g(int(q_i));
 
   double f2 = 0.0;
 
@@ -621,273 +677,13 @@ double F2(const double &q, const double &q_i, const double &p,
   return f2;
 }
 
-// // overload in case we have the spinor components
-// double F2(const double &q, const double &q_i, const double &p,
-//           const double &p_i, const double &a, const double &b1,
-//           const double &b2, const double &c1, const double &c2, const double &d,
-//           const double &h1, const double &h2, const double &f_q,
-//           const double &g_q, const double &f_p, const double &g_p,
-//           const double &ev, bool each_iter) {
-
-//   double f2 = 0.0;
-
-//   // first row
-//   f2 += a * g_q * g_p + ev * (b1 + b2) * (ev * g_q * g_p + q * f_q * g_p);
-//   // second row
-//   f2 += ev * (c1 + c2) * (ev * g_q * g_p + p * g_q * f_p);
-//   // third row
-//   f2 += d * (ev * ev * g_q * g_p + ev * q * f_q * g_p + ev * p * g_q * f_p -
-//              p * q * f_q * f_p);
-//   // fourth row
-//   f2 += -1.0 * ev * (h1 + h2) * g_q * g_p;
-
-//   return f2;
-// }
-
-//=============================================================================
-
-// function for integrating with a Gaussian quadrature scheme
-// uses fortran QUADPACK QAGS routine
-// good for when the function has singularities on the boundary
-template <typename F>
-std::pair<double, double>
-quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
-               double epsabs = 1.49e-5, double epsrel = 1.49e-5,
-               size_t limit = 2000) {
-
-  gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
-
-  gsl_function f;
-  f.function = func;
-  f.params = parameters;
-
-  double result, error;
-
-  gsl_integration_qags(&f, range.first, range.second, epsabs, epsrel, limit,
-                       work, &result, &error);
-
-  std::pair<double, double> out = {result, error};
-
-  gsl_integration_workspace_free(work);
-
-  return out;
-}
-
-// overload for when we are integrating a function that happens to take in just {ev, m, q, p, v} (stored in a OnePotentialParams object)
-// probably will be useless??
-// template <typename F>
-// std::pair<double, double>
-// quad_integrate(F func, const std::pair<double, double> &range,
-//                const v_Params &params, double epsabs = 1.49e-5,
-//                double epsrel = 1.49e-5, size_t limit = 2000) {
-
-//   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
-
-//   double parameters[] = {params.ev(), params.m(), params.q(), params.p(),
-//                          params.v()};
-
-//   return quad_integrate(func, range, parameters, epsabs, epsrel, limit);
-// }
-
-//=============================================================================
-
-// function for integrating a function with a _pair_ of zeros
-// will not work for a function with possibly more than two zeros
-template <typename F>
-std::pair<double, double>
-quad_integrate_zeros(F func, const std::pair<double, double> &range,
-                     const std::pair<double, double> &zeros, void *parameters,
-                     double epsabs = 1.49e-5, double epsrel = 1.49e-5,
-                     size_t limit = 2000) {
-
-  gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
-
-  gsl_function f;
-  f.function = func;
-  f.params = parameters;
-
-  const double xmin = range.first;
-  const double xmax = range.second;
-
-  const double zero_1 = zeros.first;
-  const double zero_2 = zeros.second;
-
-  // goes through and forms a vector with a list of points starting from the initial integration point, to the last integration point and will add any zeros inbetween if they are in the integration range
-  std::vector<double> pts;
-  pts.push_back(xmin);
-  if (zero_1 > xmin && zero_1 < xmax) {
-    pts.push_back(zero_1);
-  }
-  if (zero_2 > xmin && zero_2 < xmax) {
-    pts.push_back(zero_2);
-  }
-  pts.push_back(xmax);
-
-  double result, error;
-
-  gsl_integration_qagp(&f, pts.data(), pts.size(), epsabs, epsrel, limit, work,
-                       &result, &error);
-
-  std::pair<double, double> out = {result, error};
-
-  gsl_integration_workspace_free(work);
-
-  return out;
-}
-
-// testing the integration function I made
-double test_func(double x, void *params) {
-  const double a = ((double *)params)[0];
-  const double b = ((double *)params)[1];
-
-  return (x - a) / ((x - a) * (x - b));
-}
-
-// template <typename F>
-// std::pair<double, double>
-// quad_integrate_zeros(F func, const std::pair<double, double> &range,
-//                      const std::pair<double, double> &zeros, void *params,
-//                      double epsabs = 1.49e-5, double epsrel = 1.49e-5,
-//                      size_t limit = 2000) {
-
-//   return quad_integrate_zeros(func, range, zeros, params, epsabs, epsrel,
-//                               limit);
-// }
-
-//=============================================================================
-
-// v_integrand = F_1 * P_l(xi) + F_2 * P_{~l}(xi),
-// with xi = (p^2 + q^2 - e^{-2v}) / (2 * p * q)
-double v_integrand(double v, void *v_params) {
-
-  // need to calculate F1 and F2 inside this function, as this is the innermost integrand
-  // i.e. this function should take in v as the first argument, and then also take in {p,q,p_to_index,m,ev} as parameters
-
-  // cast v_params to v_Params class
-  v_Params *params = static_cast<v_Params *>(v_params);
-
-  const auto Fv = params->Fv();
-  const auto q = params->q();
-  const auto p = params->p();
-  const auto ev = params->ev();
-  const auto m = params->m();
-
-  // conversion factor from the momentum q to the index q (I seem to need this for the zero potential so I will just have this here too I guess??)
-  const auto p_to_index = params->p_to_index();
-
-  const auto l = Fv.l();
-  const auto l_tilde = Fv.kappa() < 0 ? l + 1 : l - 1;
-
-  // calculate the F1 and F2 integrals and then form integrand of v integral
-  auto OnePIntegrals = OnePotential(Fv, q, p, p_to_index, ev, m, v);
-
-  const double xi = (p * p + q * q - exp(-2.0 * v)) / (2.0 * p * q);
-
-  const double F1 = OnePIntegrals.f1();
-  const double F2 = OnePIntegrals.f2();
-
-  return F1 * gsl_sf_legendre_Pl(l, xi) + F2 * gsl_sf_legendre_Pl(l_tilde, xi);
-}
-
-//=============================================================================
-
-// g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]},
-double g_qp(double p, void *p_params) {
-
-  // cast p_params (void pointer) to p_Params type
-  p_Params *params = static_cast<p_Params *>(p_params);
-
-  const DiracSpinor Fv = params->Fv();
-  const double ev = params->ev();
-  const double m = params->m();
-  const double q = params->q();
-  const double p_to_index = params->p_to_index();
-
-  // const double l = Fv.l();
-  // const double l_tilde = Fv.kappa() < 0 ? l + 1 : l - 1;
-
-  const auto v_lims =
-    std::pair<double, double>(-log(p + q), -log(std::abs(p - q)));
-
-  // form the set of parameters that the v integral needs
-  const auto v_params = v_Params(ev, m, q, p, p_to_index, Fv);
-
-  // cast v_params to void pointer to be passed into function for integrating
-  void *v_params_void = (void *)&v_params;
-
-  const std::pair<double, double> v_int =
-    quad_integrate(v_integrand, v_lims, v_params_void);
-
-  return v_int.first;
-}
-
-//=============================================================================
-
-// p_integrand = 2 * g(q, p),
-// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
-inline double p_integrand(double p, void *p_params) {
-  return 2.0 * g_qp(p, p_params);
-}
-
-//=============================================================================
-
-// p_integral = \int_{0}^{q} [2 * g(q, p)] dp,
-// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
-double p_integral(double q, void *q_params) {
-
-  // cast q_params (void pointer) to q_Params type
-  q_Params *params = static_cast<q_Params *>(q_params);
-
-  const auto p_lims = std::pair<double, double>(0.0, q);
-
-  const auto ev = params->ev();
-  const auto m = params->m();
-  const auto p_to_index = params->p_to_index();
-  const auto Fv = params->Fv();
-
-  const auto p_params = p_Params(ev, m, q, p_to_index, Fv);
-
-  // cast p_params to void pointer to be passed into function for integrating
-  void *p_params_void = (void *)&p_params;
-
-  const std::pair<double, double> p_int =
-    quad_integrate(p_integrand, p_lims, p_params_void);
-
-  return p_int.first;
-}
-
-//=============================================================================
-
-// should have only m, ev and p_to_index as parameters
-inline double q_integrand(double q, void *q_params) {
-  return p_integral(q, q_params);
-}
-
-//=============================================================================
-
-// should have only m and ev as parameters
-double q_integral(const DiracSpinor &F_p, void *q_params) {
-
-  // cast q_params (void pointer) to q_Params type
-  q_Params *params = static_cast<q_Params *>(q_params);
-
-  const auto p_to_index = params->p_to_index();
-
-  const auto q_lims = std::pair<double, double>(
-    double(F_p.min_pt()) / p_to_index, double(F_p.max_pt()) / p_to_index);
-
-  const std::pair<double, double> q_int =
-    quad_integrate(q_integrand, q_lims, q_params);
-
-  return q_int.first;
-}
-
 //=============================================================================
 
 // function definition for OnePotential constructor
 OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
                            const double &p, const double &p_to_index,
-                           const double &ev, const double &m, const double &v)
+                           const double &ev, const double &m, const double &v,
+                           const DiracSpinor &Fp)
   : m_c0(0.0),
     m_c11(0.0),
     m_c12(0.0),
@@ -940,6 +736,9 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
   const double q_i = q * p_to_index;
   const double p_i = p * p_to_index;
 
+  const double f_p = FourierTransform_f(Fv, p_i);
+  const double g_p = FourierTransform_g(Fv, p_i);
+
   // calculates the constants that go into F_1 and F_2
   m_a = A(q, p, ev, m, m_c0, m_c11, m_c12, m_c24, v);
   m_b1 = B1(m_c11, m_c21);
@@ -949,15 +748,146 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
   m_d = D(m_c0, m_c11, m_c12);
   m_h1 = H1(m, m_c0, m_c11);
   m_h2 = H2(m, m_c0, m_c12);
-  m_F1 =
-    F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev);
-  m_F2 =
-    F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, Fv, ev);
+  m_F1 = F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, f_p,
+            g_p, ev, Fp);
+  m_F2 = F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, f_p,
+            g_p, ev, Fp);
 };
 
 //=============================================================================
 
-double SE_OnePotential(const DiracSpinor &Fv, const DiracSpinor &F_p,
+// v_integrand = F_1 * P_l(xi) + F_2 * P_{~l}(xi),
+// with xi = (p^2 + q^2 - e^{-2v}) / (2 * p * q)
+double v_integrand(double v, void *v_params) {
+
+  // need to calculate F1 and F2 inside this function, as this is the innermost integrand
+  // i.e. this function should take in v as the first argument, and then also take in {p,q,p_to_index,m,ev} as parameters
+
+  // cast v_params to v_Params class
+  v_Params *params = static_cast<v_Params *>(v_params);
+
+  const auto Fr = params->Fr();
+  const auto q = params->q();
+  const auto p = params->p();
+  const auto ev = params->ev();
+  const auto m = params->m();
+  const auto Fp = params->Fp();
+
+  // conversion factor from the momentum q to the index q (I seem to need this for the zero potential so I will just have this here too I guess??)
+  const auto p_to_index = params->p_to_index();
+
+  const auto l = Fr.l();
+  const auto l_tilde = Fr.kappa() < 0 ? l + 1 : l - 1;
+
+  // calculate the F1 and F2 integrals and then form integrand of v integral
+  auto OnePIntegrals = OnePotential(Fr, q, p, p_to_index, ev, m, v, Fp);
+
+  const double xi = (p * p + q * q - exp(-2.0 * v)) / (2.0 * p * q);
+
+  const double F1 = OnePIntegrals.f1();
+  const double F2 = OnePIntegrals.f2();
+
+  return F1 * gsl_sf_legendre_Pl(l, xi) + F2 * gsl_sf_legendre_Pl(l_tilde, xi);
+}
+
+//=============================================================================
+
+// g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]},
+double g_qp(double p, void *p_params) {
+
+  // cast p_params (void pointer) to p_Params type
+  p_Params *params = static_cast<p_Params *>(p_params);
+
+  const DiracSpinor Fr = params->Fr();
+  const double ev = params->ev();
+  const double m = params->m();
+  const double q = params->q();
+  const double p_to_index = params->p_to_index();
+  const DiracSpinor Fp = params->Fp();
+
+  // const double l = Fv.l();
+  // const double l_tilde = Fv.kappa() < 0 ? l + 1 : l - 1;
+
+  const auto v_lims =
+    std::pair<double, double>(-log(p + q), -log(std::abs(p - q)));
+
+  // form the set of parameters that the v integral needs
+  const auto v_params = v_Params(ev, m, q, p, p_to_index, Fr, Fp);
+
+  // cast v_params to void pointer to be passed into function for integrating
+  void *v_params_void = (void *)&v_params;
+
+  const std::pair<double, double> v_int =
+    quad_integrate(v_integrand, v_lims, v_params_void);
+
+  return v_int.first;
+}
+
+//=============================================================================
+
+// p_integrand = 2 * g(q, p),
+// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+inline double p_integrand(double p, void *p_params) {
+  return 2.0 * g_qp(p, p_params);
+}
+
+//=============================================================================
+
+// p_integral = \int_{0}^{q} [2 * g(q, p)] dp,
+// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+double p_integral(double q, void *q_params) {
+
+  // cast q_params (void pointer) to q_Params type
+  q_Params *params = static_cast<q_Params *>(q_params);
+
+  const auto p_lims = std::pair<double, double>(0.0, q);
+
+  const auto ev = params->ev();
+  const auto m = params->m();
+  const auto p_to_index = params->p_to_index();
+  const auto Fr = params->Fr();
+  const auto Fp = params->Fp();
+
+  const auto p_params = p_Params(ev, m, q, p_to_index, Fr, Fp);
+
+  // cast p_params to void pointer to be passed into function for integrating
+  void *p_params_void = (void *)&p_params;
+
+  const std::pair<double, double> p_int =
+    quad_integrate(p_integrand, p_lims, p_params_void);
+
+  return p_int.first;
+}
+
+//=============================================================================
+
+// should have only m, ev and p_to_index as parameters
+inline double q_integrand(double q, void *q_params) {
+  return p_integral(q, q_params);
+}
+
+//=============================================================================
+
+// should have only m and ev as parameters
+double q_integral(const DiracSpinor &F_p, void *q_params) {
+
+  // cast q_params (void pointer) to q_Params type
+  q_Params *params = static_cast<q_Params *>(q_params);
+
+  const auto p_to_index = params->p_to_index();
+
+  const auto q_lims = std::pair<double, double>(
+    double(F_p.min_pt()) / p_to_index, double(F_p.max_pt()) / p_to_index);
+
+  const std::pair<double, double> q_int =
+    quad_integrate(q_integrand, q_lims, q_params);
+
+  return q_int.first;
+}
+
+//=============================================================================
+
+double SE_OnePotential(const DiracSpinor &Fr, const DiracSpinor &Fp,
                        const double &ev, const double &mec2,
                        const double &p_to_index) {
 
@@ -1009,14 +939,24 @@ double SE_OnePotential(const DiracSpinor &Fv, const DiracSpinor &F_p,
   // } // q
   // out += (P_l * out1 + P_lbar * out2) * dxi;
   // std::cout << double(x) / double(xi_num_points) << "\n";
+  const auto qGrid = Fp.grid();
+  const auto q_vec = qGrid.r();
 
-  const auto parameters = q_Params(ev, mec2, p_to_index, Fv);
+  double out = 0.0;
 
-  // cast parameters to void pointer to be passed into function for integrating
-  void *params = (void *)&parameters;
+#pragma omp parallel for reduction(+ : out)
+  for (auto i = Fp.min_pt(); i < Fp.max_pt(); i++) {
 
-  const double out =
-    -(PhysConst::alpha2 / (32.0 * pow(M_PI, 5))) * q_integral(F_p, params);
+    const double q = q_vec[i] / p_to_index;
+
+    const auto params = q_Params(ev, mec2, p_to_index, Fr, Fp);
+
+    out += q_integrand(q, (void *)&params);
+
+    // std::cout << q * p_to_index / F_p.max_pt() << "\n";
+  }
+
+  out *= -(PhysConst::alpha2 / (32.0 * pow(M_PI, 5)));
 
   return out;
 }
