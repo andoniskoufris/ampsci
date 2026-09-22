@@ -628,13 +628,13 @@ inline double H2(const double &m, const double &c0, const double &c12) {
 
 // takes in a _real_space_ wave function and calculates F1 and F2 i.e. the Fourier components are calculated inside
 // should _NOT_ ever be used with Fourier space wave function
-double F1(const double &q, const double &q_i, const double &p,
-          const double &p_i, const double &a, const double &b1,
-          const double &b2, const double &c1, const double &c2, const double &d,
-          const double &h1, const double &h2, const double &f_p,
-          const double &g_p, const double &ev, const DiracSpinor &Fp) {
-  const double f_q = Fp.f(int(q_i));
-  const double g_q = Fp.g(int(q_i));
+double F1(const double &q, const double &q_i, const double &p, const double &a,
+          const double &b1, const double &b2, const double &c1,
+          const double &c2, const double &d, const double &h1, const double &h2,
+          const double &f_p, const double &g_p, const double &ev,
+          const DiracSpinor &Fp) {
+  const double f_q = Fp.f(size_t(q_i));
+  const double g_q = Fp.g(size_t(q_i));
 
   double f1 = 0.0;
 
@@ -654,13 +654,13 @@ double F1(const double &q, const double &q_i, const double &p,
 //=============================================================================
 
 // takes in a _real_space_ wave function and calculates F1 and F2
-double F2(const double &q, const double &q_i, const double &p,
-          const double &p_i, const double &a, const double &b1,
-          const double &b2, const double &c1, const double &c2, const double &d,
-          const double &h1, const double &h2, const double &f_p,
-          const double &g_p, const double &ev, const DiracSpinor &Fp) {
-  const double f_q = Fp.f(int(q_i));
-  const double g_q = Fp.g(int(q_i));
+double F2(const double &q, const double &q_i, const double &p, const double &a,
+          const double &b1, const double &b2, const double &c1,
+          const double &c2, const double &d, const double &h1, const double &h2,
+          const double &f_p, const double &g_p, const double &ev,
+          const DiracSpinor &Fp) {
+  const double f_q = Fp.f(size_t(q_i));
+  const double g_q = Fp.g(size_t(q_i));
 
   double f2 = 0.0;
 
@@ -748,10 +748,10 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
   m_d = D(m_c0, m_c11, m_c12);
   m_h1 = H1(m, m_c0, m_c11);
   m_h2 = H2(m, m_c0, m_c12);
-  m_F1 = F1(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, f_p,
-            g_p, ev, Fp);
-  m_F2 = F2(q, q_i, p, p_i, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, f_p,
-            g_p, ev, Fp);
+  m_F1 = F1(q, q_i, p, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, f_p, g_p,
+            ev, Fp);
+  m_F2 = F2(q, q_i, p, m_a, m_b1, m_b2, m_c1, m_c2, m_d, m_h1, m_h2, f_p, g_p,
+            ev, Fp);
 };
 
 //=============================================================================
