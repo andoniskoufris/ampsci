@@ -61,7 +61,7 @@ private:
 public:
   OnePotential(const DiracSpinor &Fv, const double &q, const double &p,
                const double &p_to_index, const double &ev, const double &m,
-               const double &v);
+               const double &v, const DiracSpinor &Fp);
 
   OnePotential(const double &f_q, const double &g_q, const double &f_p,
                const double &g_p, const double &q, const size_t &q_i,
@@ -81,19 +81,28 @@ private:
   const double m_q;
   const double m_p;
   const double m_p_to_index;
-  const DiracSpinor m_Fv;
+  const DiracSpinor m_Fr;
+  const DiracSpinor m_Fp;
 
 public:
   v_Params(const double &ev, const double &m, const double &q, const double &p,
-           const double &p_to_index, const DiracSpinor &Fv)
-    : m_ev(ev), m_me(m), m_q(q), m_p(p), m_p_to_index(p_to_index), m_Fv(Fv) {}
+           const double &p_to_index, const DiracSpinor &Fr,
+           const DiracSpinor &Fp)
+    : m_ev(ev),
+      m_me(m),
+      m_q(q),
+      m_p(p),
+      m_p_to_index(p_to_index),
+      m_Fr(Fr),
+      m_Fp(Fp) {}
 
   const double &m() { return m_me; }
   const double &ev() { return m_ev; }
   const double &q() { return m_q; }
   const double &p() { return m_p; }
   const double &p_to_index() { return m_p_to_index; }
-  const DiracSpinor &Fv() { return m_Fv; }
+  const DiracSpinor &Fr() { return m_Fr; }
+  const DiracSpinor &Fp() { return m_Fp; }
 };
 
 //=============================================================================
@@ -104,18 +113,21 @@ private:
   const double m_me;
   const double m_q;
   const double m_p_to_index;
-  const DiracSpinor m_Fv;
+  const DiracSpinor m_Fr;
+  const DiracSpinor m_Fp;
 
 public:
   p_Params(const double &ev, const double &m, const double &q,
-           const double &p_to_index, const DiracSpinor &Fv)
-    : m_ev(ev), m_me(m), m_q(q), m_p_to_index(p_to_index), m_Fv(Fv) {}
+           const double &p_to_index, const DiracSpinor &Fr,
+           const DiracSpinor &Fp)
+    : m_ev(ev), m_me(m), m_q(q), m_p_to_index(p_to_index), m_Fr(Fr), m_Fp(Fp) {}
 
   const double &m() { return m_me; }
   const double &ev() { return m_ev; }
   const double &q() { return m_q; }
   const double &p_to_index() { return m_p_to_index; }
-  const DiracSpinor &Fv() { return m_Fv; }
+  const DiracSpinor &Fr() { return m_Fr; }
+  const DiracSpinor &Fp() { return m_Fp; }
 };
 
 //=============================================================================
@@ -125,17 +137,19 @@ private:
   const double m_ev;
   const double m_me;
   const double m_p_to_index;
-  const DiracSpinor m_Fv;
+  const DiracSpinor m_Fr;
+  const DiracSpinor m_Fp;
 
 public:
   q_Params(const double &ev, const double &m, const double &p_to_index,
-           const DiracSpinor &Fv)
-    : m_ev(ev), m_me(m), m_p_to_index(p_to_index), m_Fv(Fv) {}
+           const DiracSpinor &Fr, const DiracSpinor &Fp)
+    : m_ev(ev), m_me(m), m_p_to_index(p_to_index), m_Fr(Fr), m_Fp(Fp) {}
 
   const double &m() { return m_me; }
   const double &ev() { return m_ev; }
   const double &p_to_index() { return m_p_to_index; }
-  const DiracSpinor &Fv() { return m_Fv; }
+  const DiracSpinor &Fr() { return m_Fr; }
+  const DiracSpinor &Fp() { return m_Fp; }
 };
 
 } // namespace Module
