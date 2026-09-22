@@ -733,7 +733,7 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
   m_c23 = c23_int.first;
   m_c24 = c24_int.first;
 
-  const double q_i = q * p_to_index;
+  const double q_i = Fp.grid().getIndex(q * p_to_index);
   const double p_i = p * p_to_index;
 
   const double f_p = FourierTransform_f(Fv, p_i);
@@ -949,11 +949,11 @@ double SE_OnePotential(const DiracSpinor &Fr, const DiracSpinor &Fp,
 
     const double q = q_vec[i] / p_to_index;
 
+    // std::cout << qGrid.getIndex(q * p_to_index) << "\n";
+
     const auto params = q_Params(ev, mec2, p_to_index, Fr, Fp);
 
     out += q_integrand(q, (void *)&params);
-
-    // std::cout << q * p_to_index / F_p.max_pt() << "\n";
   }
 
   out *= -(PhysConst::alpha2 / (32.0 * pow(M_PI, 5)));
