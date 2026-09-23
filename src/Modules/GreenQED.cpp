@@ -276,6 +276,8 @@ quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
 
   double result, error;
 
+  gsl_set_error_handler_off();
+
   gsl_integration_qags(&f, range.first, range.second, epsabs, epsrel, limit,
                        work, &result, &error);
 
@@ -321,6 +323,8 @@ quad_integrate_zeros(F func, const std::pair<double, double> &range,
   pts.push_back(xmax);
 
   double result, error;
+
+  gsl_set_error_handler_off();
 
   gsl_integration_qagp(&f, pts.data(), pts.size(), epsabs, epsrel, limit, work,
                        &result, &error);
@@ -730,6 +734,8 @@ OnePotIntegrals::OnePotIntegrals(const DiracSpinor &Fv, const double &q,
 
   std::pair<double, double> c0_int, c11_int, c12_int, c21_int, c22_int, c23_int;
 
+  gsl_set_error_handler_off();
+
   // calculates C_ij integrals
   if (zeros_in_interval) {
     c0_int = quad_integrate_zeros(C0_i, y_lims, zeros, (void *)&params);
@@ -812,6 +818,8 @@ double v_integrand(double v, void *v_params) {
   const double F1 = OnePIntegrals.f1();
   const double F2 = OnePIntegrals.f2();
 
+  gsl_set_error_handler_off();
+
   return F1 * gsl_sf_legendre_Pl(l, xi) + F2 * gsl_sf_legendre_Pl(l_tilde, xi);
 }
 
@@ -841,16 +849,18 @@ double g_qp(double p, void *p_params) {
   // cast v_params to void pointer to be passed into function for integrating
   void *v_params_void = (void *)&v_params;
 
+  gsl_set_error_handler_off();
+
   const std::pair<double, double> v_int =
     quad_integrate(v_integrand, v_lims, v_params_void);
 
-  return v_int.first;
+  return p * q * v_int.first;
 }
 
 //=============================================================================
 
 // p_integrand = 2 * g(q, p),
-// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)} p * q[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
 inline double p_integrand(double p, void *p_params) {
   return 2.0 * g_qp(p, p_params);
 }
