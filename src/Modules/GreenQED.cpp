@@ -75,9 +75,11 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
                          SphericalBessel::JL(l_tilde, p_i * r[j]) *
                          grid.drdu(j) * grid.du();
     }
-    FTransform.f(i) *= 4 * M_PI;
-    FTransform.g(i) *= -4 * M_PI * sign(F.kappa());
   }
+
+  using namespace qip::overloads;
+  FTransform.f() *= 4 * M_PI;
+  FTransform.g() *= -4 * M_PI * sign(F.kappa());
 
   return FTransform;
 }
@@ -98,9 +100,8 @@ double FourierTransform_f(const DiracSpinor &F, const double &p) {
     out += r[j] * F.f(j) * SphericalBessel::JL(F.l(), p * r[j]) * grid.drdu(j) *
            grid.du();
   }
-  out *= 4 * M_PI;
 
-  return out;
+  return 4 * M_PI * out;
 }
 
 //=============================================================================
@@ -126,9 +127,8 @@ double FourierTransform_g(const DiracSpinor &F, const double &p) {
     out += r[j] * F.g(j) * SphericalBessel::JL(l_tilde, p * r[j]) *
            grid.drdu(j) * grid.du();
   }
-  out *= -4 * M_PI * sign(F.kappa());
 
-  return out;
+  return -4 * M_PI * sign(F.kappa()) * out;
 }
 
 //=============================================================================
@@ -265,7 +265,7 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
 template <typename F>
 std::pair<double, double>
 quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
-               double epsabs = 1.00e-2, double epsrel = 1.00e-2,
+               double epsabs = 1.00e-4, double epsrel = 1.00e-4,
                size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
@@ -294,7 +294,7 @@ template <typename F>
 std::pair<double, double>
 quad_integrate_zeros(F func, const std::pair<double, double> &range,
                      const std::pair<double, double> &zeros, void *parameters,
-                     double epsabs = 1.0e-2, double epsrel = 1.0e-2,
+                     double epsabs = 1.0e-4, double epsrel = 1.0e-4,
                      size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
