@@ -44,7 +44,7 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf);
 
-class OnePotential {
+class OnePotIntegrals {
 private:
   double m_c0;
   double m_c11, m_c12;
@@ -59,14 +59,14 @@ private:
 
   //separately pass in q and its index, and same for p, so that we can multiply p and q without messing up the indexing
 public:
-  OnePotential(const DiracSpinor &Fv, const double &q, const double &p,
-               const double &p_to_index, const double &ev, const double &m,
-               const double &v, const DiracSpinor &Fp);
+  OnePotIntegrals(const DiracSpinor &Fv, const double &q, const double &p,
+                  const double &p_to_index, const double &ev, const double &m,
+                  const double &v, const DiracSpinor &Fp);
 
-  OnePotential(const double &f_q, const double &g_q, const double &f_p,
-               const double &g_p, const double &q, const size_t &q_i,
-               const double &p, const size_t &p_i, const double &ev,
-               const double &m, const double &v);
+  OnePotIntegrals(const double &f_q, const double &g_q, const double &f_p,
+                  const double &g_p, const double &q, const size_t &q_i,
+                  const double &p, const size_t &p_i, const double &ev,
+                  const double &m, const double &v);
 
   double f1() { return m_F1; }
   double f2() { return m_F2; }

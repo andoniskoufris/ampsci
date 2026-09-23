@@ -27,7 +27,9 @@ double rho(const double &p, const double &E) {
   //    be added together as e_v^2 + 1/α^2
   //  - E and p * c have the same units (I am letting p be dimensionless); E^2
   //    and p^2 must be added as E^2 + p^2/α^2
-  // thus, rho = (α^{-4} - E^2 + p^2 * α^{-2})/α^{-4}
+
+  // Thus,
+  //       rho = (α^{-4} - E^2 + p^2 * α^{-2})/α^{-4}
   //           = 1 - α^4 * E^2 + α^2 * p^2
   // note: to compare to Shabaev should add mc^2 to e_v (since ampsci subtracts
   //       rest mass from H), so E = e_v + m_e * c^2 = e_v + 1/α^2 (in a.u.)
@@ -263,7 +265,7 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
 template <typename F>
 std::pair<double, double>
 quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
-               double epsabs = 1.49e-5, double epsrel = 1.49e-5,
+               double epsabs = 1.00e-2, double epsrel = 1.00e-2,
                size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
@@ -292,7 +294,7 @@ template <typename F>
 std::pair<double, double>
 quad_integrate_zeros(F func, const std::pair<double, double> &range,
                      const std::pair<double, double> &zeros, void *parameters,
-                     double epsabs = 1.49e-5, double epsrel = 1.49e-5,
+                     double epsabs = 1.0e-2, double epsrel = 1.0e-2,
                      size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
@@ -344,10 +346,10 @@ double Feyn_denom(const double &y, const double &ev, const double &q,
                   const double &p, const double &v) {
   const double ev2 = ev * ev;
   const double q2 = q * q;
-  // const double p2 = p * p;
+  const double p2 = p * p;
   const double ym1 = y - 1.0;
 
-  return ev2 - y * q2 + ym1 * p - y * ym1 * exp(-2.0 * v);
+  return ev2 - y * q2 + ym1 * p2 - y * ym1 * exp(-2.0 * v);
 }
 
 //=============================================================================
@@ -361,8 +363,8 @@ std::pair<double, double> Feyn_denom_zeros(const double &ev, const double &q,
 
   std::pair<double, double> out;
 
-  const double sq_root = exp(-4.0 * v) + (p2 - q2) * (p2 - q2) -
-                         2.0 * exp(-2.0 * v) * (p2 + q2 - 2.0 * ev2);
+  const double sq_root = sqrt(exp(-4.0 * v) + (p2 - q2) * (p2 - q2) -
+                              2.0 * exp(-2.0 * v) * (p2 + q2 - 2.0 * ev2));
   // make sure the zeroes are not in the interval if the discriminant is zero
   // y is being integrated between 0 and 1 so we can safely set the zeros to -1.0
   if (sq_root < 0) {
@@ -370,17 +372,19 @@ std::pair<double, double> Feyn_denom_zeros(const double &ev, const double &q,
     out.second = -1.0;
     return out;
   }
-  const double A = std::abs(exp(2.0 * v) * (p2 - q2 + sq_root));
+
+  const double A = (1.0 + exp(2.0 * v) * (p2 - q2));
+  const double B = exp(2.0 * v) * sq_root;
 
   // is this really where the zero is?? does not seem right
-  if (A == 0.0) {
-    out.first = 0.5;
+  if (B == 0.0) {
+    out.first = A / 2.0;
     out.second = out.first;
     return out;
   }
 
-  const auto y1 = (1.0 - A) / 2.0;
-  const auto y2 = (1.0 + A) / 2.0;
+  const auto y1 = (A - B) / 2.0;
+  const auto y2 = (A + B) / 2.0;
 
   out.first = y1;
   out.second = y2;
@@ -392,7 +396,7 @@ std::pair<double, double> Feyn_denom_zeros(const double &ev, const double &q,
 
 double Y(const double &y, const double &ev, const double &m, const double &q,
          const double &p, const double &v) {
-  const double numerator = m * m + y * q * q + (1.0 - y) * p * p;
+  const double numerator = m * m - ev * ev + y * q * q + (1.0 - y) * p * p;
 
   return numerator / Feyn_denom(y, ev, q, p, v);
 }
@@ -406,8 +410,8 @@ double X(const double &y, const double &ev, const double &m, const double &q,
   const double q2 = q * q;
   const double p2 = p * p;
 
-  const double numerator = m2 + ev2 + y * (1.0 - y) * exp(-2.0 * v);
-  const double denominator = m2 + y * q2 + (1.0 - y) * p2;
+  const double numerator = m2 + y * (1.0 - y) * exp(-2.0 * v);
+  const double denominator = m2 - ev2 + y * q2 + (1.0 - y) * p2;
 
   return numerator / denominator;
 }
@@ -686,10 +690,10 @@ double F2(const double &q, const double &q_i, const double &p, const double &a,
 //=============================================================================
 
 // function definition for OnePotential constructor
-OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
-                           const double &p, const double &p_to_index,
-                           const double &ev, const double &m, const double &v,
-                           const DiracSpinor &Fp)
+OnePotIntegrals::OnePotIntegrals(const DiracSpinor &Fv, const double &q,
+                                 const double &p, const double &p_to_index,
+                                 const double &ev, const double &m,
+                                 const double &v, const DiracSpinor &Fp)
   : m_c0(0.0),
     m_c11(0.0),
     m_c12(0.0),
@@ -711,25 +715,40 @@ OnePotential::OnePotential(const DiracSpinor &Fv, const double &q,
   // determine the zeros in the denominator
   const auto zeros = Feyn_denom_zeros(ev, q, p, v);
 
-  const std::pair<double, double> y_lims(0.0, 1.0);
+  const std::pair<double, double> y_lims = {0.0, 1.0};
 
   const double params[] = {m, ev, q, p, v};
 
+  // check if we have zeros in the Feynman parameter integrals
+  bool zeros_in_interval;
+  if ((0.0 <= zeros.first && zeros.first <= 1.0) ||
+      (0.0 <= zeros.second && zeros.second <= 1.0)) {
+    zeros_in_interval = true;
+  } else {
+    zeros_in_interval = false;
+  }
+
+  std::pair<double, double> c0_int, c11_int, c12_int, c21_int, c22_int, c23_int;
+
   // calculates C_ij integrals
-  const std::pair<double, double> c0_int =
-    quad_integrate_zeros(C0_i, y_lims, zeros, (void *)params);
-  const std::pair<double, double> c11_int =
-    quad_integrate_zeros(C11_i, y_lims, zeros, (void *)params);
-  const std::pair<double, double> c12_int =
-    quad_integrate_zeros(C12_i, y_lims, zeros, (void *)params);
-  const std::pair<double, double> c21_int =
-    quad_integrate_zeros(C21_i, y_lims, zeros, (void *)params);
-  const std::pair<double, double> c22_int =
-    quad_integrate_zeros(C22_i, y_lims, zeros, (void *)params);
-  const std::pair<double, double> c23_int =
-    quad_integrate_zeros(C23_i, y_lims, zeros, (void *)params);
+  if (zeros_in_interval) {
+    c0_int = quad_integrate_zeros(C0_i, y_lims, zeros, (void *)&params);
+    c11_int = quad_integrate_zeros(C11_i, y_lims, zeros, (void *)&params);
+    c12_int = quad_integrate_zeros(C12_i, y_lims, zeros, (void *)&params);
+    c21_int = quad_integrate_zeros(C21_i, y_lims, zeros, (void *)&params);
+    c22_int = quad_integrate_zeros(C22_i, y_lims, zeros, (void *)&params);
+    c23_int = quad_integrate_zeros(C23_i, y_lims, zeros, (void *)&params);
+  } else {
+    c0_int = quad_integrate(C0_i, y_lims, (void *)&params);
+    c11_int = quad_integrate(C11_i, y_lims, (void *)&params);
+    c12_int = quad_integrate(C12_i, y_lims, (void *)&params);
+    c21_int = quad_integrate(C21_i, y_lims, (void *)&params);
+    c22_int = quad_integrate(C22_i, y_lims, (void *)&params);
+    c23_int = quad_integrate(C23_i, y_lims, (void *)&params);
+  }
+
   const std::pair<double, double> c24_int =
-    quad_integrate_zeros(C24_i, y_lims, zeros, (void *)params);
+    quad_integrate(C24_i, y_lims, (void *)&params);
 
   m_c0 = c0_int.first;
   m_c11 = c11_int.first;
@@ -786,7 +805,7 @@ double v_integrand(double v, void *v_params) {
   const auto l_tilde = Fr.kappa() < 0 ? l + 1 : l - 1;
 
   // calculate the F1 and F2 integrals and then form integrand of v integral
-  auto OnePIntegrals = OnePotential(Fr, q, p, p_to_index, ev, m, v, Fp);
+  auto OnePIntegrals = OnePotIntegrals(Fr, q, p, p_to_index, ev, m, v, Fp);
 
   const double xi = (p * p + q * q - exp(-2.0 * v)) / (2.0 * p * q);
 
@@ -814,8 +833,7 @@ double g_qp(double p, void *p_params) {
   // const double l = Fv.l();
   // const double l_tilde = Fv.kappa() < 0 ? l + 1 : l - 1;
 
-  const auto v_lims =
-    std::pair<double, double>(-log(p + q), -log(std::abs(p - q)));
+  const std::pair<double, double> v_lims = {-log(p + q), -log(std::abs(p - q))};
 
   // form the set of parameters that the v integral needs
   const auto v_params = v_Params(ev, m, q, p, p_to_index, Fr, Fp);
@@ -846,7 +864,7 @@ double p_integral(double q, void *q_params) {
   // cast q_params (void pointer) to q_Params type
   q_Params *params = static_cast<q_Params *>(q_params);
 
-  const auto p_lims = std::pair<double, double>(0.0, q);
+  const std::pair<double, double> p_lims = {0.0, q};
 
   const auto ev = params->ev();
   const auto m = params->m();
@@ -882,8 +900,9 @@ double q_integral(const DiracSpinor &F_p, void *q_params) {
 
   const auto p_to_index = params->p_to_index();
 
-  const auto q_lims = std::pair<double, double>(
-    double(F_p.min_pt()) / p_to_index, double(F_p.max_pt()) / p_to_index);
+  // these integration limits are wrong!!
+  const std::pair<double, double> q_lims = {double(F_p.min_pt()) / p_to_index,
+                                            double(F_p.max_pt()) / p_to_index};
 
   const std::pair<double, double> q_int =
     quad_integrate(q_integrand, q_lims, q_params);
@@ -1148,7 +1167,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
     double E0 = SE_ZeroPotential(vtild, ev, mec2);
     double E1 =
-      wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, 1.0 / PhysConst::alpha);
+      wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, PhysConst::alpha);
     // double E1 = 0.0;
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
@@ -1163,13 +1182,14 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   //===== Testing things
   //! Testing one-potential term
-  // std::cout << "Testing the function that finds the zeros of the Feynman parameter denominator:\n"
-  // const auto [y1, y2] = Feyn_denom_zeros(-3.0, 3.6, 12.0, 0.27);
+  // std::cout << "Testing the function that finds the zeros of the Feynman "
+  //              "parameter denominator:\n";
+  // const auto [y1, y2] = Feyn_denom_zeros(7.3, 9.5, 10.0, -2.8);
   // std::cout << "y1 = " << y1
-  //           << " ; D(y1) = " << Feyn_denom(-3.0, y1, 3.6, 12.0, 0.27)
+  //           << " ; D(y1) = " << Feyn_denom(y1, 7.3, 9.5, 10.0, -2.8)
   //           << std::endl;
   // std::cout << "y2 = " << y2
-  //           << " ; D(y2) = " << Feyn_denom(-3.0, y2, 3.6, 12.0, 0.27) << "\n";
+  //           << " ; D(y2) = " << Feyn_denom(y2, 7.3, 9.5, 10.0, -2.8) << "\n";
 
   // std::cout << "Testing the quadrature integration scheme:\n"
   // const auto a = 5.5;
