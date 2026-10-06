@@ -978,6 +978,8 @@ double SE_OnePotential(const DiracSpinor &Fr, const DiracSpinor &Fp,
   // std::cout << double(x) / double(xi_num_points) << "\n";
   const auto qGrid = Fp.grid();
   const auto q_vec = qGrid.r();
+  const auto dqdu = qGrid.drdu();
+  const auto du = qGrid.du();
 
   double out = 0.0;
 
@@ -994,7 +996,7 @@ double SE_OnePotential(const DiracSpinor &Fr, const DiracSpinor &Fp,
 
     const auto params = q_Params(ev, mec2, p_to_index, Fr, Fp);
 
-    out += q_integrand(q, (void *)&params);
+    out += q_integrand(q, (void *)&params) * dqdu[i] * du;
   }
 
   out *= -(PhysConst::alpha2 / (32.0 * pow(M_PI, 5)));
