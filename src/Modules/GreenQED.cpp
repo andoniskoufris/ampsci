@@ -265,7 +265,7 @@ double SE_ZeroPotential(const DiracSpinor &F_p, const double &ev,
 template <typename F>
 std::pair<double, double>
 quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
-               double epsabs = 1.00e-4, double epsrel = 1.00e-4,
+               double epsabs = 1.00e-2, double epsrel = 1.00e-2,
                size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
@@ -276,7 +276,7 @@ quad_integrate(F func, const std::pair<double, double> &range, void *parameters,
 
   double result, error;
 
-  gsl_set_error_handler_off();
+  // gsl_set_error_handler_off();
 
   gsl_integration_qags(&f, range.first, range.second, epsabs, epsrel, limit,
                        work, &result, &error);
@@ -296,7 +296,7 @@ template <typename F>
 std::pair<double, double>
 quad_integrate_zeros(F func, const std::pair<double, double> &range,
                      const std::pair<double, double> &zeros, void *parameters,
-                     double epsabs = 1.0e-4, double epsrel = 1.0e-4,
+                     double epsabs = 1.0e-2, double epsrel = 1.0e-2,
                      size_t limit = 2000) {
 
   gsl_integration_workspace *work = gsl_integration_workspace_alloc(2000);
@@ -324,7 +324,7 @@ quad_integrate_zeros(F func, const std::pair<double, double> &range,
 
   double result, error;
 
-  gsl_set_error_handler_off();
+  // gsl_set_error_handler_off();
 
   gsl_integration_qagp(&f, pts.data(), pts.size(), epsabs, epsrel, limit, work,
                        &result, &error);
@@ -582,14 +582,13 @@ double A(const double &q, const double &p, const double &ev, const double &m,
   // 3-vector dot products denoted with single letters
   const double q2 = q * q;
   const double p2 = p * p;
-  const double pq = p * q;
   // 4-vector dot products denoted with double letters
   const double qq2 = ev2 - q2;
   const double pp2 = ev2 - p2;
-  const double pp_dot_qq = (2 * ev2 + exp(-2.0 * v) - p2 - q2) / (pq);
+  const double pp_dot_qq = (2.0 * ev2 + exp(-2.0 * v) - p2 - q2) / 2.0;
 
-  double out = c24 - 2 + qq2 * c11 + pp2 * c12;
-  out += 4 * pp_dot_qq * (c0 + c11 + c12) + m2 * (2.0 * c0 + c11 + c12);
+  double out = c24 - 2.0 + qq2 * c11 + pp2 * c12;
+  out += 4.0 * pp_dot_qq * (c0 + c11 + c12) + m2 * (-2.0 * c0 + c11 + c12);
 
   return out;
 }
@@ -652,14 +651,15 @@ double F1(const double &q, const double &q_i, const double &p, const double &a,
 
   double f1 = 0.0;
 
-  // first row
-  f1 += a * f_q * f_p + ev * (b1 + b2) * (ev * f_q * f_p + q * g_q * f_p);
-  // second row
+  // A term
+  f1 += a * f_q * f_p;
+  // B terms
+  f1 += ev * (b1 + b2) * (ev * f_q * f_p + q * g_q * f_p);
+  // C terms
   f1 += ev * (c1 + c2) * (ev * f_q * f_p + p * f_q * g_p);
-  // third row
-  f1 += d * (ev * ev * f_q * f_p + ev * q * g_q * f_p + ev * p * f_q * g_p -
-             p * q * g_q * g_p);
-  // fourth row
+  // D term
+  f1 += d * (ev * f_q + q * g_q) * (ev * f_p + p * g_p);
+  // H terms
   f1 += ev * (h1 + h2) * f_q * f_p;
 
   return f1;
@@ -678,14 +678,15 @@ double F2(const double &q, const double &q_i, const double &p, const double &a,
 
   double f2 = 0.0;
 
-  // first row
-  f2 += a * g_q * g_p + ev * (b1 + b2) * (ev * g_q * g_p + q * f_q * g_p);
-  // second row
+  // A term
+  f2 += a * g_q * g_p;
+  // B terms
+  f2 += +ev * (b1 + b2) * (ev * g_q * g_p + q * f_q * g_p);
+  // C terms
   f2 += ev * (c1 + c2) * (ev * g_q * g_p + p * g_q * f_p);
-  // third row
-  f2 += d * (ev * ev * g_q * g_p + ev * q * f_q * g_p + ev * p * g_q * f_p -
-             p * q * f_q * f_p);
-  // fourth row
+  // D term
+  f2 += d * (ev * g_q + q * f_q) * (ev * g_p + p * f_p);
+  // H terms
   f2 += -1.0 * ev * (h1 + h2) * g_q * g_p;
 
   return f2;
@@ -734,7 +735,7 @@ OnePotIntegrals::OnePotIntegrals(const DiracSpinor &Fv, const double &q,
 
   std::pair<double, double> c0_int, c11_int, c12_int, c21_int, c22_int, c23_int;
 
-  gsl_set_error_handler_off();
+  // gsl_set_error_handler_off();
 
   // calculates C_ij integrals
   if (zeros_in_interval) {
@@ -804,7 +805,7 @@ double v_integrand(double v, void *v_params) {
   const auto m = params->m();
   const auto Fp = params->Fp();
 
-  // conversion factor from the momentum q to the index q (I seem to need this for the zero potential so I will just have this here too I guess??)
+  // conversion factor from the momentum q to the index q
   const auto p_to_index = params->p_to_index();
 
   const auto l = Fr.l();
@@ -818,14 +819,14 @@ double v_integrand(double v, void *v_params) {
   const double F1 = OnePIntegrals.f1();
   const double F2 = OnePIntegrals.f2();
 
-  gsl_set_error_handler_off();
+  //gsl_set_error_handler_off();
 
   return F1 * gsl_sf_legendre_Pl(l, xi) + F2 * gsl_sf_legendre_Pl(l_tilde, xi);
 }
 
 //=============================================================================
 
-// g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]},
+// g(q, p) = p * q * \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]},
 double g_qp(double p, void *p_params) {
 
   // cast p_params (void pointer) to p_Params type
@@ -849,7 +850,7 @@ double g_qp(double p, void *p_params) {
   // cast v_params to void pointer to be passed into function for integrating
   void *v_params_void = (void *)&v_params;
 
-  gsl_set_error_handler_off();
+  //gsl_set_error_handler_off();
 
   const std::pair<double, double> v_int =
     quad_integrate(v_integrand, v_lims, v_params_void);
@@ -860,7 +861,7 @@ double g_qp(double p, void *p_params) {
 //=============================================================================
 
 // p_integrand = 2 * g(q, p),
-// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)} p * q[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+// with g(q, p) = p * q * \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
 inline double p_integrand(double p, void *p_params) {
   return 2.0 * g_qp(p, p_params);
 }
@@ -868,19 +869,20 @@ inline double p_integrand(double p, void *p_params) {
 //=============================================================================
 
 // p_integral = \int_{0}^{q} [2 * g(q, p)] dp,
-// with g(q, p) = \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
+// with g(q, p) = p * q * \int_{-ln(p + q)}^{-\ln(|p - q|)}[F_1 * P_l(xi) + F_2 * P_{l_tilde}(xi)]
 double p_integral(double q, void *q_params) {
 
   // cast q_params (void pointer) to q_Params type
   q_Params *params = static_cast<q_Params *>(q_params);
-
-  const std::pair<double, double> p_lims = {0.0, q};
 
   const auto ev = params->ev();
   const auto m = params->m();
   const auto p_to_index = params->p_to_index();
   const auto Fr = params->Fr();
   const auto Fp = params->Fp();
+
+  // testing to see if the problem is when p goes up to q
+  const std::pair<double, double> p_lims = {0.0, 0.5 * q};
 
   const auto p_params = p_Params(ev, m, q, p_to_index, Fr, Fp);
 
@@ -1024,6 +1026,72 @@ double test_pointers(void *object) {
   test_class *test = static_cast<test_class *>(object);
 
   return test->getSecondVec();
+}
+
+//=============================================================================
+
+std::vector<double> log_grid(double r0, double rmax, size_t num_points) {
+
+  double u = 0.0;
+  const double du = log(rmax / r0) / double(num_points - 1);
+
+  std::vector<double> r(num_points);
+
+  r[0] = r0;
+
+  for (auto i = 1ul; i < num_points; i++) {
+    u += du;
+    r[i] = r0 * exp(u);
+  }
+
+  return r;
+}
+
+//=============================================================================
+
+std::vector<double> log_linear_grid(double r0, double rmax, size_t num_points,
+                                    const double b) {
+
+  double u = r0 + b * log(r0);
+  const double du = (rmax - r0 + b * log(rmax / r0)) / double(num_points - 1);
+
+  std::vector<double> r(num_points);
+  r[0] = r0;
+
+  for (auto i = 1ul; i < num_points; i++) {
+    u += du;
+
+    double rn = r[i - 1];
+    double rnp1 = rn - (u - rn - b * log(rn)) / (-1.0 - (b / rn));
+
+    while (std::abs(rnp1 - rn) > 0.01 * r0) {
+      rn = rnp1;
+      rnp1 = rn - ((u - rn - b * log(rn)) / (-1.0 - (b / rn)));
+    }
+
+    r[i] = rnp1;
+  }
+
+  return r;
+}
+
+//=============================================================================
+
+std::vector<double> inv_log_linear_grid(double r0, double rmax,
+                                        size_t num_points, const double b) {
+
+  double u = b * log(r0 + b);
+  const double du = b * log((rmax + b) / (r0 + b)) / double(num_points - 1);
+
+  std::vector<double> r(num_points);
+  r[0] = r0;
+
+  for (auto i = 1ul; i < num_points; i++) {
+    u += du;
+    r[i] = exp(u / b) - b;
+  }
+
+  return r;
 }
 
 //=============================================================================
@@ -1178,6 +1246,8 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     double E0 = SE_ZeroPotential(vtild, ev, mec2);
     double E1 =
       wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, PhysConst::alpha);
+
+    // double E0 = 0.0;
     // double E1 = 0.0;
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
@@ -1233,6 +1303,34 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // std::cout << "Testing cast to void pointer\n Expected: " << 9.645
   //           << "\n Result: " << test_pointers((void *)&test_thing);
+
+  //==== Testing different grids
+
+  // const double r0 = 1.0e-4;
+  // const double rmax = 1.0e3;
+  // const size_t num_points = 1000;
+  // // const double b = 4;
+
+  // const auto log_r = log_grid(r0, rmax, num_points);
+  // const auto log_linear_b1 = log_linear_grid(r0, rmax, num_points, 1);
+  // const auto log_linear_b4 = log_linear_grid(r0, rmax, num_points, 4);
+  // const auto log_linear_b10 = log_linear_grid(r0, rmax, num_points, 10);
+
+  // const auto inv_log_linear_b1 = inv_log_linear_grid(r0, rmax, num_points, 100);
+  // const auto inv_log_linear_b4 = inv_log_linear_grid(r0, rmax, num_points, 400);
+  // const auto inv_log_linear_b10 =
+  //   inv_log_linear_grid(r0, rmax, num_points, 1000);
+
+  // std::ofstream GridFile("grid_tests.txt");
+
+  // for (auto i = 0ul; i < num_points; i++) {
+  //   GridFile << i << " " << log_r[i] << " " << log_linear_b1[i] << " "
+  //            << log_linear_b4[i] << " " << log_linear_b10[i] << " "
+  //            << inv_log_linear_b1[i] << " " << inv_log_linear_b4[i] << " "
+  //            << inv_log_linear_b10[i] << "\n";
+  // }
+
+  // GridFile.close();
 }
 
 } // namespace Module
