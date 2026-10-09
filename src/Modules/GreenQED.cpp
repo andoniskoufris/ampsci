@@ -1100,6 +1100,131 @@ std::vector<double> inv_log_linear_grid(double r0, double rmax,
 }
 
 //=============================================================================
+
+std::vector<double> calculate_p_quad(const double &p_min, const double &p_max,
+                                     const std::vector<double> &quad_points) {
+  const size_t num_points = quad_points.size();
+  std::vector<double> p_vec(num_points);
+  const double alpha = 0.5 * (p_max - p_min);
+  const double beta = 0.5 * (p_max + p_min);
+
+  for (auto i = 0ul; i < num_points; i++) {
+    p_vec[i] = alpha * quad_points[i] + beta;
+  }
+
+  return p_vec;
+}
+
+//=============================================================================
+
+SpinorTransform FTransform_quad(const DiracSpinor &F,
+                                const std::vector<double> &p_grid,
+                                const std::vector<double> &quad_grid,
+                                const std::vector<double> &weights) {
+
+  auto Fp =
+    SpinorTransform(F.n(), F.kappa(), F.en(), p_grid, quad_grid, weights);
+
+  const size_t p_num_pts = p_grid.size();
+
+  // lambda for sign
+  auto sign = [](const double &x) {
+    return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
+  };
+
+  const auto r_grid = F.grid();
+  const auto r = F.grid().r();
+
+  const auto l_tilde = F.kappa() < 0 ? F.l() + 1 : F.l() - 1;
+
+  for (auto i = 0ul; i < p_num_pts; i++) {
+    const auto p_i = p_grid[i];
+
+    for (auto j = F.min_pt(); j < F.max_pt(); j++) {
+      Fp.f(i) += r[j] * F.f(j) * SphericalBessel::JL(F.l(), p_i * r[j]) *
+                 r_grid.drdu(j) * r_grid.du();
+      Fp.g(i) += r[j] * F.g(j) * SphericalBessel::JL(l_tilde, p_i * r[j]) *
+                 r_grid.drdu(j) * r_grid.du();
+    }
+  }
+
+  using namespace qip::overloads;
+  Fp.f() *= 4 * M_PI;
+  Fp.g() *= -4 * M_PI * sign(F.kappa());
+
+  return Fp;
+}
+
+//=============================================================================
+
+double quad_norm(const SpinorTransform &F) {
+
+  const auto f_p = F.f();
+  const auto g_p = F.g();
+
+  const auto p_min = F.p0();
+  const auto p_max = F.pmax();
+
+  // constants in conversion from the Gauss-Legendre points to momentum grid points
+  const double A = 0.5 * (p_max - p_min);
+  const double B = 0.5 * (p_max + p_min);
+
+  const auto weights = F.weights();
+  const auto quad_points = F.quad_grid();
+  const auto num_points = F.quad_grid().size();
+
+  double out = 0.0;
+
+  for (auto i = 0ul; i < num_points; i++) {
+    const auto p_i = A * quad_points[i] + B;
+
+    auto si = std::size_t(i);
+
+    out += p_i * p_i * (F.f(si) * F.f(si) + F.g(si) * F.g(si)) * weights[i];
+  }
+
+  // A is the Jacobian from converting the p integral between p_min and p_max into an integral over [-1, 1]
+  return A * out / (8.0 * M_PI * M_PI * M_PI);
+}
+
+//=============================================================================
+void write_orbitals(const std::string &fname,
+                    const std::vector<SpinorTransform> &orbs) {
+  if (orbs.empty())
+    return;
+  const auto gr = orbs[0].p_grid();
+
+  std::ofstream of(fname);
+  of << "r ";
+  for (auto &psi : orbs) {
+    // of << "r\'$" << psi.symbol(true) << "$" << "\' ";
+    of << "$" << psi.symbol(true) << "$ ";
+  }
+  of << "\n";
+
+  of << "# f block\n";
+  for (std::size_t i = 0; i < gr.size(); i++) {
+    of << gr[i] << " ";
+    for (auto &psi : orbs) {
+      of << psi.f(i) << " ";
+    }
+    of << "\n";
+  }
+
+  of << "\n# g block\n";
+  for (std::size_t i = 0; i < gr.size(); i++) {
+    of << gr[i] << " ";
+    for (auto &psi : orbs) {
+      of << psi.g(i) << " ";
+    }
+    of << "\n";
+  }
+
+  of.close();
+  std::cout << "Orbitals written to file: " << fname << "\n";
+}
+
+//=============================================================================
 //=============================================================================
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
