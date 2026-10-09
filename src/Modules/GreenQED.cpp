@@ -133,6 +133,35 @@ double FourierTransform_g(const DiracSpinor &F, const double &p) {
 
 //=============================================================================
 
+double LinInterp(const std::vector<double> &x, const std::vector<double> &y,
+                 const double &x_i) {
+
+  // returns the index before the point p_i
+  // The '-1' here ensures we always get a valid index, even if p > p_grid.back()
+  const auto it = std::upper_bound(x.begin(), x.end() - 1, x_i);
+  const auto x0_i = std::size_t(std::distance(x.begin(), it));
+
+  // if at end of array then just return the end point
+  // ensures y is never called beyond its size
+  // hacky but whatever
+  if (x0_i == x.size() - 1) {
+    return y[x0_i];
+  }
+
+  const auto x1_i = x0_i + 1;
+
+  const auto x0 = x[x0_i];
+  const auto x1 = x[x1_i];
+
+  const auto y0 = y[x0_i];
+  const auto y1 = y[x1_i];
+
+  // lineraly interpolates
+  return y0 + (x_i - x0) * ((y1 - y0) / (x1 - x0));
+}
+
+//=============================================================================
+
 // could be improved with quadrature?
 double p_norm(const DiracSpinor &Fa) {
 
@@ -768,8 +797,27 @@ OnePotIntegrals::OnePotIntegrals(const DiracSpinor &Fv, const double &q,
   const double q_i = Fp.grid().getIndex(q * p_to_index);
   const double p_i = p * p_to_index;
 
-  const double f_p = FourierTransform_f(Fv, p_i);
-  const double g_p = FourierTransform_g(Fv, p_i);
+  // const double f_p = FourierTransform_f(Fv, p_i);
+  // const double g_p = FourierTransform_g(Fv, p_i);
+
+  const double f_p = LinInterp(Fp.grid().r(), Fp.f(), p_i);
+  const double g_p = LinInterp(Fp.grid().r(), Fp.g(), p_i);
+
+  // // returns the index before the point p_i
+  // // The '-1' here ensures we always get a valid index, even if p > p_grid.back()
+  // const auto it =
+  //   std::lower_bound(Fp.grid().r().begin(), Fp.grid().r().end() - 1, p_i);
+  // const auto p_i_lower = std::size_t(std::distance(Fp.grid().r().begin(), it));
+  // const auto p_i_upper =
+  //   p_i_lower + 1; //! need to make sure this never calls outside the vector
+
+  // // lineraly interpolates the Fourier transform
+  // const double f_p = Fp.f(p_i_lower) + double(p_i - p_i_lower) *
+  //                                        ((Fp.f(p_i_upper) - Fp.f(p_i_lower)) /
+  //                                         double(p_i_upper - p_i_lower));
+  // const double g_p = Fp.g(p_i_lower) + double(p_i - p_i_lower) *
+  //                                        ((Fp.g(p_i_upper) - Fp.g(p_i_lower)) /
+  //                                         double(p_i_upper - p_i_lower));
 
   // calculates the constants that go into F_1 and F_2
   m_a = A(q, p, ev, m, m_c0, m_c11, m_c12, m_c24, v);
@@ -882,7 +930,7 @@ double p_integral(double q, void *q_params) {
   const auto Fp = params->Fp();
 
   // testing to see if the problem is when p goes up to q
-  const std::pair<double, double> p_lims = {0.0, 0.5 * q};
+  const std::pair<double, double> p_lims = {0.0, 1.0 * q};
 
   const auto p_params = p_Params(ev, m, q, p_to_index, Fr, Fp);
 
@@ -928,54 +976,6 @@ double SE_OnePotential(const DiracSpinor &Fr, const DiracSpinor &Fp,
                        const double &ev, const double &mec2,
                        const double &p_to_index) {
 
-  // const double xi_min = -1.0;
-  // const double xi_max = 1.0;
-  // const double dxi = (xi_max - xi_min) / double(xi_num_points);
-
-  // const auto pGrid = F_p.grid();
-  // const auto pr = pGrid.r();
-  // const auto dpdu = pGrid.drdu();
-  // const auto dp = pGrid.du();
-  // const auto dq = dp;
-
-  // std::vector<double> xi_grid(xi_num_points);
-
-  // for (auto i = 0ul; i < xi_num_points; i++) {
-  //   xi_grid[i] = xi_min + dxi;
-  // }
-
-  // // lambda for sign
-  // auto sign = [](const double &x) {
-  //   return x < 0 ? -1.0 : (x > 0 ? 1.0 : 0.0);
-  // };
-
-  // const auto s_kappa = sign(F_p.kappa()) + 0.001;
-
-  // double out = 0.0;
-
-  // #pragma omp parallel for
-  //   for (auto q_i = F_p.min_pt(); q_i < F_p.max_pt(); q_i++) { // q integration
-  //     // can multiply this by whatever we want depending on choice of units
-  //     const double q = pr[q_i] / PhysConst::alpha;
-
-  //     // v integration
-  //     const double v_min = -1.0 * log(std::abs(p - q));
-  //     const double v_max = -1.0 * log(p + q);
-
-  //     // can multiply this by whatever we want depending on choice of units
-  //     const double p = pr[p_j] / PhysConst::alpha;
-  //     const double qpxi_factor =
-  //       q * q * p * p / (p * p + q * q - 2.0 * p * q * xi);
-
-  //     OnePotential OnePIntegrals(F_p, q, q_i, p, p_j, xi, ev, mec2, num_y_pts,
-  //                                0.05);
-  //     const double f1 = OnePIntegrals.f1();
-  //     const double f2 = OnePIntegrals.f2();
-
-  //   } // p
-  // } // q
-  // out += (P_l * out1 + P_lbar * out2) * dxi;
-  // std::cout << double(x) / double(xi_num_points) << "\n";
   const auto qGrid = Fp.grid();
   const auto q_vec = qGrid.r();
   const auto dqdu = qGrid.drdu();
@@ -1000,6 +1000,9 @@ double SE_OnePotential(const DiracSpinor &Fr, const DiracSpinor &Fp,
   }
 
   out *= -(PhysConst::alpha2 / (32.0 * pow(M_PI, 5)));
+
+  // fudge factor
+  out *= PhysConst::alpha2;
 
   return out;
 }
@@ -1207,7 +1210,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // momentum grid parameters
   // right now these are in some units that I don't know
-  const auto p_num_points = 2000;
+  const auto p_num_points = 2400;
   const auto p_min = p_to_au * 1.0e-4;
   const auto p_max = p_to_au * 4.0e3; // for U^{91+}, p_max = 4.0e3 is best
   const auto p_b = 4.0;
@@ -1333,6 +1336,31 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // }
 
   // GridFile.close();
+
+  //==== test linear interpolation
+
+  // const auto Fp = FourierTransformF(wf.valence()[0], pGrid);
+
+  // const auto p_i = 1.0e2;
+
+  // // returns the index _before_ the point p_i
+  // // The '-1' here ensures we always get a valid index, even if p > p_grid.back()
+  // const auto it =
+  //   std::upper_bound(pGrid->r().begin(), pGrid->r().end() - 1, p_i);
+  // const auto p0_i = std::size_t(std::distance(pGrid->r().begin(), it)) - 1;
+
+  // const auto p1_i = p0_i + 1;
+
+  // const double f0 = Fp.f(p0_i);
+  // const double f1 = Fp.f(p1_i);
+  // const double fp = LinInterp(pGrid->r(), Fp.f(), p_i);
+
+  // std::cout << "\nTesting linear interpolation on " << Fp.shortSymbol()
+  //           << " at momentum p=" << p_i << std::endl;
+
+  // std::cout << p[p0_i] << ":   " << f0 << std::endl;
+  // std::cout << p_i << ":   " << fp << std::endl;
+  // std::cout << p[p1_i] << ":   " << f1 << std::endl;
 }
 
 } // namespace Module
