@@ -1486,6 +1486,37 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // std::cout << p[p0_i] << ":   " << f0 << std::endl;
   // std::cout << p_i << ":   " << fp << std::endl;
   // std::cout << p[p1_i] << ":   " << f1 << std::endl;
+
+  //==== Gauss-Legendre quadrature tests
+  // auto test_coeffs = QuadCoeffs(50);
+  // const auto test_roots = test_coeffs.roots();
+  // const auto test_weights = test_coeffs.weights();
+
+  // const auto p_grid = calculate_p_quad(p_min, p_max, test_roots);
+
+  // // std::cout << std::endl << "Roots:  " << std::endl;
+  // // for (auto i = 0ul; i < 50ul; i++) {
+  // //   std::cout << test_roots[i] << " ";
+  // // }
+  // // std::cout << "\n";
+  // // std::cout << std::endl << "Weights:  " << std::endl;
+  // // for (auto i = 0ul; i < 50ul; i++) {
+  // //   std::cout << test_weights[i] << " ";
+  // // }
+
+  // std::cout << std::endl << "With the quadrature grid:\n";
+
+  // std::vector<SpinorTransform> orbs2;
+
+  // for (const auto &v : wf.valence()) {
+  //   const auto Fp = FTransform_quad(v, p_grid, test_roots, test_weights);
+  //   const auto norm = quad_norm(Fp);
+  //   orbs2.push_back(Fp);
+
+  //   fmt::print("{:<5}  {:>+7.6f}\n", v.shortSymbol(), norm);
+  // }
+
+  // write_orbitals(wf.identity() + "qed.pwf.quad.txt", orbs2);
 }
 
 } // namespace Module
