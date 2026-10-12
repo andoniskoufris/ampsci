@@ -3,6 +3,7 @@
 #include "IO/InputBlock.hpp"
 #include "MBPT/Feynman.hpp"
 #include "MBPT/SpinorMatrix.hpp"
+#include "Modules/Modules.hpp"
 #include "Physics/UnitConv_conversions.hpp"
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
@@ -13,6 +14,12 @@
 #include <memory>
 
 namespace Module {
+
+namespace {
+const Register r_GreenQED{
+  "GreenQED", "Calculates Bohr-Weisskopf effect and hyperfine anomaly",
+  &GreenQED};
+} // namespace
 
 double rho(const double &p, const double &E) {
   // dimensionless combination
@@ -69,10 +76,10 @@ DiracSpinor FourierTransformF(const DiracSpinor &F,
 
     for (auto j = F.min_pt(); j < F.max_pt(); j++) {
       FTransform.f(i) += r[j] * F.f(j) *
-                         SphericalBessel::JL(F.l(), p_i * r[j]) * grid.drdu(j) *
+                         SphericalBessel::jL(F.l(), p_i * r[j]) * grid.drdu(j) *
                          grid.du();
       FTransform.g(i) += r[j] * F.g(j) *
-                         SphericalBessel::JL(l_tilde, p_i * r[j]) *
+                         SphericalBessel::jL(l_tilde, p_i * r[j]) *
                          grid.drdu(j) * grid.du();
     }
   }
@@ -97,7 +104,7 @@ double FourierTransform_f(const DiracSpinor &F, const double &p) {
     if (j > F.max_pt()) {
       std::cout << "r index out of range. Something is wrong!\n";
     }
-    out += r[j] * F.f(j) * SphericalBessel::JL(F.l(), p * r[j]) * grid.drdu(j) *
+    out += r[j] * F.f(j) * SphericalBessel::jL(F.l(), p * r[j]) * grid.drdu(j) *
            grid.du();
   }
 
@@ -124,7 +131,7 @@ double FourierTransform_g(const DiracSpinor &F, const double &p) {
     if (j > F.max_pt()) {
       std::cout << "r index out of range. Something is wrong!\n";
     }
-    out += r[j] * F.g(j) * SphericalBessel::JL(l_tilde, p * r[j]) *
+    out += r[j] * F.g(j) * SphericalBessel::jL(l_tilde, p * r[j]) *
            grid.drdu(j) * grid.du();
   }
 
@@ -1141,9 +1148,9 @@ SpinorTransform FTransform_quad(const DiracSpinor &F,
     const auto p_i = p_grid[i];
 
     for (auto j = F.min_pt(); j < F.max_pt(); j++) {
-      Fp.f(i) += r[j] * F.f(j) * SphericalBessel::JL(F.l(), p_i * r[j]) *
+      Fp.f(i) += r[j] * F.f(j) * SphericalBessel::jL(F.l(), p_i * r[j]) *
                  r_grid.drdu(j) * r_grid.du();
-      Fp.g(i) += r[j] * F.g(j) * SphericalBessel::JL(l_tilde, p_i * r[j]) *
+      Fp.g(i) += r[j] * F.g(j) * SphericalBessel::jL(l_tilde, p_i * r[j]) *
                  r_grid.drdu(j) * r_grid.du();
     }
   }

@@ -255,7 +255,7 @@ public:
       m_twoj(Angular::twoj_k(kappa)),
       m_l(Angular::l_k(kappa)),
       m_parity(Angular::parity_k(kappa)),
-      m_kappa_index(Angular::indexFromKappa(kappa)),
+      m_kappa_index(Angular::kappa_to_kindex(kappa)),
       m_nkappa_index(static_cast<Index>(Angular::nk_to_index(in_n, kappa))) {};
 
   std::vector<double> &f() { return m_f; }
