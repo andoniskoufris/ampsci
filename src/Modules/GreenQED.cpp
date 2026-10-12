@@ -3,6 +3,7 @@
 #include "IO/InputBlock.hpp"
 #include "MBPT/Feynman.hpp"
 #include "MBPT/SpinorMatrix.hpp"
+#include "Maths/Hypergeometric.hpp"
 #include "Modules/Modules.hpp"
 #include "Physics/UnitConv_conversions.hpp"
 #include "Wavefunction/Wavefunction.hpp"
@@ -1524,6 +1525,36 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // }
 
   // write_orbitals(wf.identity() + "qed.pwf.quad.txt", orbs2);
+
+  //===== Testing Whittaker functions
+  std::cout << std::endl << "Testing the Whittaker functions\n";
+  std::cout << "Whittaker function of the first kind\n";
+
+  for (auto i = 0ul; i < 20; i++) {
+    if (i == 1) {
+      continue;
+    }
+
+    const std::complex<double> z =
+      std::sqrt(std::complex<double>(1.0 - double(i) * double(i), 0.0));
+
+    std::cout << "z = " << z << "  :  "
+              << Hypergeometric::Whittaker_M(-0.5, -3, z) << std::endl;
+  }
+
+  std::cout << "\nWhittaker function of the second kind\n";
+
+  for (auto i = 0ul; i < 20; i++) {
+    if (i == 1) {
+      continue;
+    }
+
+    const std::complex<double> z =
+      std::sqrt(std::complex<double>(1.0 - double(i) * double(i), 0.0));
+
+    std::cout << "z = " << z << "  :  "
+              << Hypergeometric::Whittaker_W(-0.5, -3, z) << std::endl;
+  }
 }
 
 } // namespace Module
