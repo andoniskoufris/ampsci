@@ -303,9 +303,188 @@ T H1f1(T a, double b, T z, double s) {
   }
 }
 
+//==============================================================================
+
+template <typename T>
+T Whittaker_M(double lambda, int mu, T z) {
+  static_assert(std::is_same_v<T, double> ||
+                  std::is_same_v<T, std::complex<double>>,
+                "H1f1: T must be double or std::complex<double>");
+
+  // arguments to be passed to hypergeometric functions
+  const double a = mu - lambda + 0.5;
+  const double b = 2.0 * mu + 1.0;
+
+  // put series expansion stuff in here when I want to speed code up
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+  // Complex case: FLINT ball arithmetic; working precision is increased
+  // until the result is accurate to (at least) full double precision
+  // https://flintlib.org/doc/acb_hypgeom.html
+  acb_t res, aa, bb, zz;
+  acb_init(res);
+  acb_init(aa);
+  acb_init(bb);
+  acb_init(zz);
+  acb_set_d(aa, a);
+  acb_set_d(bb, b);
+  acb_set_d_d(zz, z.real(), z.imag());
+  // Following example ("arb"itrary precision):
+  // https://arblib.org/using.html
+  // Starting precision: the cancellation (in bits) scales with Im(a)
+  // (fast path fails, and lands here, when Im(a) is large with moderate
+  // |z|), so skip the doomed low-precision attempts:
+  slong prec = 64;
+  const double bits_est = 53.0 + 3.0 * std::abs(a);
+  while (double(prec) < bits_est && prec < 16384) {
+    prec *= 2;
+  }
+  if constexpr (use_arb) {
+    for (; prec <= 16384; prec *= 2) {
+      acb_hypgeom_m(res, aa, bb, zz, 0, prec);
+      if (acb_rel_accuracy_bits(res) >= 53) {
+        break;
+      }
+    }
+  } else {
+    // Single fixed-precision call ("call normally"):
+    prec = fixed_prec;
+    acb_hypgeom_m(res, aa, bb, zz, 0, prec);
+  }
+
+  // multiply the hypergeometric function by z^{mu + 0.5} * exp(-z/2)
+  // mu is real;
+  // z, z^{mu + 0.5}, and exp(-z/2) are complex
+  arb_t mup1o2;
+  acb_t nzo2, poly, exponent;
+  acb_init(poly);
+  arb_init(mup1o2);
+  acb_init(exponent);
+  acb_init(nzo2);
+
+  arb_set_d(mup1o2, mu + 0.5);
+  acb_pow_arb(poly, zz, mup1o2, prec);
+
+  acb_set_d_d(nzo2, -0.5 * z.real(), -0.5 * z.imag());
+  acb_exp(exponent, nzo2, prec);
+  acb_mul(exponent, poly, exponent, prec);
+
+  acb_mul(res, res, exponent, prec);
+  const auto re = arf_get_d(arb_midref(acb_realref(res)), ARF_RND_NEAR);
+  const auto im = arf_get_d(arb_midref(acb_imagref(res)), ARF_RND_NEAR);
+  acb_clear(exponent);
+  acb_clear(nzo2);
+  acb_clear(poly);
+  arb_clear(mup1o2);
+  acb_clear(res);
+  acb_clear(aa);
+  acb_clear(bb);
+  acb_clear(zz);
+  return {re, im};
+#else
+  // Stub, when compiled without FLINT:
+  // Run-time failure" if ever called:
+  assert(false && "Requires FLINT to call H1f1 with complex args. See docs");
+  (void)lambda;
+  (void)mu;
+  (void)z;
+  return {std::nan(""), std::nan("")};
+#endif
+}
+
+//==============================================================================
+
+template <typename T>
+T Whittaker_W(double lambda, int mu, T z) {
+  static_assert(std::is_same_v<T, double> ||
+                  std::is_same_v<T, std::complex<double>>,
+                "H1f1: T must be double or std::complex<double>");
+
+  // arguments to be passed to hypergeometric functions
+  const double a = mu - lambda + 0.5;
+  const double b = 2.0 * mu + 1.0;
+
+  // put series expansion stuff in here when I want to speed code up
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+  // Complex case: FLINT ball arithmetic; working precision is increased
+  // until the result is accurate to (at least) full double precision
+  // https://flintlib.org/doc/acb_hypgeom.html
+  acb_t res, aa, bb, zz;
+  acb_init(res);
+  acb_init(aa);
+  acb_init(bb);
+  acb_init(zz);
+  acb_set_d(aa, a);
+  acb_set_d(bb, b);
+  acb_set_d_d(zz, z.real(), z.imag());
+  // Following example ("arb"itrary precision):
+  // https://arblib.org/using.html
+  // Starting precision: the cancellation (in bits) scales with Im(a)
+  // (fast path fails, and lands here, when Im(a) is large with moderate
+  // |z|), so skip the doomed low-precision attempts:
+  slong prec = 64;
+  const double bits_est = 53.0 + 3.0 * std::abs(a);
+  while (double(prec) < bits_est && prec < 16384) {
+    prec *= 2;
+  }
+  if constexpr (use_arb) {
+    for (; prec <= 16384; prec *= 2) {
+      acb_hypgeom_u(res, aa, bb, zz, prec);
+      if (acb_rel_accuracy_bits(res) >= 53) {
+        break;
+      }
+    }
+  } else {
+    // Single fixed-precision call ("call normally"):
+    prec = fixed_prec;
+    acb_hypgeom_u(res, aa, bb, zz, prec);
+  }
+
+  // multiply the hypergeometric function by z^{mu + 0.5} * exp(-z/2)
+  // mu is real;
+  // z, z^{mu + 0.5}, and exp(-z/2) are complex
+  arb_t mup1o2;
+  acb_t nzo2, poly, exponent;
+  acb_init(poly);
+  arb_init(mup1o2);
+  acb_init(exponent);
+  acb_init(nzo2);
+
+  arb_set_d(mup1o2, mu + 0.5);
+  acb_pow_arb(poly, zz, mup1o2, prec);
+
+  acb_set_d_d(nzo2, -0.5 * z.real(), -0.5 * z.imag());
+  acb_exp(exponent, nzo2, prec);
+  acb_mul(exponent, poly, exponent, prec);
+
+  acb_mul(res, res, exponent, prec);
+  const auto re = arf_get_d(arb_midref(acb_realref(res)), ARF_RND_NEAR);
+  const auto im = arf_get_d(arb_midref(acb_imagref(res)), ARF_RND_NEAR);
+  acb_clear(exponent);
+  acb_clear(nzo2);
+  acb_clear(poly);
+  arb_clear(mup1o2);
+  acb_clear(res);
+  acb_clear(aa);
+  acb_clear(bb);
+  acb_clear(zz);
+  return {re, im};
+#else
+  // Stub, when compiled without FLINT:
+  // Run-time failure" if ever called:
+  assert(false && "Requires FLINT to call H1f1 with complex args. See docs");
+  (void)lambda;
+  (void)mu;
+  (void)z;
+  return {std::nan(""), std::nan("")};
+#endif
+}
+
 // explicit instantiations:
 template double H1f1(double, double, double, double);
 template std::complex<double> H1f1(std::complex<double>, double,
                                    std::complex<double>, double);
+
+template std::complex<double> Whittaker_M(double, int, std::complex<double>);
+template std::complex<double> Whittaker_W(double, int, std::complex<double>);
 
 } // namespace Hypergeometric

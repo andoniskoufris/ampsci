@@ -48,4 +48,10 @@ constexpr bool has_flint =
 template <typename T>
 T H1f1(T a, double b, T z, double s = 0.0);
 
+template <typename T>
+T Whittaker_M(double lambda, int mu, T z);
+
+template <typename T>
+T Whittaker_W(double lambda, int mu, T z);
+
 } // namespace Hypergeometric
