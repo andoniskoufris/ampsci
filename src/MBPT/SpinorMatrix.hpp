@@ -582,6 +582,7 @@ public:
       }
     }
 
+    DiracSpinor out = Fn * 0.0;
     // Interpolate from sub-grid to full grid
     out.f() = Interpolator::interpolate(sub_r, f, r);
     if (m_incl_g) {
