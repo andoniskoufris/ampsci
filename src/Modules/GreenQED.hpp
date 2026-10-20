@@ -5,6 +5,13 @@
 #include <memory>
 #include <vector>
 
+constexpr bool has_flint =
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+  true;
+#else
+  false;
+#endif
+
 // Forward declare classes:
 class Wavefunction;
 class DiracSpinor;

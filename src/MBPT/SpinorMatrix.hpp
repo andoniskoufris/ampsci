@@ -332,6 +332,56 @@ public:
     return out;
   }
 
+  // //============================================================================
+
+  // // Integrate a spinor matrix against a vector (scalar function). Intended for integrating a Green's function and a potential
+  // // \int_0^infty g(r1,ri)V(ri)\,dri
+  // // does not assume that g has the integration measure drj already included. Must include it yourself beforehand
+  // [[nodiscard]] friend SpinorMatrix<T> operator*(const SpinorMatrix<T> &g,
+  //                                                const std::vector<T> &v) {
+  //   SpinorMatrix<T> out(g.m_i0, g.m_stride, g.m_size, g.m_incl_g, g.m_rgrid);
+
+  //   for (int i = 0ul; i < g.m_size; i++) {
+  //     for (int j = 0ul; j < g.m_size; j++) {
+  //       const auto sj = g.index_to_full_grid(j);
+
+  //       out.ff(i, j) += g.ff(i, j) * v[sj];
+
+  //       if (g.m_incl_g) {
+  //         out.fg() += g.fg() * v[sj];
+  //         out.gf() += g.gf() * v[sj];
+  //         out.gg() += g.gg() * v[sj];
+  //       }
+  //     }
+  //   }
+  //   return out;
+  // }
+
+  //   //============================================================================
+
+  // // Integrate a vector (scalar function) against a spinor matrix. Intended for integrating a potential with a Green's function
+  // // g\int_0^infty V(ri)g(ri,r)\,dri
+  // // does not assume that g has the integration measure drj already included. Must include it yourself beforehand
+  // [[nodiscard]] friend SpinorMatrix<T> operator*(const SpinorMatrix<T> &g,
+  //                                                const std::vector<T> &v) {
+  //   SpinorMatrix<T> out(g.m_i0, g.m_stride, g.m_size, g.m_incl_g, g.m_rgrid);
+
+  //   for (int i = 0ul; i < g.m_size; i++) {
+  //     for (int j = 0ul; j < g.m_size; j++) {
+  //       const auto sj = g.index_to_full_grid(j);
+
+  //       out.ff(i, j) += g.ff(i, j) * v[sj];
+
+  //       if (g.m_incl_g) {
+  //         out.fg() += g.fg() * v[sj];
+  //         out.gf() += g.gf() * v[sj];
+  //         out.gg() += g.gg() * v[sj];
+  //       }
+  //     }
+  //   }
+  //   return out;
+  // }
+
   //============================================================================
   //! Multiply elements (in place): Gij -> Gij*Bij
   [[deprecated]] SpinorMatrix<T> &mult_elements_by(const SpinorMatrix<T> &rhs) {

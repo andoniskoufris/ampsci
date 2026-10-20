@@ -6,6 +6,8 @@
 #include "IO/FRW_fileReadWrite.hpp"
 #include "MBPT/RadialMatrix.hpp"
 #include "MBPT/SpinorMatrix.hpp"
+#include "Maths/Hypergeometric.hpp"
+#include "Maths/SphericalBessel.hpp"
 #include "Potentials/NuclearPotentials.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include "Wavefunction/Wavefunction.hpp"
@@ -13,6 +15,7 @@
 #include "qip/omp.hpp"
 #include <algorithm>
 #include <cassert>
+#include <gsl/gsl_sf_gamma.h>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -509,6 +512,133 @@ ComplexGMatrix Feynman::green_core(int kappa, std::complex<double> en) const {
     Gcore += inv_de * m_pa[ia]; // Pa = |a><a|
   }
   return Gcore;
+}
+
+//==============================================================================
+
+// free electron Green's function. Does _not_ include integration measure
+ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
+
+  // always include g part?
+  ComplexGMatrix gk(m_i0, m_stride, m_subgrid_points, true, m_grid);
+
+  const std::complex<double> mu = std::sqrt(std::complex(1.0 - en * en));
+  const int abs_k = std::abs(k);
+
+  // wronskian inverse
+  const auto winv = gsl_sf_gamma(abs_k) /
+                    (4.0 * (1.0 - en * en) * gsl_sf_gamma(1.0 + 2.0 * abs_k));
+
+  for (auto i = 0ul; i < m_subgrid_points; ++i) {
+    const auto si = gk.index_to_fullgrid(i);
+    const double ri = m_grid->r(si);
+    for (auto j = 0ul; j <= i; ++j) {
+      // i >= j
+      const auto sj = gk.index_to_fullgrid(j);
+      const double rj = m_grid->r(sj);
+      const double rin32 = pow(ri, -3.0 / 2.0);
+      const double rjn32 = pow(rj, -3.0 / 2.0);
+      const auto sqrt1mw = std::sqrt(1.0 - en);
+      const auto sqrt1pw = std::sqrt(1.0 + en);
+
+      // flint to do these multiplications???
+      const auto M_neg =
+        Hypergeometric::Whittaker_M(-0.5, abs_k, 2.0 * mu * rj);
+      const auto M_pos = Hypergeometric::Whittaker_M(0.5, abs_k, 2.0 * mu * rj);
+
+      const auto W_neg =
+        Hypergeometric::Whittaker_W(-0.5, abs_k, 2.0 * mu * ri);
+      const auto W_pos = Hypergeometric::Whittaker_W(0.5, abs_k, 2.0 * mu * ri);
+
+      using namespace qip::overloads;
+
+      const auto phi0_neg =
+        sqrt1mw * rjn32 * (double(abs_k) * M_neg + double(k) * M_pos); // X0_g
+      const auto phi0_pos =
+        sqrt1pw * rjn32 * (double(abs_k) * M_neg - double(k) * M_pos); // X0_f
+
+      const auto phiI_neg =
+        sqrt1mw * rin32 * (double(k) * W_neg - W_pos); // XI_g
+      const auto phiI_pos =
+        sqrt1pw * rin32 * (double(k) * W_neg + W_pos); // XI_f
+
+      // gk.ff(ri,rj) = -winv * phiI.f(ri) * phi0.f(rj)^T (no conjugate)
+      gk.ff(i, j) = -winv * phiI_pos * phi0_pos;
+      // gk.ff(i, j) = 1.0;
+      gk.ff(j, i) = gk.ff(i, j);
+
+      if (!m_include_G)
+        continue;
+
+      gk.fg(i, j) = -winv * phiI_pos * phi0_neg;
+      gk.gf(j, i) = gk.fg(i, j);
+
+      gk.gf(i, j) = -winv * phiI_neg * phi0_pos;
+      gk.fg(j, i) = gk.gf(i, j);
+
+      gk.gg(i, j) = -winv * phiI_neg * phi0_neg;
+      gk.gg(j, i) = gk.gg(i, j);
+    }
+  }
+
+  return gk;
+}
+
+//==============================================================================
+
+// Many-potential (G^{2+}) electron Green's function; does _not_ include integration measure
+// g^{2+}(r1,r2) = \int dri \int drj g_0(r1,ri) V(ri) g(ri,rj) V(rj) g_0(rj,r2)
+//               = \int dri \int drj [g_0V](r1,ri) g(ri,rj) [Vg_0](rj,r2)
+// with
+//                   [g_0V](rj,ri)^T = [Vg_0](ri,rj)    (only transposition)
+ComplexGMatrix Feynman::green_2plus(int k, std::complex<double> en) const {
+
+  // always include g part
+  ComplexGMatrix gk(m_i0, m_stride, m_subgrid_points, true, m_grid);
+  ComplexGMatrix g0V(m_i0, m_stride, m_subgrid_points, true, m_grid);
+  ComplexGMatrix Vg0(m_i0, m_stride, m_subgrid_points, true, m_grid);
+
+  // has factors of 1/ri and 1/rj (from X0 and XI) but _NO_ integration measures
+  // integration measures will be included through g0
+  const ComplexGMatrix g_bound = Feynman::green(k, en);
+  // has no integration measures or factors of 1/ri or 1/rj, like g_bound
+  const ComplexGMatrix g_free = Feynman::green_free(k, en * PhysConst::alpha);
+
+  //! will need to change this to add on Kohn-Sham, direct potential, etc. down the line
+  const auto V = m_HF->vnuc();
+
+  const auto dus = m_grid->du() * double(m_stride);
+
+  for (auto i = 0ul; i < m_subgrid_points; i++) {
+    for (auto j = 0ul; j < m_subgrid_points; j++) {
+      const auto sj = gk.index_to_fullgrid(j);
+      // while I'm here I might as well include the drj integration measure and rj for the integration
+      const auto dr = m_grid->drdu(sj) * dus;
+      const auto rj = m_grid->r(sj);
+      g0V.ff(i, j) = g_free.ff(i, j) * V[sj] * rj * dr;
+      g0V.fg(i, j) = g_free.fg(i, j) * V[sj] * rj * dr;
+      g0V.gf(i, j) = g_free.gf(i, j) * V[sj] * rj * dr;
+      g0V.gg(i, j) = g_free.gg(i, j) * V[sj] * rj * dr;
+    }
+  }
+
+  for (auto i = 0ul; i < m_subgrid_points; i++) {
+    for (auto j = 0ul; j < m_subgrid_points; j++) {
+      //! again, I'm not sure if I need to conjugate these?
+      // I think I shouldn't. The Green's function should have g^T(r1,r2) = g(r2,r1), without conjugation
+      Vg0.ff(i, j) = g0V.ff(j, i);
+      Vg0.fg(i, j) = g0V.gf(j, i);
+      Vg0.gf(i, j) = g0V.fg(j, i);
+      Vg0.gg(i, j) = g0V.gg(j, i);
+    }
+  }
+
+  // when matrix multiplication is done here, one factor of r from the r^2 jacobian is cancelled by the 1/r inside g_bound
+  // remaining r in the Jacobian has been included in g0V and Vg0 above
+  return g0V * g_bound * Vg0;
+
+  // for testing, return empty matrix
+  // return gk;
 }
 
 //==============================================================================

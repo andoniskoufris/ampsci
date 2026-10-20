@@ -6,6 +6,7 @@
 #include <gsl/gsl_sf_gamma.h>
 #include <gsl/gsl_sf_hyperg.h>
 #include <gsl/gsl_sf_result.h>
+#include <iostream>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -304,16 +305,53 @@ T H1f1(T a, double b, T z, double s) {
 }
 
 //==============================================================================
+// not working
+template <typename T>
+std::pair<T, double> Whittaker_M_series(double alpha, int beta, T z,
+                                        double prec) {
+  const int max_it = 150;
+
+  // first term in series for Whittaker_M
+  std::complex<double> Mn = 1.0;
+
+  auto n = 1;
+  std::complex<double> Mnp1 = Mn + gsl_sf_poch(0.5 + beta + alpha, n) *
+                                     gsl_sf_poch(0.5 - beta + alpha, n) *
+                                     std::pow(z, -(n + alpha));
+  double err_est = std::abs(Mnp1 - Mn) / std::abs(Mn);
+
+  std::cout << "Mn = " << Mn << "  Mn+1 = " << Mnp1 << "  " << err_est
+            << std::endl;
+
+  while (err_est > prec && n < max_it) {
+    n += 1;
+    Mn = Mnp1;
+    Mnp1 += gsl_sf_poch(0.5 + beta + alpha, n) *
+            gsl_sf_poch(0.5 - beta + alpha, n) * std::pow(z, -(n + alpha)) /
+            gsl_sf_fact(n);
+    // std::cout << "Mn = " << Mn << "  Mn+1 = " << Mnp1 << "  " << err_est
+    //           << std::endl;
+    err_est = std::abs(Mnp1 - Mn) / std::abs(Mn);
+  }
+
+  // Mnp1 *= (gsl_sf_gamma(2.0 * beta + 1.0) / gsl_sf_gamma(beta - alpha + 0.5)) *
+  //         std::pow(z, -alpha) * exp(0.5 * z);
+  Mnp1 *= (720.0 / 6.0) * exp(0.5 * z);
+
+  return {Mnp1, err_est};
+}
+
+//==============================================================================
 
 template <typename T>
-T Whittaker_M(double lambda, int mu, T z) {
+T Whittaker_M(double alpha, int beta, T z) {
   static_assert(std::is_same_v<T, double> ||
                   std::is_same_v<T, std::complex<double>>,
                 "H1f1: T must be double or std::complex<double>");
 
   // arguments to be passed to hypergeometric functions
-  const double a = mu - lambda + 0.5;
-  const double b = 2.0 * mu + 1.0;
+  const double a = beta - alpha + 0.5;
+  const double b = 2.0 * beta + 1.0;
 
   // put series expansion stuff in here when I want to speed code up
 #if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
@@ -334,22 +372,24 @@ T Whittaker_M(double lambda, int mu, T z) {
   // (fast path fails, and lands here, when Im(a) is large with moderate
   // |z|), so skip the doomed low-precision attempts:
   slong prec = 64;
-  const double bits_est = 53.0 + 3.0 * std::abs(a);
-  while (double(prec) < bits_est && prec < 16384) {
-    prec *= 2;
-  }
-  if constexpr (use_arb) {
-    for (; prec <= 16384; prec *= 2) {
-      acb_hypgeom_m(res, aa, bb, zz, 0, prec);
-      if (acb_rel_accuracy_bits(res) >= 53) {
-        break;
-      }
-    }
-  } else {
-    // Single fixed-precision call ("call normally"):
-    prec = fixed_prec;
-    acb_hypgeom_m(res, aa, bb, zz, 0, prec);
-  }
+  // const double bits_est = 53.0 + 3.0 * std::abs(a);
+  // while (double(prec) < bits_est && prec < 16384) {
+  //   prec *= 2;
+  // }
+  // if constexpr (use_arb) {
+  //   for (; prec <= 16384; prec *= 2) {
+  //     acb_hypgeom_u(res, aa, bb, zz, prec);
+  //     if (acb_rel_accuracy_bits(res) >= 53) {
+  //       break;
+  //     }
+  //   }
+  // } else {
+  //   // Single fixed-precision call ("call normally"):
+  //   prec = fixed_prec;
+  //   acb_hypgeom_u(res, aa, bb, zz, prec);
+  // }
+
+  acb_hypgeom_m(res, aa, bb, zz, 0, prec);
 
   // multiply the hypergeometric function by z^{mu + 0.5} * exp(-z/2)
   // mu is real;
@@ -361,7 +401,7 @@ T Whittaker_M(double lambda, int mu, T z) {
   acb_init(exponent);
   acb_init(nzo2);
 
-  arb_set_d(mup1o2, mu + 0.5);
+  arb_set_d(mup1o2, beta + 0.5);
   acb_pow_arb(poly, zz, mup1o2, prec);
 
   acb_set_d_d(nzo2, -0.5 * z.real(), -0.5 * z.imag());
@@ -384,8 +424,8 @@ T Whittaker_M(double lambda, int mu, T z) {
   // Stub, when compiled without FLINT:
   // Run-time failure" if ever called:
   assert(false && "Requires FLINT to call H1f1 with complex args. See docs");
-  (void)lambda;
-  (void)mu;
+  (void)alpha;
+  (void)beta;
   (void)z;
   return {std::nan(""), std::nan("")};
 #endif
@@ -394,14 +434,14 @@ T Whittaker_M(double lambda, int mu, T z) {
 //==============================================================================
 
 template <typename T>
-T Whittaker_W(double lambda, int mu, T z) {
+T Whittaker_W(double alpha, int beta, T z) {
   static_assert(std::is_same_v<T, double> ||
                   std::is_same_v<T, std::complex<double>>,
                 "H1f1: T must be double or std::complex<double>");
 
   // arguments to be passed to hypergeometric functions
-  const double a = mu - lambda + 0.5;
-  const double b = 2.0 * mu + 1.0;
+  const double a = beta - alpha + 0.5;
+  const double b = 2.0 * beta + 1.0;
 
   // put series expansion stuff in here when I want to speed code up
 #if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
@@ -422,22 +462,24 @@ T Whittaker_W(double lambda, int mu, T z) {
   // (fast path fails, and lands here, when Im(a) is large with moderate
   // |z|), so skip the doomed low-precision attempts:
   slong prec = 64;
-  const double bits_est = 53.0 + 3.0 * std::abs(a);
-  while (double(prec) < bits_est && prec < 16384) {
-    prec *= 2;
-  }
-  if constexpr (use_arb) {
-    for (; prec <= 16384; prec *= 2) {
-      acb_hypgeom_u(res, aa, bb, zz, prec);
-      if (acb_rel_accuracy_bits(res) >= 53) {
-        break;
-      }
-    }
-  } else {
-    // Single fixed-precision call ("call normally"):
-    prec = fixed_prec;
-    acb_hypgeom_u(res, aa, bb, zz, prec);
-  }
+  // const double bits_est = 53.0 + 3.0 * std::abs(a);
+  // while (double(prec) < bits_est && prec < 16384) {
+  //   prec *= 2;
+  // }
+  // if constexpr (use_arb) {
+  //   for (; prec <= 16384; prec *= 2) {
+  //     acb_hypgeom_u(res, aa, bb, zz, prec);
+  //     if (acb_rel_accuracy_bits(res) >= 53) {
+  //       break;
+  //     }
+  //   }
+  // } else {
+  //   // Single fixed-precision call ("call normally"):
+  //   prec = fixed_prec;
+  //   acb_hypgeom_u(res, aa, bb, zz, prec);
+  // }
+
+  acb_hypgeom_u(res, aa, bb, zz, prec);
 
   // multiply the hypergeometric function by z^{mu + 0.5} * exp(-z/2)
   // mu is real;
@@ -449,7 +491,7 @@ T Whittaker_W(double lambda, int mu, T z) {
   acb_init(exponent);
   acb_init(nzo2);
 
-  arb_set_d(mup1o2, mu + 0.5);
+  arb_set_d(mup1o2, beta + 0.5);
   acb_pow_arb(poly, zz, mup1o2, prec);
 
   acb_set_d_d(nzo2, -0.5 * z.real(), -0.5 * z.imag());
@@ -472,8 +514,8 @@ T Whittaker_W(double lambda, int mu, T z) {
   // Stub, when compiled without FLINT:
   // Run-time failure" if ever called:
   assert(false && "Requires FLINT to call H1f1 with complex args. See docs");
-  (void)lambda;
-  (void)mu;
+  (void)alpha;
+  (void)beta;
   (void)z;
   return {std::nan(""), std::nan("")};
 #endif
@@ -485,6 +527,8 @@ template std::complex<double> H1f1(std::complex<double>, double,
                                    std::complex<double>, double);
 
 template std::complex<double> Whittaker_M(double, int, std::complex<double>);
+template std::pair<std::complex<double>, double>
+Whittaker_M_series(double, int, std::complex<double>, double prec);
 template std::complex<double> Whittaker_W(double, int, std::complex<double>);
 
 } // namespace Hypergeometric

@@ -195,6 +195,13 @@ public:
   //! Maximum l for internal lines
   int lmax() const { return Angular::kindex_to_l(m_max_ki); }
 
+  //! Number of points on the spinor matrix subgrid
+  std::size_t num_subgrid_pts() const { return m_subgrid_points; }
+  //! Index on full grid that defines starting point for subgrid
+  std::size_t i0() const { return m_i0; }
+  //! Full grid
+  std::shared_ptr<const Grid> grid() const { return m_grid; };
+
   /*!
     @brief Green's function for given kappa, at complex energy @p en.
 
@@ -242,6 +249,12 @@ public:
   */
   ComplexGMatrix green_basis(int kappa, std::complex<double> en,
                              const std::vector<DiracSpinor> &basis) const;
+
+  ComplexGMatrix green_free(int k, std::complex<double> en) const;
+
+  ComplexGMatrix green_2plus(int k, std::complex<double> en) const;
+
+  // ComplexRMatrix g_L(int L, double en) const;
 
   /*!
     @brief Polarisation operator pi^k(w), for each k = 0..max_k separately.

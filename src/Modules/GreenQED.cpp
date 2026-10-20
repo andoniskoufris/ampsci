@@ -9,12 +9,28 @@
 #include "Wavefunction/Wavefunction.hpp"
 #include "fmt/format.hpp"
 #include <cassert>
+#include <chrono>
 #include <complex>
 #include <gsl/gsl_integration.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <memory>
 
 namespace Module {
+
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+// FLINT >= 3.0 merged Arb in: headers live under flint/ and link with -lflint
+// (AMPSCI_USE_FLINT3). FLINT 2.x keeps acb_hypgeom in the separate Arb library:
+// top-level headers, link with -lflint-arb (Debian/Ubuntu) or -larb (upstream)
+// (AMPSCI_USE_FLINT2); see configure.sh. The acb_*/arb_*/arf_* API used below is
+// identical either way.
+#ifdef AMPSCI_USE_FLINT2
+#include <acb.h>
+#include <acb_hypgeom.h>
+#else
+#include <flint/acb.h>
+#include <flint/acb_hypgeom.h>
+#endif
+#endif
 
 namespace {
 const Register r_GreenQED{
@@ -1233,6 +1249,465 @@ void write_orbitals(const std::string &fname,
 }
 
 //=============================================================================
+
+double SJ_Jp1(int J, int ka, int kb) {
+  const auto CJ_nba = Angular::Ck_kk(J, -kb, ka);
+
+  if (J == 0) {
+    return CJ_nba;
+  }
+  if (CJ_nba == 0.0) {
+    return 0.0;
+  }
+
+  const double factor = sqrt((J + 1.0) / (2.0 * J + 1.0));
+
+  return factor * (1.0 + double(ka + kb) / (J + 1.0)) * CJ_nba;
+}
+
+//=============================================================================
+
+double SJ_J(int J, int ka, int kb) {
+  if (J == 0) {
+    return 0.0;
+  }
+
+  if (kb == ka) {
+    return 0.0;
+  }
+
+  const double CJ_ba = Angular::Ck_kk(J, kb, ka);
+  if (CJ_ba == 0.0) {
+    return 0.0;
+  }
+
+  const double factor = double(ka - kb) / sqrt(J * (J + 1.0));
+
+  return factor * CJ_ba;
+}
+
+//=============================================================================
+
+double SJ_Jm1(int J, int ka, int kb) {
+  if (J == 0) {
+    return 0.0;
+  }
+
+  const auto CJ_nba = Angular::Ck_kk(J, -kb, ka);
+
+  if (CJ_nba == 0.0) {
+    return 0.0;
+  }
+
+  const double factor = sqrt(double(J) / (2.0 * J + 1.0));
+
+  return factor * (-1.0 + double(ka + kb) / double(J)) * CJ_nba;
+}
+
+//=============================================================================
+
+// Technically this is energy-dependent through A so assumes that A is at the right energy
+std::complex<double> AI_ab(const MBPT::ComplexGMatrix &A, const DiracSpinor &a,
+                           const DiracSpinor &b, size_t i, size_t j) {
+
+  const auto si = A.index_to_fullgrid(i);
+  const auto sj = A.index_to_fullgrid(j);
+
+  const auto f_Aff_f = a.f(si) * A.ff(i, j) * b.f(sj);
+  const auto f_Afg_g = a.f(si) * A.fg(i, j) * b.g(sj);
+  const auto g_Agf_f = a.g(si) * A.gf(i, j) * b.f(sj);
+  const auto g_Agg_g = a.g(si) * A.gg(i, j) * b.g(sj);
+
+  return f_Aff_f + f_Afg_g + g_Agf_f + g_Agg_g;
+}
+
+//=============================================================================
+
+// Technically this is energy-dependent through A so assumes that A is at the right energy
+std::complex<double> AII_ab_JL(const MBPT::ComplexGMatrix &A,
+                               const DiracSpinor &a, const DiracSpinor &b,
+                               int J, int k1, int k2,
+                               double (*SJL)(int, int, int), size_t i,
+                               size_t j) {
+
+  const auto si = A.index_to_fullgrid(i);
+  const auto sj = A.index_to_fullgrid(j);
+
+  const double SJL_na1 = SJL(J, -a.kappa(), k1);
+  const double SJL_an1 = SJL(J, a.kappa(), -k1);
+  const double SJL_nb2 = SJL(J, -b.kappa(), k2);
+  const double SJL_bn2 = SJL(J, b.kappa(), -k2);
+
+  // note opposite spinor components to the AI_ab function
+  const auto g_Aff_g = a.g(si) * A.ff(i, j) * b.g(sj);
+  const auto g_Afg_f = a.g(si) * A.fg(i, j) * b.f(sj);
+  const auto f_Agf_g = a.f(si) * A.gf(i, j) * b.g(sj);
+  const auto f_Agg_f = a.f(si) * A.gg(i, j) * b.f(sj);
+
+  auto out = g_Aff_g * SJL_na1 * SJL_nb2;
+  out -= g_Afg_f * SJL_na1 * SJL_bn2;
+  out -= f_Agf_g * SJL_an1 * SJL_nb2;
+  out += f_Agg_f * SJL_an1 * SJL_bn2;
+
+  return out;
+}
+
+//==============================================================================
+
+// radial part of Feynman gauge photon propagator
+// should really, really test this
+MBPT::ComplexRMatrix g_L(int L, std::complex<double> en,
+                         const MBPT::Feynman &feyn) {
+
+#if !defined(AMPSCI_USE_FLINT3) && !defined(AMPSCI_USE_FLINT2)
+
+  assert(false && "Requires FLINT to call g_L with complex args. See docs");
+  (void)L;
+  (void)en;
+  (void)feyn;
+  MBPT::ComplexRMatrix out(feyn.i0(), feyn.stride(), feyn.num_subgrid_pts(),
+                           feyn.grid());
+  return out;
+#else
+
+  // maybe relax?
+  constexpr long prec = 64;
+
+  MBPT::ComplexRMatrix gL(feyn.i0(), feyn.stride(), feyn.num_subgrid_pts(),
+                          feyn.grid());
+
+  const auto Iunit = std::complex<double>(0.0, 1.0);
+
+  for (auto i = 0ul; i < feyn.num_subgrid_pts(); i++) {
+    for (auto j = 0ul; j <= i; j++) {
+      const auto si = gL.index_to_fullgrid(i);
+      const auto sj = gL.index_to_fullgrid(j);
+
+      const auto ri = feyn.grid()->r(si);
+      const auto rj = feyn.grid()->r(sj);
+
+      acb_t w, JL_le, JL_gr, YL_gr, Lplushalf;
+      arb_t r_gr, r_le;
+      acb_init(w);
+      acb_init(JL_le);
+      acb_init(JL_gr);
+      acb_init(YL_gr);
+      acb_init(Lplushalf);
+      arb_init(r_gr);
+      arb_init(r_le);
+
+      acb_set_d(Lplushalf, L + 0.5);
+      arb_set_d(r_gr, ri);
+      arb_set_d(r_le, rj);
+      acb_set_d_d(w, en.real(), en.imag());
+
+      acb_t wr_gr, wr_le;
+      acb_init(wr_gr);
+      acb_init(wr_le);
+      acb_mul_arb(wr_gr, w, r_gr, prec);
+      acb_mul_arb(wr_le, w, r_le, prec);
+      acb_hypgeom_bessel_j(JL_le, Lplushalf, wr_le, prec); // J_{L+1/2}(w*r_<)
+      acb_hypgeom_bessel_j(JL_gr, Lplushalf, wr_gr, prec); // J_{L+1/2}(w*r_>)
+      acb_hypgeom_bessel_y(YL_gr, Lplushalf, wr_gr, prec); // Y_{L+1/2}(w*r_>)
+
+      arb_mul(r_gr, r_gr, r_le, prec); // r_> -> r_> * r_<
+      arb_inv(r_gr, r_gr, prec);       // r_> -> 1 / (r_> * r_<)
+
+      arb_sqrt(r_gr, r_gr, prec); // r_> -> sqrt{1 / (r_> * r_<)}
+
+      acb_mul_onei(YL_gr,
+                   YL_gr); // Y_{L+1/2}(w * r_>) -> i * Y_{L+1/2}(w * r_>)
+      acb_add(JL_gr, JL_gr, YL_gr,
+              prec); // J_{L+1/2}(w * r_>) + i * Y_{L+1/2}(w * r_>)
+
+      acb_t result;
+      acb_init(result);
+
+      // result = i * sqrt(1 / (r_> * r_<)) * J_{L+1/2}(w * r_<) * [J_{L+1/2}(w * r_>) + i * Y_{L+1/2}(w * r_>)]
+      acb_mul(result, JL_le, JL_gr, prec);
+      acb_mul_arb(result, result, r_gr, prec);
+      acb_mul_onei(result, result);
+
+      acb_clear(w), acb_clear(JL_le), acb_clear(JL_gr), acb_clear(YL_gr),
+        acb_clear(Lplushalf), acb_clear(wr_gr), acb_clear(wr_le),
+        acb_clear(result);
+      arb_clear(r_gr), arb_clear(r_le);
+
+      const auto re = arf_get_d(arb_midref(acb_realref(result)), ARF_RND_NEAR);
+      const auto im = arf_get_d(arb_midref(acb_imagref(result)), ARF_RND_NEAR);
+
+      gL(i, j) = M_PI_2 * std::complex<double>(re, im);
+      // fill in symmetric lower half
+      gL(j, i) = gL(i, j);
+      // for testing
+      // gL(i, j) = 1.0;
+    }
+  }
+
+  return gL;
+
+#endif
+}
+
+//=============================================================================
+
+// For the calculation of the many-potential term for the self-energy
+// takes in a list of orbs (valence states) and then works out from the max_kappa_index we are interested in including in the sum over kappa in E_many the maximum J we would ever need
+std::pair<int, int> J_min_max(const std::vector<DiracSpinor> &orbs,
+                              int max_kappa_index) {
+
+  int J_min = orbs.front().twoj() / 2; // running minimum j
+  int J_max = J_min;                   // running maximum j
+
+  for (auto &orb : orbs) {
+    auto ka = orb.kappa();
+    for (auto i = 0; i <= max_kappa_index; i++) {
+      const auto ki = Angular::kindex_to_kappa(i);
+      // j = |k|-0.5
+      // Jmin = |ja-ji| = | |ka| - |ki| |
+      // Jmax = ja+jb   = |ka| + |ki| - 1
+      const auto aka = std::abs(ka);
+      const auto aki = std::abs(ki);
+      const auto j_min = std::abs(aka - aki);
+      const auto j_max = aka + aki - 1;
+      if (j_min < J_min) {
+        J_min = j_min;
+      }
+      if (j_max > J_max) {
+        J_max = j_max;
+      }
+    }
+  }
+
+  // the sum over L requires g_{J-1} unless J=0
+  if (J_min != 0) {
+    J_min -= 1;
+  }
+
+  // the maximum J we return is J_max + 1 since the sum over L requires g_{J+1}
+  return {J_min, J_max + 1};
+}
+
+//=============================================================================
+
+// For the calculation of the many-potential term for the self-energy
+// takes in a single valence state and then works out from the max_kappa_index we are interested in including in the sum over kappa in E_many the max J we would need given that kappa value
+std::pair<int, int> J_min_max(const DiracSpinor &a, int max_kappa_index) {
+
+  int J_min = a.twoj() / 2; // running minimum j
+  int J_max = J_min;        // running maximum j
+
+  auto ka = a.kappa();
+
+  for (auto i = 0; i <= max_kappa_index; i++) {
+    const auto ki = Angular::kindex_to_kappa(i);
+    // j = |k|-0.5
+    // Jmin = |ja-ji| = | |ka| - |ki| |
+    // Jmax = ja+jb   = |ka| + |ki| - 1
+    const auto aka = std::abs(ka);
+    const auto aki = std::abs(ki);
+    const auto j_min = std::abs(aka - aki);
+    const auto j_max = aka + aki - 1;
+    if (j_min < J_min) {
+      J_min = j_min;
+    }
+    if (j_max > J_max) {
+      J_max = j_max;
+    }
+  }
+
+  // the sum over L requires g_{J-1} unless J=0
+  if (J_min != 0) {
+    J_min -= 1;
+  }
+
+  // the maximum J we return is J_max + 1 since the sum over L requires g_{J+1}
+  return {J_min, J_max + 1};
+}
+
+//=============================================================================
+
+// needs to know about J_min_max to construct the grid of photon propagators
+// J_min_max gets worked out outside of this from the list of valence states we want to calculate the corrections for
+std::vector<double>
+SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
+              const std::vector<std::vector<MBPT::ComplexGMatrix>> &g_2_plus,
+              const std::vector<std::vector<MBPT::ComplexRMatrix>> &g_J,
+              const std::vector<std::complex<double>> &w_grid,
+              const std::vector<std::complex<double>> &w_weights, int num_k,
+              int J_min) {
+
+  const auto Iunit = std::complex<double>(0.0, 1.0);
+
+  const auto factor = Iunit * PhysConst::alpha / (2.0 * M_PI * Fv.twojp1());
+
+  using namespace MBPT;
+
+  const auto rgrid = Fv.grid();
+  const auto drdu = rgrid.drdu();
+  const auto du = rgrid.du() * g_2_plus[0][0].stride();
+
+  // vector for storing the energy for each value of kappa
+  std::vector<double> E_k(num_k, 0.0);
+
+  const auto kv = Fv.kappa();
+
+#pragma omp parallel for collapse(2)
+  for (int ki = 0; ki < num_k; ki++) {
+    for (auto wi = 0ul; wi < w_grid.size(); wi++) {
+      const auto g2 = g_2_plus[ki][wi];
+      const auto k = Angular::kindex_to_kappa(ki);
+      // j = |k|-0.5
+      // Jmin = |jv-ji| = | |kv| - |ki| |
+      // Jmax = jv+ji   = |kv| + |ki| - 1
+      const auto akv = std::abs(kv);
+      const auto aki = std::abs(k);
+      const auto J0 = std::abs(akv - aki);
+      const auto Jmax = akv + aki - 1;
+      auto sum_i = std::complex<double>(0.0, 0.0);
+
+      for (auto i = 0ul; i < feyn.num_subgrid_pts(); i++) {
+        const auto si = g2.index_to_fullgrid(i);
+        const auto ri = rgrid.r(si);
+        auto sum_j = std::complex<double>(0.0, 0.0);
+
+        for (auto j = 0ul; j < feyn.num_subgrid_pts(); j++) {
+
+          const auto sj = g2.index_to_fullgrid(j);
+          const auto rj = rgrid.r(sj);
+
+          auto J_sum = std::complex<double>(0.0, 0.0);
+
+          for (auto J = J0; J <= Jmax; J += 1) {
+
+            // shift the index that we use to call the photon propagator
+            // photon propagator defined on larger vector of J values that ranges from smallest J we will need to the largest J we will need
+            const auto Ji = J - J_min;
+
+            // if J = 0 need to avoid calculating the photon propagator at L = J - 1 so treat this case separately
+            if (J == 0) {
+              const auto CJ_iv = Angular::Ck_kk(J, k, Fv.kappa());
+              const auto gJ = g_J[Ji][wi].at(i, j);
+              const auto gJp1 = g_J[Ji + 1][wi].at(i, j);
+              J_sum += CJ_iv * CJ_iv * gJ * AI_ab(g2, Fv, Fv, i, j) -
+                       gJp1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jp1, i, j);
+              J_sum *= 2.0 * J + 1.0;
+              continue;
+            }
+
+            const auto CJ_iv = Angular::Ck_kk(J, k, Fv.kappa());
+            const auto gJ = g_J[Ji][wi].at(i, j);
+            const auto gJm1 = g_J[Ji - 1][wi].at(i, j);
+            const auto gJp1 = g_J[Ji + 1][wi].at(i, j);
+
+            J_sum += CJ_iv * CJ_iv * gJ * AI_ab(g2, Fv, Fv, i, j);
+            J_sum -= gJm1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jm1, i, j);
+            J_sum -= gJ * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_J, i, j);
+            J_sum -= gJp1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jp1, i, j);
+            J_sum *= 2.0 * J + 1.0;
+          } // J
+          sum_j += J_sum * drdu[sj] * rj * du;
+        } // rj
+        sum_i += sum_j * drdu[si] * ri * du;
+      } // ri
+      E_k[ki] +=
+        (factor * sum_i * w_weights[wi]).real(); // take the real part only
+    } // w
+  } // kappa
+
+  return E_k;
+}
+
+//=============================================================================
+
+// creates a grid that is linear at small distances (0 < Im(w) < w0) and logarithmic from w0 < Im(w) < wmax
+// takes in w_num_pts but will actually create a grid with 2 * num_pts points
+// integral is not symmetric in w so need to separately evaluate it from -infty < Im(w) < 0 and 0 < Im(w) < infty
+// returns w_grid and integration weights
+std::pair<std::vector<std::complex<double>>, std::vector<std::complex<double>>>
+create_w_grid(double w_real, double w0, double wmax, int w_num_pts) {
+  const auto Iunit = std::complex<double>(0.0, 1.0);
+
+  // bridge the gap between 0 < w < w0 with a single trapezoidal point
+  // If w_traps_num is increased then this can be increased but not needed so long as w0 is small enough
+  const size_t w_traps_num = 1;
+  const auto dw_traps = Iunit * double(w0 / (w_traps_num));
+  // number of points for the logarithmic part of the grid
+  const size_t w_log_num = w_num_pts - w_traps_num;
+
+  std::vector<std::complex<double>> w_grid(w_num_pts);
+  std::vector<std::complex<double>> w_weights(w_num_pts);
+
+  w_grid[0] = std::complex<double>(w_real, 0.0);
+  w_weights[0] = dw_traps;
+
+  for (auto i = 1ul; i < w_traps_num; i++) {
+    w_grid[i] = w_grid[i - 1] + dw_traps;
+    w_weights[i] = dw_traps;
+  }
+
+  // logarithmic part of the grid
+  const auto du = log(wmax / w0) / double(w_log_num - 1);
+  auto u0 = log(w0);
+  w_grid[w_traps_num] = std::complex<double>(w_real, w0);
+  w_weights[w_traps_num] = Iunit * w0 * du;
+
+  auto u = u0;
+  for (auto i = 1ul; i < w_log_num; i++) {
+    const auto wi = i + w_traps_num;
+    u += du;
+    w_grid[wi] = std::complex<double>(w_real, exp(u));
+    w_weights[wi] = std::complex<double>(0.0, w_grid[wi].imag() * du);
+  }
+
+  // the above code just defined the grid for all positive values
+  // now we define it for negative values by flipping the sign of the grid values
+  // for the weights, I think I just keep these the same but I'm not actually entirely sure??
+  auto added_i = 0;
+  for (auto i = 1ul; i < w_num_pts; i++) {
+    const auto wi_pos = i + added_i;
+    w_grid.emplace(
+      w_grid.begin(),
+      std::complex<double>(w_grid[wi_pos].real(), -w_grid[wi_pos].imag()));
+    w_weights.emplace(w_weights.begin(), w_weights[wi_pos]);
+    added_i += 1;
+  }
+
+  return {w_grid, w_weights};
+}
+
+//=============================================================================
+
+void has_nans(const MBPT::ComplexGMatrix &G) {
+  const auto size = G.size();
+
+  for (auto i = 0ul; i < size; i++) {
+    for (auto j = 0ul; j < size; j++) {
+      if (G.ff(i, j) != G.ff(i, j) || G.fg(i, j) != G.fg(i, j) ||
+          G.gf(i, j) != G.gf(i, j) || G.gg(i, j) != G.gg(i, j)) {
+        std::cout << "We've hit a nan!" << std::endl;
+        break;
+      }
+    }
+  }
+}
+
+//=============================================================================
+
+void has_nans(const MBPT::ComplexRMatrix &G) {
+  const auto size = G.size();
+
+  for (auto i = 0ul; i < size; i++) {
+    for (auto j = 0ul; j < size; j++) {
+      if (G(i, j) != G(i, j)) {
+        std::cout << "We've hit a nan!" << std::endl;
+        break;
+      }
+    }
+  }
+}
+
+//=============================================================================
 //=============================================================================
 
 void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
@@ -1250,45 +1725,45 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     return;
   }
 
-  // // Determine "sub" grid:
-  // const auto r0_target = input.get("r0", 1.0e-3);
-  // const auto rmax_target = input.get("rmax", 50.0);
+  // Determine "sub" grid:
+  const auto r0_target = input.get("r0", 1.0e-5);
+  const auto rmax_target = input.get("rmax", 2.0);
 
-  // const std::size_t i0 = wf.grid().getIndex(r0_target);
-  // const std::size_t imax = wf.grid().getIndex(rmax_target);
-  // assert(imax > i0 && "Require rmax > r0");
+  const std::size_t i0 = wf.grid().getIndex(r0_target);
+  const std::size_t imax = wf.grid().getIndex(rmax_target);
+  assert(imax > i0 && "Require rmax > r0");
 
-  // const std::size_t in_size = input.get("num_points", 150ul);
-  // const std::optional<std::size_t> in_stride = input.get<std::size_t>("stride");
+  const std::size_t in_size = input.get("num_points", 150ul);
+  const std::optional<std::size_t> in_stride = input.get<std::size_t>("stride");
 
-  // std::size_t size{0}, stride{0};
-  // if (in_stride.has_value()) {
-  //   assert(*in_stride > 0 && "Cannot have stride of zero");
-  //   stride = *in_stride;
-  //   size = (imax - i0) / stride + 1;
-  // } else {
-  //   assert(in_size > 1 && "Cannot have num_points <= 1");
-  //   size = in_size;
-  //   stride = std::max(1ul, (imax - i0) / (size - 1));
-  // }
-  // assert(size > 1 && stride > 0);
+  std::size_t size{0}, stride{0};
+  if (in_stride.has_value()) {
+    assert(*in_stride > 0 && "Cannot have stride of zero");
+    stride = *in_stride;
+    size = (imax - i0) / stride + 1;
+  } else {
+    assert(in_size > 1 && "Cannot have num_points <= 1");
+    size = in_size;
+    stride = std::max(1ul, (imax - i0) / (size - 1));
+  }
+  assert(size > 1 && stride > 0);
 
   // // actual r0,rmax might be slightly different, due to finite grid, stride
   const auto grid = wf.grid();
-  // const auto r0 = wf.grid().r(i0);
-  // const auto rmax = wf.grid().r(i0 + stride * size);
-  // fmt::print(
-  //   "Grid for Green's function: {:.1e} - {:.1f} with {} points [stride = {}]\n",
-  //   r0, rmax, size, stride);
+  const auto r0 = wf.grid().r(i0);
+  const auto rmax = wf.grid().r(i0 + stride * size);
+  fmt::print(
+    "Grid for Green's function: {:.1e} - {:.1f} with {} points [stride = {}]\n",
+    r0, rmax, size, stride);
 
-  // // We don't need QPQ (at least for now)
-  // bool construct_qpq = false;
-  // bool verbose = false;
-  // // I think this only affects Sigma anyway:
-  // bool include_G = true;
+  // We don't need QPQ (at least for now)
+  bool construct_qpq = false;
+  bool verbose = false;
+  // I think this only affects Sigma anyway:
+  bool include_G = true;
 
-  // MBPT::Feynman Fy(wf.vHF(), i0, stride, size, {}, 1, include_G, verbose, "",
-  //                  construct_qpq);
+  MBPT::Feynman Fy(wf.vHF(), i0, stride, size, {}, 1, include_G, verbose, "",
+                   construct_qpq);
 
   // int kappa = input.get("kappa", -1);
   // std::complex<double> en{-0.5, 0.1};
@@ -1334,6 +1809,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   //===========================================================================
   // Calculating self-energy corrections
+
   std::cout << std::endl;
   std::cout << "Calculating electron self-energy\n";
   std::cout << "with momentum grid parameters:\n\n";
@@ -1343,7 +1819,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // momentum grid parameters
   // right now these are in some units that I don't know
-  const auto p_num_points = 2400;
+  const auto p_num_points = 2000;
   const auto p_min = p_to_au * 1.0e-4;
   const auto p_max = p_to_au * 4.0e3; // for U^{91+}, p_max = 4.0e3 is best
   const auto p_b = 4.0;
@@ -1364,6 +1840,69 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto mec2 = 1.0 / (PhysConst::alpha * PhysConst::alpha);
 
   std::vector<DiracSpinor> orbs;
+  const auto valence = wf.valence();
+
+  // number of kappa to include in sum over k, i.e. max kappa index
+  const int num_k = 4;
+  // index of maximum kappa (since indexing starts from 0 need to subtract 1)
+  const int max_kappa_index = num_k - 1;
+  // kappa value corresponding to max kappa index
+  const auto k_max = Angular::kindex_to_kappa(max_kappa_index);
+  // // finds minimum and maximum J we will ever need based on the rule |ji - jv| <= J <= ji + jv
+  // const auto [J_min, J_max] = J_min_max(valence, max_kappa_index);
+  // const auto num_J = J_max - J_min + 1;
+
+  //! Create omega grid and weights
+  // Re(w) = e0 = 0.9 * e_{1s} (Shabaev's choice)
+  // if we want to always have Re(w) be in the midpoint of the core-excited gap we need
+  // Re(w) = [ea(highest) + en(lowest)] / 2.
+  //
+  // If we don't have a core (H-like) then we can use Shabaev's choice since we don't have a core gap but instead have a gap between the lowest excited state and the branch cut from the free electron Green's function at +mc^2 which is far off to the right w >= (1/alpha)^2
+  const auto w_real = 0.9 * valence.front().en();
+
+  // defines number of points from zero to -Re(w) + i\infty
+  const size_t w_num_pos_pts = 110;
+  const auto w0 = 1.0e-4;
+  const auto wmax = 20000.0;
+  const auto omega_gw = create_w_grid(w_real, w0, wmax, w_num_pos_pts);
+  const auto w_grid = omega_gw.first;
+  const auto w_weights = omega_gw.second;
+  const auto w_num_pts = w_grid.size();
+
+  std::cout << "Calculating the many-potential contribution with:\n";
+  std::cout << "num_kappa =  " << num_k << " (kappa_max = " << k_max << ")\n";
+  std::cout << "w0        =  " << w0 << "\n";
+  std::cout << "w_max     =  " << wmax << "\n";
+  std::cout << "w_num_pts =  " << w_num_pts << "\n";
+  std::cout << "Re(w)     =  " << "0.9 * e_{1s}" << "\n\n";
+
+  using namespace MBPT;
+
+  auto g_2_plus = std::vector<std::vector<ComplexGMatrix>>(
+    num_k, std::vector<ComplexGMatrix>(
+             w_num_pts, ComplexGMatrix(Fy.i0(), Fy.stride(),
+                                       Fy.num_subgrid_pts(), true, Fy.grid())));
+
+  // Record starting time
+  auto start1 = std::chrono::high_resolution_clock::now();
+// create g_2 for the full list of kappas we will include in our sum over kappa
+#pragma omp parallel for
+  for (auto iw = 0ul; iw < w_num_pts; iw++) {
+    for (auto ik = 0ul; ik < num_k; ik++) {
+      const auto k = Angular::kindex_to_kappa(ik);
+      // physical energy is alpha^2 * w (?)
+      const auto w = w_grid[iw];
+      g_2_plus[ik][iw] = Fy.green_2plus(k, w);
+      // has_nans(g_2_plus[ik][iw]);
+    }
+  }
+  // Record ending time
+  auto stop1 = std::chrono::high_resolution_clock::now();
+  auto duration1 =
+    std::chrono::duration_cast<std::chrono::seconds>(stop1 - start1);
+  std::cout << "Time taken to construct Green's functions: "
+            << duration1.count() << " seconds\n\n";
+  std::cout << std::flush;
 
   fmt::print("{:<5s} {:>10s} {:>14s} {:>14s} {:>13s} {:>13s}\n", "State",
              "<v|v>", "HF", "\u03A3(0)", "\u03A3(1)", "\u03A3(2)");
@@ -1381,17 +1920,65 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto ev = v.en();
     const auto En = ev + (1.0 / PhysConst::alpha2);
 
-    double E0 = SE_ZeroPotential(vtild, ev, mec2);
-    double E1 =
-      wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, PhysConst::alpha);
+    // Zero- and one-potential contributions
+    // double E0 = SE_ZeroPotential(vtild, ev, mec2);
+    // double E1 =
+    //   wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, PhysConst::alpha);
+    // so that I can speed the calculations up
+    double E0 = 0.0;
+    double E1 = 0.0;
 
-    // double E0 = 0.0;
-    // double E1 = 0.0;
+    // Many-potential contributions
+    // really need to put all this into a class like Feynman
+    const auto Iunit = std::complex<double>(0.0, 1.0);
+
+    //!! could move all of this into the function for Emany_high
+    using namespace MBPT;
+    // finds minimum and maximum J we will need for this particular v based on the rule |ji - jv| <= J <= ji + jv
+    const auto [J_min, J_max] = J_min_max(v, max_kappa_index);
+    const auto num_J = J_max - J_min + 1;
+
+    // index first with J then with omega
+    // we have one more than num_J since in the sum over L inside the J summation, we will need L = J+1
+    // this could be sped up. Here I am calculating the photon propagators for the minimum and maximum J's we will need for any valence state v. But we won't necessarily need all of these. instead we only need the ones for J_min and J_max given that kv is this particular value. Will save time since the photon propagators need to be calculated from scratch for each v anyway due to energy dependence
+    auto g_J = std::vector<std::vector<ComplexRMatrix>>(
+      num_J, std::vector<ComplexRMatrix>(
+               w_num_pts, ComplexRMatrix(Fy.i0(), Fy.stride(),
+                                         Fy.num_subgrid_pts(), Fy.grid())));
+
+    // Record starting time
+    auto start2 = std::chrono::high_resolution_clock::now();
+// fill a table of g_J(ev - w) for each possible J we could need and each frequency w
+#pragma omp parallel for collapse(2)
+    for (auto ji = 0ul; ji < num_J; ji++) {
+      for (auto wi = 0ul; wi < w_num_pts; wi++) {
+        const auto J = J_min + ji;
+        // evaluate Bessel functions at alpha * |w|, just like Breit (?)
+        const auto w = std::abs((v.en() - w_grid[wi]) * PhysConst::alpha);
+        g_J[ji][wi] = g_L(J, w, Fy);
+      }
+    }
+    // Record ending time
+    auto stop2 = std::chrono::high_resolution_clock::now();
+    auto duration2 =
+      std::chrono::duration_cast<std::chrono::seconds>(stop2 - start2);
+    std::cout << "\nTime taken to construct photon propagators: "
+              << duration2.count() << " seconds\n\n";
+    std::cout << std::flush;
+
+    std::vector<double> Emany_high =
+      SE_many_highE(v, Fy, g_2_plus, g_J, w_grid, w_weights, num_k, J_min);
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
                "{:>+7.7f}\n",
                v.shortSymbol(), vp_norm, v.en(), E0, E1, grid.r(v.min_pt()),
                grid.r(v.max_pt() - 1));
+
+    std::cout << "Many-potential contribution: " << std::endl;
+    for (int ki = 0; ki < num_k; ki++) {
+      const auto k = Angular::kindex_to_kappa(ki);
+      std::cout << "k = " << k << "  :  " << Emany_high[ki] << std::endl;
+    }
   }
 
   std::cout << std::endl;
@@ -1527,34 +2114,100 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // write_orbitals(wf.identity() + "qed.pwf.quad.txt", orbs2);
 
   //===== Testing Whittaker functions
-  std::cout << std::endl << "Testing the Whittaker functions\n";
-  std::cout << "Whittaker function of the first kind\n";
+  // std::cout << std::endl << "Testing the Whittaker functions\n";
+  // std::cout << "Whittaker function of the first kind\n";
 
-  for (auto i = 0ul; i < 20; i++) {
-    if (i == 1) {
-      continue;
-    }
+  // for (auto i = 0ul; i < 20; i++) {
+  //   if (i == 1) {
+  //     continue;
+  //   }
 
-    const std::complex<double> z =
-      std::sqrt(std::complex<double>(1.0 - double(i) * double(i), 0.0));
+  //   const auto xi = 10000.0 * i;
 
-    std::cout << "z = " << z << "  :  "
-              << Hypergeometric::Whittaker_M(-0.5, -3, z) << std::endl;
-  }
+  //   const std::complex<double> z =
+  //     std::sqrt(std::complex<double>(1.0 - xi * xi, 0.0));
 
-  std::cout << "\nWhittaker function of the second kind\n";
+  //   const auto M_series = Hypergeometric::Whittaker_M_series(-0.5, 3, z);
 
-  for (auto i = 0ul; i < 20; i++) {
-    if (i == 1) {
-      continue;
-    }
+  //   std::cout << "z = " << z << "  :  "
+  //             << Hypergeometric::Whittaker_M(-0.5, 3, z) << "  "
+  //             << M_series.first << "  " << M_series.second << std::endl;
+  // }
 
-    const std::complex<double> z =
-      std::sqrt(std::complex<double>(1.0 - double(i) * double(i), 0.0));
+  // std::cout << "\nWhittaker function of the second kind\n";
 
-    std::cout << "z = " << z << "  :  "
-              << Hypergeometric::Whittaker_W(-0.5, -3, z) << std::endl;
-  }
+  // for (auto i = 0ul; i < 20; i++) {
+  //   if (i == 1) {
+  //     continue;
+  //   }
+
+  //   const auto xi = 10000.0 * i;
+
+  //   const std::complex<double> z =
+  //     std::sqrt(std::complex<double>(1.0 - xi * xi, 0.0));
+
+  //   std::cout << "z = " << z << "  :  "
+  //             << Hypergeometric::Whittaker_W(-0.5, 3, z) << std::endl;
+  // }
+
+  // //==================== testing my quadrature grid for omega
+
+  // std::cout << "Testing the omega grid quadrature: size " << w_grid.size()
+  //           << "\n\n";
+
+  // for (auto i = 0ul; i < w_grid.size(); i++) {
+  //   std::cout << "w = " << w_grid[i] << ",    weight = " << w_weights[i]
+  //             << std::endl;
+  // }
+
+  //=============== Testing the photon propagator
+
+  //   std::cout << "\nTesting the 2+ Green's function: " << std::endl;
+  //   // Record starting time
+  //   auto start_photon = std::chrono::high_resolution_clock::now();
+  //   // const auto gJ = g_L(0, std::complex<double>(-4861, 0.0), Fy);
+  //   const auto g2 = Fy.Feynman::green_2plus(
+  //     1, std::complex<double>(-4861.0, PhysConst::alpha * 10000.0));
+  //   has_nans(g2);
+  //   auto stop_photon = std::chrono::high_resolution_clock::now();
+  //   auto duration_photon = std::chrono::duration_cast<std::chrono::seconds>(
+  //     stop_photon - start_photon);
+  //   std::cout << "Time taken to construct g2+: " << duration_photon.count()
+  //             << " seconds\n\n";
+  //   std::cout << std::flush;
+
+  //   for (auto i = 0ul; i < int(size / 2); i += 2) {
+  //     for (auto j = 0ul; j < int(size / 2); j += 2) {
+  //       std::cout << g2.ff(i, j) << " ";
+  //     }
+  //     std::cout << std::endl;
+  //   }
+
+  //   std::cout << "\nTesting the photon propagator: " << std::endl;
+  //   // Record starting time
+  //   auto start_photon2 = std::chrono::high_resolution_clock::now();
+  //   // const auto gJ = g_L(0, std::complex<double>(-4861, 0.0), Fy);
+  //   const auto gJ =
+  //     g_L(1, std::complex<double>(-4861.0, PhysConst::alpha * 10000.0), Fy);
+  //   has_nans(gJ);
+  //   auto stop_photon2 = std::chrono::high_resolution_clock::now();
+  //   auto duration_photon2 = std::chrono::duration_cast<std::chrono::seconds>(
+  //     stop_photon2 - start_photon2);
+  //   std::cout << "Time taken to construct gJ: " << duration_photon2.count()
+  //             << " seconds\n\n";
+  //   std::cout << std::flush;
+
+  //   for (auto i = 0ul; i < int(size / 2); i += 2) {
+  //     for (auto j = 0ul; j < int(size / 2); j += 2) {
+  //       std::cout << gJ(i, j) << " ";
+  //     }
+  //     std::cout << std::endl;
+  //   }
+
+  //   std::cout << "\n\n\n"
+  //             << "ri = rj = " << Fy.grid()->r(g2.index_to_fullgrid(size - 4));
+  //   std::cout << "Photon g_J   : " << gJ(size - 4, size - 4) << std::endl;
+  //   std::cout << "Electron g_2 : " << g2.ff(size - 4, size - 4) << std::endl;
 }
 
 } // namespace Module
