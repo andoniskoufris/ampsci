@@ -34,6 +34,13 @@ double PhiL(int L, double x, bool tilde = false);
 //! Psi_L(x) = [x^{L+1} / (2L-1)!!] * y_L(x). If tilde=true, returns 1 - Psi_L(x)
 double PsiL(int L, double x, bool tilde = false);
 
+//! Spherical Hankel function of nonnegative integer order L
+template <typename T>
+std::complex<double> hL1(int L, T x);
+
+//! Spherical Bessel function of first kind at complex arguments
+std::complex<double> jL_complex(int L, std::complex<double> x);
+
 //==============================================================================
 /*!
   @brief Fills a vector with the spherical Bessel function j_L sampled on the

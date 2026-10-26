@@ -252,7 +252,9 @@ public:
 
   ComplexGMatrix green_free(int k, std::complex<double> en) const;
 
-  ComplexGMatrix green_2plus(int k, std::complex<double> en) const;
+  ComplexGMatrix
+  green_2plus(int k, std::complex<double> en,
+              const std::vector<DiracSpinor> *const basis = nullptr) const;
 
   // ComplexRMatrix g_L(int L, double en) const;
 

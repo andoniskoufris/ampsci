@@ -58,4 +58,7 @@ std::pair<T, double> Whittaker_M_series(double alpha, int beta, T z,
 template <typename T>
 T Whittaker_W(double lambda, int mu, T z);
 
+template <typename T>
+T Whittaker_WM(double alpha, int beta, double mu, int nu, T z1, T z2);
+
 } // namespace Hypergeometric

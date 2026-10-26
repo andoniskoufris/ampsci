@@ -404,3 +404,138 @@ TEST_CASE("Maths::SphericalBessel PsiL testdata", "[yL][Bessel][unit]") {
     }
   }
 }
+
+//==============================================================================
+TEST_CASE("Maths::SphericalBessel Hankel testdata", "[hL1][Bessel][unit]") {
+
+  fmt::print(" k  Re(x)    Im(x)   Re(hL1)   Im(hL1)   Re(exp.)    Im(exp.)   "
+             "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::hL1_DATA.size(); i++) {
+
+    const auto d = UnitTest::hL1_DATA[i];
+    auto code_value = SphericalBessel::hL1(d.k, d.x);
+
+    if (i * 11 % 3 == 0) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e}  {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real(), d.x.imag(), code_value.real(),
+                 code_value.imag(), d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+    }
+
+    REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-7));
+
+    // if (std::abs(d.value) > 1.0e-9) {
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).epsilon(1e-6));
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).margin(1e-12));
+    // } else if (d.k < 9) {
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).epsilon(1e-2));
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).margin(1e-12));
+    // } else {
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).epsilon(1e-1));
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).margin(1e-12));
+    // }
+  }
+}
+
+//==============================================================================
+TEST_CASE("Maths::SphericalBessel jL complex testdata",
+          "[jLComplex][Bessel][unit]") {
+
+  fmt::print(" k  Re(x)    Im(x)   Re(jL)   Im(jL)   Re(exp.)    Im(exp.)   "
+             "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::jL_COMPLEX_DATA.size(); i++) {
+
+    const auto d = UnitTest::jL_COMPLEX_DATA[i];
+
+    std::complex<double> code_value;
+
+    if (d.x.imag() == 0.0) {
+      code_value = SphericalBessel::jL(d.k, d.x.real());
+    } else {
+      code_value = SphericalBessel::jL_complex(d.k, d.x);
+    }
+
+    if (i * 11 % 3 == 0) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e}  {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real(), d.x.imag(), code_value.real(),
+                 code_value.imag(), d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+    }
+
+    //! test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) < 1.0e30) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
+    // if (std::abs(d.value) > 1.0e-9) {
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).epsilon(1e-6));
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).margin(1e-12));
+    // } else if (d.k < 9) {
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).epsilon(1e-2));
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).margin(1e-12));
+    // } else {
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).epsilon(1e-1));
+    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
+    //           Approx(-d.value).margin(1e-12));
+    // }
+  }
+}
+
+//==============================================================================
+TEST_CASE("Maths::SphericalBessel jL * hL test data",
+          "[jLComplex][hL1][Bessel][unit][gJ]") {
+
+  fmt::print(
+    " k  Re(x)    Im(x)   Re(jL * hL1)   Im(jL * hL1)   Re(exp.)    Im(exp.)   "
+    "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::jL_x_hL_DATA.size(); i++) {
+
+    const auto d = UnitTest::jL_x_hL_DATA[i];
+
+    auto code_value = SphericalBessel::jL_complex(d.k, d.x2_scale * d.x) *
+                      SphericalBessel::hL1(d.k, d.x);
+
+    if (i * 110 % 3 == 0) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e}  {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real(), d.x.imag(), code_value.real(),
+                 code_value.imag(), d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+    }
+
+    //! test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) < 1.0e30) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
+  }
+}

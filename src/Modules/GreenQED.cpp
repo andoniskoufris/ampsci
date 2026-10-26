@@ -33,9 +33,8 @@ namespace Module {
 #endif
 
 namespace {
-const Register r_GreenQED{
-  "GreenQED", "Calculates Bohr-Weisskopf effect and hyperfine anomaly",
-  &GreenQED};
+const Register r_GreenQED{"GreenQED", "Calculates the QED self-energy",
+                          &GreenQED};
 } // namespace
 
 double rho(const double &p, const double &E) {
@@ -818,7 +817,7 @@ OnePotIntegrals::OnePotIntegrals(const DiracSpinor &Fv, const double &q,
   m_c23 = c23_int.first;
   m_c24 = c24_int.first;
 
-  const double q_i = Fp.grid().getIndex(q * p_to_index);
+  const double q_i = double(Fp.grid().getIndex(q * p_to_index));
   const double p_i = p * p_to_index;
 
   // const double f_p = FourierTransform_f(Fv, p_i);
@@ -1354,29 +1353,16 @@ std::complex<double> AII_ab_JL(const MBPT::ComplexGMatrix &A,
 
 //==============================================================================
 
-// radial part of Feynman gauge photon propagator
-// should really, really test this
+// radial part of Feynman gauge photon propagator:
+// g_L(w,r1,r2) = i * w * j_L(w*r_<) * h_L^{(1)}(w*r_>)
+//! should really, really test this
 MBPT::ComplexRMatrix g_L(int L, std::complex<double> en,
                          const MBPT::Feynman &feyn) {
 
-#if !defined(AMPSCI_USE_FLINT3) && !defined(AMPSCI_USE_FLINT2)
-
-  assert(false && "Requires FLINT to call g_L with complex args. See docs");
-  (void)L;
-  (void)en;
-  (void)feyn;
-  MBPT::ComplexRMatrix out(feyn.i0(), feyn.stride(), feyn.num_subgrid_pts(),
-                           feyn.grid());
-  return out;
-#else
-
-  // maybe relax?
-  constexpr long prec = 64;
+  const auto Iunit = std::complex<double>(0.0, 1.0);
 
   MBPT::ComplexRMatrix gL(feyn.i0(), feyn.stride(), feyn.num_subgrid_pts(),
                           feyn.grid());
-
-  const auto Iunit = std::complex<double>(0.0, 1.0);
 
   for (auto i = 0ul; i < feyn.num_subgrid_pts(); i++) {
     for (auto j = 0ul; j <= i; j++) {
@@ -1386,67 +1372,91 @@ MBPT::ComplexRMatrix g_L(int L, std::complex<double> en,
       const auto ri = feyn.grid()->r(si);
       const auto rj = feyn.grid()->r(sj);
 
-      acb_t w, JL_le, JL_gr, YL_gr, Lplushalf;
-      arb_t r_gr, r_le;
-      acb_init(w);
-      acb_init(JL_le);
-      acb_init(JL_gr);
-      acb_init(YL_gr);
-      acb_init(Lplushalf);
-      arb_init(r_gr);
-      arb_init(r_le);
-
-      acb_set_d(Lplushalf, L + 0.5);
-      arb_set_d(r_gr, ri);
-      arb_set_d(r_le, rj);
-      acb_set_d_d(w, en.real(), en.imag());
-
-      acb_t wr_gr, wr_le;
-      acb_init(wr_gr);
-      acb_init(wr_le);
-      acb_mul_arb(wr_gr, w, r_gr, prec);
-      acb_mul_arb(wr_le, w, r_le, prec);
-      acb_hypgeom_bessel_j(JL_le, Lplushalf, wr_le, prec); // J_{L+1/2}(w*r_<)
-      acb_hypgeom_bessel_j(JL_gr, Lplushalf, wr_gr, prec); // J_{L+1/2}(w*r_>)
-      acb_hypgeom_bessel_y(YL_gr, Lplushalf, wr_gr, prec); // Y_{L+1/2}(w*r_>)
-
-      arb_mul(r_gr, r_gr, r_le, prec); // r_> -> r_> * r_<
-      arb_inv(r_gr, r_gr, prec);       // r_> -> 1 / (r_> * r_<)
-
-      arb_sqrt(r_gr, r_gr, prec); // r_> -> sqrt{1 / (r_> * r_<)}
-
-      acb_mul_onei(YL_gr,
-                   YL_gr); // Y_{L+1/2}(w * r_>) -> i * Y_{L+1/2}(w * r_>)
-      acb_add(JL_gr, JL_gr, YL_gr,
-              prec); // J_{L+1/2}(w * r_>) + i * Y_{L+1/2}(w * r_>)
-
-      acb_t result;
-      acb_init(result);
-
-      // result = i * sqrt(1 / (r_> * r_<)) * J_{L+1/2}(w * r_<) * [J_{L+1/2}(w * r_>) + i * Y_{L+1/2}(w * r_>)]
-      acb_mul(result, JL_le, JL_gr, prec);
-      acb_mul_arb(result, result, r_gr, prec);
-      acb_mul_onei(result, result);
-
-      acb_clear(w), acb_clear(JL_le), acb_clear(JL_gr), acb_clear(YL_gr),
-        acb_clear(Lplushalf), acb_clear(wr_gr), acb_clear(wr_le),
-        acb_clear(result);
-      arb_clear(r_gr), arb_clear(r_le);
-
-      const auto re = arf_get_d(arb_midref(acb_realref(result)), ARF_RND_NEAR);
-      const auto im = arf_get_d(arb_midref(acb_imagref(result)), ARF_RND_NEAR);
-
-      gL(i, j) = M_PI_2 * std::complex<double>(re, im);
-      // fill in symmetric lower half
-      gL(j, i) = gL(i, j);
-      // for testing
+      gL(i, j) = Iunit * en * SphericalBessel::jL_complex(L, en * ri) *
+                 SphericalBessel::hL1(L, en * rj);
       // gL(i, j) = 1.0;
+      gL(j, i) = gL(i, j);
     }
   }
 
   return gL;
+  // #if !defined(AMPSCI_USE_FLINT3) && !defined(AMPSCI_USE_FLINT2)
 
-#endif
+  //   assert(false && "Requires FLINT to call g_L with complex args. See docs");
+  //   (void)L;
+  //   (void)en;
+  //   (void)feyn;
+  //   MBPT::ComplexRMatrix out(feyn.i0(), feyn.stride(), feyn.num_subgrid_pts(),
+  //                            feyn.grid());
+  //   return out;
+  // #else
+
+  //   // maybe relax?
+  //   constexpr long prec = 64;
+
+  //   MBPT::ComplexRMatrix gL(feyn.i0(), feyn.stride(), feyn.num_subgrid_pts(),
+  //                           feyn.grid());
+
+  //   const auto Iunit = std::complex<double>(0.0, 1.0);
+
+  //   for (auto i = 0ul; i < feyn.num_subgrid_pts(); i++) {
+  //     for (auto j = 0ul; j <= i; j++) {
+  //       const auto si = gL.index_to_fullgrid(i);
+  //       const auto sj = gL.index_to_fullgrid(j);
+
+  //       const auto ri = feyn.grid()->r(si);
+  //       const auto rj = feyn.grid()->r(sj);
+
+  //       gL(i, j) = Iunit * en * SphericalBessel::jL_complex(L, en * rj) *
+  //                  SphericalBessel::hL1(L, en * ri);
+
+  //       // acb_t w, JL_le, HL_gr, Lplushalf;
+  //       // arb_t r_le;
+  //       // acb_init(w);
+  //       // acb_init(JL_le);
+  //       // acb_init(HL_gr);
+  //       // acb_init(Lplushalf);
+  //       // arb_init(r_le);
+
+  //       // acb_set_d(Lplushalf, L + 0.5);
+  //       // arb_set_d(r_le, rj);
+  //       // acb_set_d_d(w, en.real(), en.imag());
+
+  //       // acb_t wr_le;
+  //       // acb_init(wr_le);
+  //       // acb_mul_arb(wr_le, w, r_le, prec);
+  //       // acb_hypgeom_bessel_j(JL_le, Lplushalf, wr_le, prec); // J_{L+1/2}(w*r_<)
+
+  //       // acb_div_arb(w, w, r_le, prec);
+  //       // acb_sqrt(w, w, prec);
+  //       // acb_mul(JL_le, w, JL_le, prec);
+
+  //       // const auto hL = SphericalBessel::hL1(L, en * ri);
+  //       // acb_set_d_d(HL_gr, hL.real(), hL.imag());
+
+  //       // acb_t result;
+  //       // acb_init(result);
+
+  //       // acb_mul(result, JL_le, HL_gr, prec);
+
+  //       // acb_clear(w), acb_clear(JL_le), acb_clear(HL_gr), acb_clear(Lplushalf),
+  //       //   acb_clear(wr_le), acb_clear(result);
+  //       // arb_clear(r_le);
+
+  //       // const auto re = arf_get_d(arb_midref(acb_realref(result)), ARF_RND_NEAR);
+  //       // const auto im = arf_get_d(arb_midref(acb_imagref(result)), ARF_RND_NEAR);
+
+  //       // gL(i, j) = Iunit * std::sqrt(M_PI_2) * std::complex<double>(re, im);
+  //       // fill in symmetric lower half
+  //       gL(j, i) = gL(i, j);
+  //       // for testing
+  //       // gL(i, j) = 1.0;
+  //     }
+  //   }
+
+  //   return gL;
+
+  // #endif
 }
 
 //=============================================================================
@@ -1461,7 +1471,7 @@ std::pair<int, int> J_min_max(const std::vector<DiracSpinor> &orbs,
 
   for (auto &orb : orbs) {
     auto ka = orb.kappa();
-    for (auto i = 0; i <= max_kappa_index; i++) {
+    for (auto i = 0ul; i <= size_t(max_kappa_index); i++) {
       const auto ki = Angular::kindex_to_kappa(i);
       // j = |k|-0.5
       // Jmin = |ja-ji| = | |ka| - |ki| |
@@ -1492,14 +1502,14 @@ std::pair<int, int> J_min_max(const std::vector<DiracSpinor> &orbs,
 
 // For the calculation of the many-potential term for the self-energy
 // takes in a single valence state and then works out from the max_kappa_index we are interested in including in the sum over kappa in E_many the max J we would need given that kappa value
-std::pair<int, int> J_min_max(const DiracSpinor &a, int max_kappa_index) {
+std::pair<int, int> J_min_max(const DiracSpinor &a, size_t max_kappa_index) {
 
   int J_min = a.twoj() / 2; // running minimum j
   int J_max = J_min;        // running maximum j
 
   auto ka = a.kappa();
 
-  for (auto i = 0; i <= max_kappa_index; i++) {
+  for (auto i = 0ul; i <= max_kappa_index; i++) {
     const auto ki = Angular::kindex_to_kappa(i);
     // j = |k|-0.5
     // Jmin = |ja-ji| = | |ka| - |ki| |
@@ -1529,12 +1539,12 @@ std::pair<int, int> J_min_max(const DiracSpinor &a, int max_kappa_index) {
 
 // needs to know about J_min_max to construct the grid of photon propagators
 // J_min_max gets worked out outside of this from the list of valence states we want to calculate the corrections for
-std::vector<double>
+std::vector<std::complex<double>>
 SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
               const std::vector<std::vector<MBPT::ComplexGMatrix>> &g_2_plus,
               const std::vector<std::vector<MBPT::ComplexRMatrix>> &g_J,
               const std::vector<std::complex<double>> &w_grid,
-              const std::vector<std::complex<double>> &w_weights, int num_k,
+              const std::vector<std::complex<double>> &w_weights, size_t num_k,
               int J_min) {
 
   const auto Iunit = std::complex<double>(0.0, 1.0);
@@ -1545,15 +1555,15 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
 
   const auto rgrid = Fv.grid();
   const auto drdu = rgrid.drdu();
-  const auto du = rgrid.du() * g_2_plus[0][0].stride();
+  const auto du = rgrid.du() * double(g_2_plus[0][0].stride());
 
   // vector for storing the energy for each value of kappa
-  std::vector<double> E_k(num_k, 0.0);
+  std::vector<std::complex<double>> E_k(num_k, 0.0);
 
   const auto kv = Fv.kappa();
 
 #pragma omp parallel for collapse(2)
-  for (int ki = 0; ki < num_k; ki++) {
+  for (auto ki = 0ul; ki < num_k; ki++) {
     for (auto wi = 0ul; wi < w_grid.size(); wi++) {
       const auto g2 = g_2_plus[ki][wi];
       const auto k = Angular::kindex_to_kappa(ki);
@@ -1582,7 +1592,7 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
 
             // shift the index that we use to call the photon propagator
             // photon propagator defined on larger vector of J values that ranges from smallest J we will need to the largest J we will need
-            const auto Ji = J - J_min;
+            const auto Ji = size_t(J - J_min);
 
             // if J = 0 need to avoid calculating the photon propagator at L = J - 1 so treat this case separately
             if (J == 0) {
@@ -1610,8 +1620,7 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
         } // rj
         sum_i += sum_j * drdu[si] * ri * du;
       } // ri
-      E_k[ki] +=
-        (factor * sum_i * w_weights[wi]).real(); // take the real part only
+      E_k[ki] += factor * sum_i * w_weights[wi]; // take the real part
     } // w
   } // kappa
 
@@ -1625,13 +1634,13 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
 // integral is not symmetric in w so need to separately evaluate it from -infty < Im(w) < 0 and 0 < Im(w) < infty
 // returns w_grid and integration weights
 std::pair<std::vector<std::complex<double>>, std::vector<std::complex<double>>>
-create_w_grid(double w_real, double w0, double wmax, int w_num_pts) {
+create_w_grid(double w_real, double w0, double wmax, size_t w_num_pts) {
   const auto Iunit = std::complex<double>(0.0, 1.0);
 
   // bridge the gap between 0 < w < w0 with a single trapezoidal point
   // If w_traps_num is increased then this can be increased but not needed so long as w0 is small enough
   const size_t w_traps_num = 1;
-  const auto dw_traps = Iunit * double(w0 / (w_traps_num));
+  const auto dw_traps = Iunit * w0 / double(w_traps_num);
   // number of points for the logarithmic part of the grid
   const size_t w_log_num = w_num_pts - w_traps_num;
 
@@ -1665,7 +1674,7 @@ create_w_grid(double w_real, double w0, double wmax, int w_num_pts) {
   // for the weights, I think I just keep these the same but I'm not actually entirely sure??
   auto added_i = 0;
   for (auto i = 1ul; i < w_num_pts; i++) {
-    const auto wi_pos = i + added_i;
+    const auto wi_pos = i + size_t(added_i);
     w_grid.emplace(
       w_grid.begin(),
       std::complex<double>(w_grid[wi_pos].real(), -w_grid[wi_pos].imag()));
@@ -1726,14 +1735,14 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   }
 
   // Determine "sub" grid:
-  const auto r0_target = input.get("r0", 1.0e-5);
-  const auto rmax_target = input.get("rmax", 2.0);
+  const auto r0_target = input.get("r0", 1.0e-4);
+  const auto rmax_target = input.get("rmax", 2.9);
 
   const std::size_t i0 = wf.grid().getIndex(r0_target);
   const std::size_t imax = wf.grid().getIndex(rmax_target);
   assert(imax > i0 && "Require rmax > r0");
 
-  const std::size_t in_size = input.get("num_points", 150ul);
+  const std::size_t in_size = input.get("num_points", 120ul);
   const std::optional<std::size_t> in_stride = input.get<std::size_t>("stride");
 
   std::size_t size{0}, stride{0};
@@ -1843,7 +1852,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto valence = wf.valence();
 
   // number of kappa to include in sum over k, i.e. max kappa index
-  const int num_k = 4;
+  const int num_k = 10;
   // index of maximum kappa (since indexing starts from 0 need to subtract 1)
   const int max_kappa_index = num_k - 1;
   // kappa value corresponding to max kappa index
@@ -1861,9 +1870,9 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto w_real = 0.9 * valence.front().en();
 
   // defines number of points from zero to -Re(w) + i\infty
-  const size_t w_num_pos_pts = 110;
+  const size_t w_num_pos_pts = 150;
   const auto w0 = 1.0e-4;
-  const auto wmax = 20000.0;
+  const auto wmax = 10000.0;
   const auto omega_gw = create_w_grid(w_real, w0, wmax, w_num_pos_pts);
   const auto w_grid = omega_gw.first;
   const auto w_weights = omega_gw.second;
@@ -1917,8 +1926,8 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto vtild = FourierTransformF(v, pGrid);
     orbs.push_back(vtild);
     const auto vp_norm = p_norm(vtild);
-    const auto ev = v.en();
-    const auto En = ev + (1.0 / PhysConst::alpha2);
+    // const auto ev = v.en();
+    // const auto En = ev + (1.0 / PhysConst::alpha2);
 
     // Zero- and one-potential contributions
     // double E0 = SE_ZeroPotential(vtild, ev, mec2);
@@ -1930,13 +1939,12 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
     // Many-potential contributions
     // really need to put all this into a class like Feynman
-    const auto Iunit = std::complex<double>(0.0, 1.0);
 
     //!! could move all of this into the function for Emany_high
     using namespace MBPT;
     // finds minimum and maximum J we will need for this particular v based on the rule |ji - jv| <= J <= ji + jv
     const auto [J_min, J_max] = J_min_max(v, max_kappa_index);
-    const auto num_J = J_max - J_min + 1;
+    const auto num_J = size_t(J_max - J_min + 1);
 
     // index first with J then with omega
     // we have one more than num_J since in the sum over L inside the J summation, we will need L = J+1
@@ -1952,10 +1960,15 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 #pragma omp parallel for collapse(2)
     for (auto ji = 0ul; ji < num_J; ji++) {
       for (auto wi = 0ul; wi < w_num_pts; wi++) {
-        const auto J = J_min + ji;
+        const auto J = J_min + int(ji);
         // evaluate Bessel functions at alpha * |w|, just like Breit (?)
-        const auto w = std::abs((v.en() - w_grid[wi]) * PhysConst::alpha);
-        g_J[ji][wi] = g_L(J, w, Fy);
+        // const auto w = std::abs((v.en() - w_grid[wi])) * PhysConst::alpha;
+        // straightforward definition - seems to give nonsense
+        auto w = std::sqrt(std::pow(v.en() - w_grid[wi], 2)) * PhysConst::alpha;
+        if (w.imag() > 0.0) {
+          w *= -1.0;
+        }
+        g_J.at(ji).at(wi) = g_L(J, w, Fy);
       }
     }
     // Record ending time
@@ -1966,7 +1979,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
               << duration2.count() << " seconds\n\n";
     std::cout << std::flush;
 
-    std::vector<double> Emany_high =
+    const auto Emany_high =
       SE_many_highE(v, Fy, g_2_plus, g_J, w_grid, w_weights, num_k, J_min);
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
@@ -1975,7 +1988,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
                grid.r(v.max_pt() - 1));
 
     std::cout << "Many-potential contribution: " << std::endl;
-    for (int ki = 0; ki < num_k; ki++) {
+    for (auto ki = 0u; ki < num_k; ki++) {
       const auto k = Angular::kindex_to_kappa(ki);
       std::cout << "k = " << k << "  :  " << Emany_high[ki] << std::endl;
     }
@@ -2160,54 +2173,85 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   //             << std::endl;
   // }
 
-  //=============== Testing the photon propagator
+  // // =============== Testing the photon propagator
 
-  //   std::cout << "\nTesting the 2+ Green's function: " << std::endl;
-  //   // Record starting time
-  //   auto start_photon = std::chrono::high_resolution_clock::now();
-  //   // const auto gJ = g_L(0, std::complex<double>(-4861, 0.0), Fy);
-  //   const auto g2 = Fy.Feynman::green_2plus(
-  //     1, std::complex<double>(-4861.0, PhysConst::alpha * 10000.0));
-  //   has_nans(g2);
-  //   auto stop_photon = std::chrono::high_resolution_clock::now();
-  //   auto duration_photon = std::chrono::duration_cast<std::chrono::seconds>(
-  //     stop_photon - start_photon);
-  //   std::cout << "Time taken to construct g2+: " << duration_photon.count()
-  //             << " seconds\n\n";
-  //   std::cout << std::flush;
+  // std::cout << "\nTesting the 2+ Green's function: " << std::endl;
 
-  //   for (auto i = 0ul; i < int(size / 2); i += 2) {
-  //     for (auto j = 0ul; j < int(size / 2); j += 2) {
-  //       std::cout << g2.ff(i, j) << " ";
+  // const auto en = std::complex<double>(0.1 * -4861.0, 20000.0);
+  // auto w = std::sqrt(std::pow(en, 2));
+  // if (w.imag() > 0.0) {
+  //   w = -1.0 * w;
+  // }
+  // // const auto en = 0.000000000000001;
+
+  // // Record starting time
+  // // auto start_photon = std::chrono::high_resolution_clock::now();
+  // const auto g2 = Fy.Feynman::green_2plus(5, en);
+  // has_nans(g2);
+
+  // const auto g_free = Fy.green_free(5, PhysConst::alpha * en);
+  // has_nans(g_free);
+  // // auto stop_photon = std::chrono::high_resolution_clock::now();
+  // // auto duration_photon = std::chrono::duration_cast<std::chrono::seconds>(
+  // // stop_photon - start_photon);
+  // // std::cout << "Time taken to construct g2+: " << duration_photon.count()
+  // //           << " seconds\n\n";
+  // // std::cout << std::flush;
+
+  // // for (auto i = 0ul; i < int(size / 2); i += 2) {
+  // //   for (auto j = 0ul; j < int(size / 2); j += 2) {
+  // //     std::cout << g2.ff(i, j) << " ";
+  // //   }
+  // //   std::cout << std::endl;
+  // // }
+
+  // std::cout << "\nTesting the photon propagator: " << std::endl;
+  // // Record starting time
+  // // auto start_photon2 = std::chrono::high_resolution_clock::now();
+  // // const auto gJ = g_L(0, std::complex<double>(-4861, 0.0), Fy);
+  // const auto gJ = g_L(5, PhysConst::alpha * w, Fy);
+  // has_nans(gJ);
+  // // auto stop_photon2 = std::chrono::high_resolution_clock::now();
+  // // auto duration_photon2 = std::chrono::duration_cast<std::chrono::seconds>(
+  // // stop_photon2 - start_photon2);
+  // // std::cout << "Time taken to construct gJ: " << duration_photon2.count()
+  // // << " seconds\n\n";
+  // // std::cout << std::flush;
+
+  // // for (auto i = 0ul; i < int(size / 2); i += 2) {
+  // //   for (auto j = 0ul; j < int(size / 2); j += 2) {
+  // //     std::cout << gJ(i, j) << " ";
+  // //   }
+  // //   std::cout << std::endl;
+  // // }
+
+  // std::cout << "\n\n\n"
+  //           << "ri = rj = " << Fy.grid()->r(g2.index_to_fullgrid(size - 4));
+  // std::cout << "  ,   en =  " << en << ",  w = " << w << std::endl;
+  // std::cout << "Photon g_J   : " << gJ(size - 4, size - 4)
+  //           << "  (*alpha) for g_free and g_photon" << std::endl;
+  // std::cout << "Electron g_2 : " << g2.ff(size - 4, size - 4) << std::endl;
+  // std::cout << "Electron g_free : " << g_free.ff(size - 4, size - 4)
+  //           << std::endl
+  //           << std::endl;
+
+  // const double thres = 1.0e2;
+  // for (auto i = 0ul; i < size; i++) {
+  //   for (auto j = 0ul; j < size; j++) {
+  //     if (std::abs(gJ(i, j)) > thres || std::abs(g2.ff(i, j)) > thres) {
+  //       std::cout << "Found a value bigger than " << thres
+  //                 << " at : " << "(ri,rj) = ("
+  //                 << grid.r(gJ.index_to_fullgrid(i)) << ", "
+  //                 << grid.r(gJ.index_to_fullgrid(j)) << ")\n";
+  //       std::cout << "gJ : " << gJ(i, j) << std::endl;
+  //       std::cout << "g2.ff : " << g2.ff(i, j) << std::endl;
+  //       std::cout << "g_free : " << g_free.ff(i, j) << std::endl << std::endl;
   //     }
-  //     std::cout << std::endl;
   //   }
-
-  //   std::cout << "\nTesting the photon propagator: " << std::endl;
-  //   // Record starting time
-  //   auto start_photon2 = std::chrono::high_resolution_clock::now();
-  //   // const auto gJ = g_L(0, std::complex<double>(-4861, 0.0), Fy);
-  //   const auto gJ =
-  //     g_L(1, std::complex<double>(-4861.0, PhysConst::alpha * 10000.0), Fy);
-  //   has_nans(gJ);
-  //   auto stop_photon2 = std::chrono::high_resolution_clock::now();
-  //   auto duration_photon2 = std::chrono::duration_cast<std::chrono::seconds>(
-  //     stop_photon2 - start_photon2);
-  //   std::cout << "Time taken to construct gJ: " << duration_photon2.count()
-  //             << " seconds\n\n";
-  //   std::cout << std::flush;
-
-  //   for (auto i = 0ul; i < int(size / 2); i += 2) {
-  //     for (auto j = 0ul; j < int(size / 2); j += 2) {
-  //       std::cout << gJ(i, j) << " ";
-  //     }
-  //     std::cout << std::endl;
-  //   }
-
-  //   std::cout << "\n\n\n"
-  //             << "ri = rj = " << Fy.grid()->r(g2.index_to_fullgrid(size - 4));
-  //   std::cout << "Photon g_J   : " << gJ(size - 4, size - 4) << std::endl;
-  //   std::cout << "Electron g_2 : " << g2.ff(size - 4, size - 4) << std::endl;
+  // }
+  // std::cout << "\n\n\n"
+  //           << "ri = rj = " << Fy.grid()->r(g2.index_to_fullgrid(size - 4));
+  // std::cout << "  ,   en =  " << en << ",  w = " << w << std::endl;
 }
 
 } // namespace Module

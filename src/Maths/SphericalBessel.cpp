@@ -4,9 +4,25 @@
 #include <cmath>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_sf_bessel.h>
+// #include <gsl/gsl_sf_fact.h>
 #include <iostream>
 
 namespace SphericalBessel {
+
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+// FLINT >= 3.0 merged Arb in: headers live under flint/ and link with -lflint
+// (AMPSCI_USE_FLINT3). FLINT 2.x keeps acb_hypgeom in the separate Arb library:
+// top-level headers, link with -lflint-arb (Debian/Ubuntu) or -larb (upstream)
+// (AMPSCI_USE_FLINT2); see configure.sh. The acb_*/arb_*/arf_* API used below is
+// identical either way.
+#ifdef AMPSCI_USE_FLINT2
+#include <acb.h>
+#include <acb_hypgeom.h>
+#else
+#include <flint/acb.h>
+#include <flint/acb_hypgeom.h>
+#endif
+#endif
 
 //==============================================================================
 double jL(int L, double x) {
@@ -313,6 +329,82 @@ double PsiL(int L, double x, bool tilde) {
 }
 
 //==============================================================================
+// series definition of the spherical Hankel function of the first kind of nonnegative order
+template <typename T>
+std::complex<double> hL1(int L, T x) {
+
+  assert(L >= 0 &&
+         "Spherical Hankel function must be called at non-negative integer!");
+
+  const auto Iunit = std::complex<double>(0.0, 1.0);
+
+  const auto factor = std::pow(-Iunit, L + 1) * std::exp(Iunit * x);
+
+  std::complex<double> sum = 0.0;
+
+  for (int m = 0; m <= L; m++) {
+    const auto fact = std::pow(Iunit, m) * qip::factorial(L + m) /
+                      (qip::factorial(m) * qip::factorial(L - m));
+    const auto one_over_2xm = std::pow(1.0 / 2.0, m) * std::pow(1.0 / x, m + 1);
+    sum += fact * one_over_2xm;
+  }
+
+  return factor * sum;
+}
+
+//==============================================================================
+// Spherical Bessel function of the first kind at complex arguments
+std::complex<double> jL_complex(int L, std::complex<double> x) {
+
+#if !defined(AMPSCI_USE_FLINT3) && !defined(AMPSCI_USE_FLINT2)
+
+  assert(false &&
+         "Requires FLINT to call jL_complex with complex args. See docs");
+  (void)L;
+  (void)x;
+
+  return {std::nan(""), std::nan("")};
+#else
+
+  long prec = 64;
+
+  acb_t xx, JLplushalf, Lplushalf;
+  acb_init(xx);
+  acb_init(JLplushalf);
+  acb_init(Lplushalf);
+
+  acb_set_d(Lplushalf, double(L) + 0.5);
+  acb_set_d(JLplushalf, 0.0);
+  acb_set_d_d(xx, x.real(), x.imag());
+
+  // for (; prec <= 16384; prec *= 2) {
+  //   acb_hypgeom_bessel_j(JLplushalf, Lplushalf, xx, prec); // J_{L+1/2}(x)
+  //   if (acb_rel_accuracy_bits(JLplushalf) >= 53) {
+  //     break;
+  //   }
+  // }
+  acb_hypgeom_bessel_j(JLplushalf, Lplushalf, xx, prec);
+
+  acb_sqrt(xx, xx, prec); // xx -> sqrt(xx)
+  acb_inv(xx, xx, prec);  // xx -> 1/sqrt(xx)
+  acb_mul(JLplushalf, JLplushalf, xx, prec);
+
+  auto re = arf_get_d(arb_midref(acb_realref(JLplushalf)), ARF_RND_NEAR);
+  auto im = arf_get_d(arb_midref(acb_imagref(JLplushalf)), ARF_RND_NEAR);
+
+  // std::cout << re << " " << im << "\n";
+
+  acb_clear(xx), acb_clear(JLplushalf), acb_clear(Lplushalf);
+
+  re *= std::sqrt(M_PI_2);
+  im *= std::sqrt(M_PI_2);
+
+  return {re, im};
+
+#endif
+}
+
+//==============================================================================
 namespace {
 // Threshold: if the grid cell at index i has width dx <= lambda/N_per_lambda
 // (where lambda = 2 pi / k is the asymptotic wavelength of j_L(kx)),
@@ -396,5 +488,8 @@ void fillBesselVec_kr(int l, double k, const std::vector<double> &r,
                       std::vector<double> *jl, bool cell_average) {
   fill_jL_core(l, k, r, jl, cell_average);
 }
+
+//==============================================================================
+template std::complex<double> hL1(int L, std::complex<double> x);
 
 } // namespace SphericalBessel

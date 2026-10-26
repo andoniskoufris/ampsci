@@ -522,8 +522,11 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
   // always include g part?
   ComplexGMatrix gk(m_i0, m_stride, m_subgrid_points, true, m_grid);
 
-  const std::complex<double> mu = std::sqrt(std::complex(1.0 - en * en));
-  const int abs_k = std::abs(k);
+  std::complex<double> mu = std::sqrt(1.0 - en * en);
+  if (mu.real() < 0.0) {
+    mu *= -1.0;
+  }
+  const auto abs_k = std::abs(k);
 
   // wronskian inverse
   const auto winv = gsl_sf_gamma(abs_k) /
@@ -536,47 +539,56 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
       // i >= j
       const auto sj = gk.index_to_fullgrid(j);
       const double rj = m_grid->r(sj);
-      const double rin32 = pow(ri, -3.0 / 2.0);
-      const double rjn32 = pow(rj, -3.0 / 2.0);
+      const double rirj = ri * rj;
+      const double r_factor = std::pow(rirj, -3.0 / 2.0);
+      const auto factor = r_factor * -winv;
       const auto sqrt1mw = std::sqrt(1.0 - en);
       const auto sqrt1pw = std::sqrt(1.0 + en);
 
-      // flint to do these multiplications???
-      const auto M_neg =
-        Hypergeometric::Whittaker_M(-0.5, abs_k, 2.0 * mu * rj);
-      const auto M_pos = Hypergeometric::Whittaker_M(0.5, abs_k, 2.0 * mu * rj);
+      const auto two_m_ri = 2.0 * mu * ri;
+      const auto two_m_rj = 2.0 * mu * rj;
+      auto Wm_Mm = Hypergeometric::Whittaker_WM(-0.5, abs_k, -0.5, abs_k,
+                                                two_m_ri, two_m_rj);
+      auto Wm_Mp = Hypergeometric::Whittaker_WM(-0.5, abs_k, 0.5, abs_k,
+                                                two_m_ri, two_m_rj);
+      auto Wp_Mm = Hypergeometric::Whittaker_WM(0.5, abs_k, -0.5, abs_k,
+                                                two_m_ri, two_m_rj);
+      auto Wp_Mp = Hypergeometric::Whittaker_WM(0.5, abs_k, 0.5, abs_k,
+                                                two_m_ri, two_m_rj);
 
-      const auto W_neg =
-        Hypergeometric::Whittaker_W(-0.5, abs_k, 2.0 * mu * ri);
-      const auto W_pos = Hypergeometric::Whittaker_W(0.5, abs_k, 2.0 * mu * ri);
+      Wm_Mm *= k * abs_k;
+      Wm_Mp *= k * k;
+      Wp_Mm *= abs_k;
+      Wp_Mp *= k;
+
+      // const auto M_neg = 1.0;
+      // const auto M_pos = 1.0;
+      // const auto W_neg = 1.0;
+      // const auto W_pos = 1.0;
 
       using namespace qip::overloads;
 
-      const auto phi0_neg =
-        sqrt1mw * rjn32 * (double(abs_k) * M_neg + double(k) * M_pos); // X0_g
-      const auto phi0_pos =
-        sqrt1pw * rjn32 * (double(abs_k) * M_neg - double(k) * M_pos); // X0_f
-
-      const auto phiI_neg =
-        sqrt1mw * rin32 * (double(k) * W_neg - W_pos); // XI_g
-      const auto phiI_pos =
-        sqrt1pw * rin32 * (double(k) * W_neg + W_pos); // XI_f
-
       // gk.ff(ri,rj) = -winv * phiI.f(ri) * phi0.f(rj)^T (no conjugate)
-      gk.ff(i, j) = -winv * phiI_pos * phi0_pos;
-      // gk.ff(i, j) = 1.0;
+      gk.ff(i, j) =
+        factor * sqrt1pw * sqrt1pw * (Wm_Mm - Wm_Mp + Wp_Mm - Wp_Mp);
       gk.ff(j, i) = gk.ff(i, j);
 
       if (!m_include_G)
         continue;
 
-      gk.fg(i, j) = -winv * phiI_pos * phi0_neg;
+      gk.fg(i, j) =
+        factor * sqrt1pw * sqrt1mw * (Wm_Mm + Wm_Mp + Wp_Mm + Wp_Mp);
+      // gk.fg(i, j) = -winv * std::exp(std::log(phiI_pos) + std::log(phi0_neg));
       gk.gf(j, i) = gk.fg(i, j);
 
-      gk.gf(i, j) = -winv * phiI_neg * phi0_pos;
+      gk.gf(i, j) =
+        factor * sqrt1mw * sqrt1pw * (Wm_Mm - Wm_Mp - Wp_Mm + Wp_Mp);
+      // gk.gf(i, j) = -winv * std::exp(std::log(phiI_neg) + std::log(phi0_pos));
       gk.fg(j, i) = gk.gf(i, j);
 
-      gk.gg(i, j) = -winv * phiI_neg * phi0_neg;
+      gk.gg(i, j) =
+        factor * sqrt1mw * sqrt1mw * (Wm_Mm + Wm_Mp - Wp_Mm - Wp_Mp);
+      // gk.gg(i, j) = -winv * std::exp(std::log(phiI_neg) + std::log(phi0_neg));
       gk.gg(j, i) = gk.gg(i, j);
     }
   }
@@ -591,27 +603,30 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
 //               = \int dri \int drj [g_0V](r1,ri) g(ri,rj) [Vg_0](rj,r2)
 // with
 //                   [g_0V](rj,ri)^T = [Vg_0](ri,rj)    (only transposition)
-ComplexGMatrix Feynman::green_2plus(int k, std::complex<double> en) const {
+
+// optionally form with basis form of the Green's function
+ComplexGMatrix
+Feynman::green_2plus(int k, std::complex<double> en,
+                     const std::vector<DiracSpinor> *const basis) const {
 
   // always include g part
-  ComplexGMatrix gk(m_i0, m_stride, m_subgrid_points, true, m_grid);
   ComplexGMatrix g0V(m_i0, m_stride, m_subgrid_points, true, m_grid);
   ComplexGMatrix Vg0(m_i0, m_stride, m_subgrid_points, true, m_grid);
 
   // has factors of 1/ri and 1/rj (from X0 and XI) but _NO_ integration measures
-  // integration measures will be included through g0
-  const ComplexGMatrix g_bound = Feynman::green(k, en);
+  const ComplexGMatrix g_bound =
+    basis ? Feynman::green_basis(k, en, *basis) : Feynman::green(k, en);
   // has no integration measures or factors of 1/ri or 1/rj, like g_bound
   const ComplexGMatrix g_free = Feynman::green_free(k, en * PhysConst::alpha);
 
-  //! will need to change this to add on Kohn-Sham, direct potential, etc. down the line
+  //! will need to change this to add on Kohn-Sham, local potential, etc. down the line
   const auto V = m_HF->vnuc();
 
   const auto dus = m_grid->du() * double(m_stride);
 
   for (auto i = 0ul; i < m_subgrid_points; i++) {
     for (auto j = 0ul; j < m_subgrid_points; j++) {
-      const auto sj = gk.index_to_fullgrid(j);
+      const auto sj = g0V.index_to_fullgrid(j);
       // while I'm here I might as well include the drj integration measure and rj for the integration
       const auto dr = m_grid->drdu(sj) * dus;
       const auto rj = m_grid->r(sj);
@@ -638,7 +653,7 @@ ComplexGMatrix Feynman::green_2plus(int k, std::complex<double> en) const {
   return g0V * g_bound * Vg0;
 
   // for testing, return empty matrix
-  // return gk;
+  // return ComplexGMatrix(m_i0, m_stride, m_subgrid_points, true, m_grid);
 }
 
 //==============================================================================

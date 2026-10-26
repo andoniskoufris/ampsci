@@ -521,6 +521,68 @@ T Whittaker_W(double alpha, int beta, T z) {
 #endif
 }
 
+//==============================================================================
+// computes the Whittaker function W_{1/2 - n,k}(z) / exp(-z/2), _exactly_, for n = 0,1
+// template <typename T>
+// T Whittaker_W_series(int n, int k, T z) {
+//   static_assert(n == 0 || n == 1, "Whittaker_W_series: W must be evaluated "
+//                                   "with n=0 (W_{1/2,k}) or n=1 (W_{-1/2,k})");
+
+//   std::
+
+// }
+
+//==============================================================================
+
+// computes product of W_{alpha,beta}(z1) * M_{mu,nu}(z2)
+// for a,m\in doubles and b,n\in integers
+template <typename T>
+T Whittaker_WM(double alpha, int beta, double mu, int nu, T z1, T z2) {
+  // static_assert(std::is_same_v<T, double> ||
+  //                 std::is_same_v<T, std::complex<double>>,
+  //               "H1f1: T must be double or std::complex<double>");
+
+  const auto Wab1 = Whittaker_W(alpha, beta, z1);
+  const auto Mmn2 = Whittaker_M(mu, nu, z2);
+
+  // put series expansion stuff in here when I want to speed code up
+#if defined(AMPSCI_USE_FLINT3) || defined(AMPSCI_USE_FLINT2)
+  // Complex case: FLINT ball arithmetic; working precision is increased
+  // until the result is accurate to (at least) full double precision
+  // https://flintlib.org/doc/acb_hypgeom.html
+
+  slong prec = 64;
+
+  acb_t WWab1, MMmn2, res;
+  acb_init(WWab1);
+  acb_init(MMmn2);
+  acb_init(res);
+
+  acb_set_d_d(WWab1, Wab1.real(), Wab1.imag());
+  acb_set_d_d(MMmn2, Mmn2.real(), Mmn2.imag());
+  acb_mul(res, WWab1, MMmn2, prec);
+
+  const auto re = arf_get_d(arb_midref(acb_realref(res)), ARF_RND_NEAR);
+  const auto im = arf_get_d(arb_midref(acb_imagref(res)), ARF_RND_NEAR);
+
+  acb_clear(WWab1);
+  acb_clear(MMmn2);
+  acb_clear(res);
+
+  return {re, im};
+#else
+  // Stub, when compiled without FLINT:
+  // Run-time failure" if ever called:
+  assert(false && "Requires FLINT to call H1f1 with complex args. See docs");
+  (void)alpha;
+  (void)beta;
+  (void)z;
+  return {std::nan(""), std::nan("")};
+#endif
+}
+
+//==============================================================================
+
 // explicit instantiations:
 template double H1f1(double, double, double, double);
 template std::complex<double> H1f1(std::complex<double>, double,
@@ -530,5 +592,8 @@ template std::complex<double> Whittaker_M(double, int, std::complex<double>);
 template std::pair<std::complex<double>, double>
 Whittaker_M_series(double, int, std::complex<double>, double prec);
 template std::complex<double> Whittaker_W(double, int, std::complex<double>);
+template std::complex<double> Whittaker_WM(double alpha, int beta, double mu,
+                                           int nu, std::complex<double> z1,
+                                           std::complex<double> z2);
 
 } // namespace Hypergeometric
