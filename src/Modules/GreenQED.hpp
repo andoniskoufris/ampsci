@@ -1,5 +1,7 @@
 #pragma once
 #include "Angular/Wigner369j.hpp"
+#include "MBPT/Feynman.hpp"
+#include "MBPT/RadialMatrix.hpp"
 #include "Physics/AtomData.hpp"
 #include "Wavefunction/DiracSpinor.hpp"
 #include <memory>
@@ -303,5 +305,11 @@ public:
 
   std::string shortSymbol() const { return shortSymbol(m_n, m_kappa); }
 };
+
+//==============================================================================
+std::pair<std::vector<std::complex<double>>, std::vector<std::complex<double>>>
+create_w_grid(double w_real, double w0, double wmax, size_t w_num_pts);
+MBPT::ComplexRMatrix g_L(int L, std::complex<double> en,
+                         const MBPT::Feynman &feyn);
 
 } // namespace Module

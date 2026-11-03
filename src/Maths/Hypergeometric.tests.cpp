@@ -1,8 +1,10 @@
 #include "Maths/Hypergeometric.hpp"
+#include "Hypergeometric.testdata.cpp"
 #include "catch2/catch.hpp"
 #include "fmt/format.hpp"
 #include <cmath>
 #include <complex>
+#include <iostream>
 #include <limits>
 #include <vector>
 
@@ -86,6 +88,175 @@ TEST_CASE("Maths::Hypergeometric 1F1 (Hlike grid)", "[Hypergeometric][unit]") {
     // Loose tolerance: reference generated at higher precision than checked:
     REQUIRE(found.real() == Approx(exp.real()).epsilon(1.0e-10));
     REQUIRE(found.imag() == Approx(exp.imag()).epsilon(1.0e-10));
+  }
+}
+
+//==============================================================================
+TEST_CASE("Maths::Hypergeometric Whittaker function M_1/2 * W_1/2 test",
+          "[Whittaker][unit]") {
+
+  fmt::print(
+    " k  Re(x_<)  Im(x_<)   Re(x_>)  Im(x_>)   Re(M_<*W_>)   Im(M_<*W_>)   "
+    "Re(exp.)    Im(exp.)   "
+    "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::MpWp_DATA.size(); i++) {
+
+    const auto d = UnitTest::MpWp_DATA[i];
+
+    auto code_value =
+      Hypergeometric::Whittaker_WM(0.5, d.k, 0.5, d.k, d.x, d.x2_scale * d.x);
+
+    if (i * 110 % 3 == 0) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e} "
+                 " {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real() * d.x2_scale, d.x.imag() * d.x2_scale,
+                 d.x.real(), d.x.imag(), code_value.real(), code_value.imag(),
+                 d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+    }
+
+    //! should test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) < 1.0e30) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
+  }
+}
+
+//==============================================================================
+TEST_CASE("Maths::Hypergeometric Whittaker function M_1/2 * W_-1/2 test",
+          "[Whittaker][unit]") {
+
+  fmt::print(
+    " k  Re(x_<)  Im(x_<)   Re(x_>)  Im(x_>)   Re(M_<*W_>)   Im(M_<*W_>)   "
+    "Re(exp.)    Im(exp.)   "
+    "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::MpWm_DATA.size(); i++) {
+
+    const auto d = UnitTest::MpWm_DATA[i];
+
+    auto code_value =
+      Hypergeometric::Whittaker_WM(-0.5, d.k, 0.5, d.k, d.x, d.x2_scale * d.x);
+
+    if (i * 110 % 3 == 0) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e} "
+                 " {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real() * d.x2_scale, d.x.imag() * d.x2_scale,
+                 d.x.real(), d.x.imag(), code_value.real(), code_value.imag(),
+                 d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+    }
+
+    //! should test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) < 1.0e30) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
+  }
+}
+
+//==============================================================================
+TEST_CASE("Maths::Hypergeometric Whittaker function M_-1/2 * W_1/2 test",
+          "[Whittaker][unit]") {
+
+  fmt::print(
+    " k  Re(x_<)  Im(x_<)   Re(x_>)  Im(x_>)   Re(M_<*W_>)   Im(M_<*W_>)   "
+    "Re(exp.)    Im(exp.)   "
+    "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::MmWp_DATA.size(); i++) {
+
+    const auto d = UnitTest::MmWp_DATA[i];
+
+    auto code_value =
+      Hypergeometric::Whittaker_WM(0.5, d.k, -0.5, d.k, d.x, d.x2_scale * d.x);
+
+    // if (i * 110 % 3 == 0) {
+    // if (d.x.real() == 0.0) {
+
+    if (std::abs((code_value.real() - d.value.real()) / d.value.real()) >
+          1.0e-9 ||
+        std::abs((code_value.imag() - d.value.imag()) / d.value.imag()) >
+          1.0e-9) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e} "
+                 " {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real() * d.x2_scale, d.x.imag() * d.x2_scale,
+                 d.x.real(), d.x.imag(), code_value.real(), code_value.imag(),
+                 d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+      std::cout << "   ***" << std::endl;
+    }
+    // }
+    // }
+
+    //! should test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      CHECK(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      CHECK(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) > 1.0e30) {
+      CHECK(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      CHECK(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      CHECK(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
+  }
+}
+
+//==============================================================================
+TEST_CASE("Maths::Hypergeometric Whittaker function M_-1/2 * W_-1/2 test",
+          "[Whittaker][unit]") {
+
+  fmt::print(
+    " k  Re(x_<)  Im(x_<)   Re(x_>)  Im(x_>)   Re(M_<*W_>)   Im(M_<*W_>)   "
+    "Re(exp.)    Im(exp.)   "
+    "d(Re)   d(Im) \n");
+
+  for (auto i = 0ul; i < UnitTest::MmWm_DATA.size(); i++) {
+
+    const auto d = UnitTest::MmWm_DATA[i];
+
+    auto code_value =
+      Hypergeometric::Whittaker_WM(-0.5, d.k, -0.5, d.k, d.x, d.x2_scale * d.x);
+
+    if (i * 110 % 3 == 0) {
+      fmt::print("{:2}  {:.1e}  {:.1e}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e} "
+                 " {:.6e}  {:.1e} "
+                 " {:.1e}\n",
+                 d.k, d.x.real() * d.x2_scale, d.x.imag() * d.x2_scale,
+                 d.x.real(), d.x.imag(), code_value.real(), code_value.imag(),
+                 d.value.real(), d.value.imag(),
+                 (code_value.real() - d.value.real()) / d.value.real(),
+                 (code_value.imag() - d.value.imag()) / d.value.imag());
+    }
+
+    //! should test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) < 1.0e30) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
   }
 }
 

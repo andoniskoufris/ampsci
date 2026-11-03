@@ -1372,8 +1372,8 @@ MBPT::ComplexRMatrix g_L(int L, std::complex<double> en,
       const auto ri = feyn.grid()->r(si);
       const auto rj = feyn.grid()->r(sj);
 
-      gL(i, j) = Iunit * en * SphericalBessel::jL_complex(L, en * ri) *
-                 SphericalBessel::hL1(L, en * rj);
+      gL(i, j) = Iunit * en * SphericalBessel::jL_complex(L, en * rj) *
+                 SphericalBessel::hL1(L, en * ri);
       // gL(i, j) = 1.0;
       gL(j, i) = gL(i, j);
     }
@@ -1593,32 +1593,34 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
             // shift the index that we use to call the photon propagator
             // photon propagator defined on larger vector of J values that ranges from smallest J we will need to the largest J we will need
             const auto Ji = size_t(J - J_min);
+            const auto twoJp1 = 2.0 * J + 1.0;
+            auto J_term = std::complex<double>(0.0, 0.0);
+
+            const auto CJ_iv = Angular::Ck_kk(J, k, kv);
 
             // if J = 0 need to avoid calculating the photon propagator at L = J - 1 so treat this case separately
             if (J == 0) {
-              const auto CJ_iv = Angular::Ck_kk(J, k, Fv.kappa());
               const auto gJ = g_J[Ji][wi].at(i, j);
               const auto gJp1 = g_J[Ji + 1][wi].at(i, j);
-              J_sum += CJ_iv * CJ_iv * gJ * AI_ab(g2, Fv, Fv, i, j) -
+              J_term = CJ_iv * CJ_iv * gJ * AI_ab(g2, Fv, Fv, i, j) -
                        gJp1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jp1, i, j);
-              J_sum *= 2.0 * J + 1.0;
+              J_sum += twoJp1 * J_term;
               continue;
             }
 
-            const auto CJ_iv = Angular::Ck_kk(J, k, Fv.kappa());
             const auto gJ = g_J[Ji][wi].at(i, j);
             const auto gJm1 = g_J[Ji - 1][wi].at(i, j);
             const auto gJp1 = g_J[Ji + 1][wi].at(i, j);
 
-            J_sum += CJ_iv * CJ_iv * gJ * AI_ab(g2, Fv, Fv, i, j);
-            J_sum -= gJm1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jm1, i, j);
-            J_sum -= gJ * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_J, i, j);
-            J_sum -= gJp1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jp1, i, j);
-            J_sum *= 2.0 * J + 1.0;
+            J_term += CJ_iv * CJ_iv * gJ * AI_ab(g2, Fv, Fv, i, j);
+            J_term -= gJm1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jm1, i, j);
+            J_term -= gJ * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_J, i, j);
+            J_term -= gJp1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jp1, i, j);
+            J_sum += twoJp1 * J_term;
           } // J
-          sum_j += J_sum * drdu[sj] * rj * du;
+          sum_j += J_sum * rj * drdu[sj] * du;
         } // rj
-        sum_i += sum_j * drdu[si] * ri * du;
+        sum_i += sum_j * ri * drdu[si] * du;
       } // ri
       E_k[ki] += factor * sum_i * w_weights[wi]; // take the real part
     } // w
@@ -1630,7 +1632,7 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
 //=============================================================================
 
 // creates a grid that is linear at small distances (0 < Im(w) < w0) and logarithmic from w0 < Im(w) < wmax
-// takes in w_num_pts but will actually create a grid with 2 * num_pts points
+// takes in w_num_pts but will actually create a grid with 2 * num_pts points - 1 (avoid double-counting origin)
 // integral is not symmetric in w so need to separately evaluate it from -infty < Im(w) < 0 and 0 < Im(w) < infty
 // returns w_grid and integration weights
 std::pair<std::vector<std::complex<double>>, std::vector<std::complex<double>>>
@@ -1671,7 +1673,8 @@ create_w_grid(double w_real, double w0, double wmax, size_t w_num_pts) {
 
   // the above code just defined the grid for all positive values
   // now we define it for negative values by flipping the sign of the grid values
-  // for the weights, I think I just keep these the same but I'm not actually entirely sure??
+  // weights stay the same sign
+  // equivalent to defining grid by dr/du = |r| => same weights as for positive values
   auto added_i = 0;
   for (auto i = 1ul; i < w_num_pts; i++) {
     const auto wi_pos = i + size_t(added_i);
@@ -1726,8 +1729,14 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
      {"rmax", "Maximum r to calculate Green's fn [50.0]"},
      {"num_points",
       "Number of radial points for Green's function (used for stride). [150]"},
-     {"stride", "Explicitely set stride. Will over-ride num_points if set."},
-     {"kappa", "Kappa value for initial test [default: -1]"}});
+     {"stride", "Explicitely set stride. Will override num_points if set."},
+     {"kappa", "Kappa value for initial test [default: -1]"},
+     {"num_kappas", "Number of kappas to include in the many-potential part of "
+                    "the QED calculation. [20]"},
+     {"wmax", "The maximum imaginary omega value to integrate over. [1e5]"},
+     {"w0", "Location of first logarithmic grid point on Wick rotation "
+            "integral. [1.0e-4]"},
+     {"w_num_pts", "Number of grid points in frequency integration. [130]"}});
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
@@ -1742,7 +1751,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const std::size_t imax = wf.grid().getIndex(rmax_target);
   assert(imax > i0 && "Require rmax > r0");
 
-  const std::size_t in_size = input.get("num_points", 120ul);
+  const std::size_t in_size = input.get("num_points", 150ul);
   const std::optional<std::size_t> in_stride = input.get<std::size_t>("stride");
 
   std::size_t size{0}, stride{0};
@@ -1851,10 +1860,11 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   std::vector<DiracSpinor> orbs;
   const auto valence = wf.valence();
 
+  // Read in options for the number of kappas and frequency grid
   // number of kappa to include in sum over k, i.e. max kappa index
-  const int num_k = 10;
+  const auto num_k = size_t(input.get("num_kappas", 20));
   // index of maximum kappa (since indexing starts from 0 need to subtract 1)
-  const int max_kappa_index = num_k - 1;
+  const auto max_kappa_index = num_k - 1;
   // kappa value corresponding to max kappa index
   const auto k_max = Angular::kindex_to_kappa(max_kappa_index);
   // // finds minimum and maximum J we will ever need based on the rule |ji - jv| <= J <= ji + jv
@@ -1867,12 +1877,13 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   // Re(w) = [ea(highest) + en(lowest)] / 2.
   //
   // If we don't have a core (H-like) then we can use Shabaev's choice since we don't have a core gap but instead have a gap between the lowest excited state and the branch cut from the free electron Green's function at +mc^2 which is far off to the right w >= (1/alpha)^2
-  const auto w_real = 0.9 * valence.front().en();
+  const auto w_real = 0.9 * (valence.front().en() +
+                             1.0 / PhysConst::alpha2); // add back mc^2 = 1/α^2
 
-  // defines number of points from zero to -Re(w) + i\infty
-  const size_t w_num_pos_pts = 150;
-  const auto w0 = 1.0e-4;
-  const auto wmax = 10000.0;
+  // defines number of points from z = Re(w) to z = Re(w) + i\infty
+  const auto w_num_pos_pts = size_t(input.get("w_num_pts", 130));
+  const auto w0 = input.get("w0", 1.0e-4);
+  const auto wmax = input.get("wmax", 1.0e5);
   const auto omega_gw = create_w_grid(w_real, w0, wmax, w_num_pos_pts);
   const auto w_grid = omega_gw.first;
   const auto w_weights = omega_gw.second;
@@ -1883,7 +1894,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "w0        =  " << w0 << "\n";
   std::cout << "w_max     =  " << wmax << "\n";
   std::cout << "w_num_pts =  " << w_num_pts << "\n";
-  std::cout << "Re(w)     =  " << "0.9 * e_{1s}" << "\n\n";
+  std::cout << "Re(w)     =  " << "0.9 * E_{1s} = " << w_real << "\n\n";
 
   using namespace MBPT;
 
@@ -1926,13 +1937,13 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     const auto vtild = FourierTransformF(v, pGrid);
     orbs.push_back(vtild);
     const auto vp_norm = p_norm(vtild);
-    // const auto ev = v.en();
-    // const auto En = ev + (1.0 / PhysConst::alpha2);
+    const auto ev = v.en();
+    const auto Ev = ev + (1.0 / PhysConst::alpha2);
 
     // Zero- and one-potential contributions
     // double E0 = SE_ZeroPotential(vtild, ev, mec2);
     // double E1 =
-    //   wf.Znuc() * SE_OnePotential(v, vtild, En, mec2, PhysConst::alpha);
+    //   wf.Znuc() * SE_OnePotential(v, vtild, Ev, mec2, PhysConst::alpha);
     // so that I can speed the calculations up
     double E0 = 0.0;
     double E1 = 0.0;
@@ -1964,11 +1975,11 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
         // evaluate Bessel functions at alpha * |w|, just like Breit (?)
         // const auto w = std::abs((v.en() - w_grid[wi])) * PhysConst::alpha;
         // straightforward definition - seems to give nonsense
-        auto w = std::sqrt(std::pow(v.en() - w_grid[wi], 2)) * PhysConst::alpha;
-        if (w.imag() > 0.0) {
+        auto w = (Ev - w_grid[wi]) * PhysConst::alpha;
+        if (w.imag() < 0.0) {
           w *= -1.0;
         }
-        g_J.at(ji).at(wi) = g_L(J, w, Fy);
+        g_J[ji][wi] = g_L(J, w, Fy);
       }
     }
     // Record ending time
@@ -1987,11 +1998,15 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
                v.shortSymbol(), vp_norm, v.en(), E0, E1, grid.r(v.min_pt()),
                grid.r(v.max_pt() - 1));
 
+    auto E_high_sum = std::complex<double>(0.0, 0.0);
     std::cout << "Many-potential contribution: " << std::endl;
     for (auto ki = 0u; ki < num_k; ki++) {
       const auto k = Angular::kindex_to_kappa(ki);
-      std::cout << "k = " << k << "  :  " << Emany_high[ki] << std::endl;
+      E_high_sum += Emany_high[ki];
+      std::cout << "k = " << k << "  :  " << Emany_high[ki]
+                << "  ;  Cum. total : " << E_high_sum << std::endl;
     }
+    std::cout << "Total  :  " << E_high_sum;
   }
 
   std::cout << std::endl;

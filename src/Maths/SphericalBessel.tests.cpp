@@ -3,6 +3,7 @@
 #include "catch2/catch.hpp"
 #include "fmt/format.hpp"
 #include "qip/Vector.hpp"
+#include <fstream>
 #include <iostream>
 #include <vector>
 
@@ -427,22 +428,16 @@ TEST_CASE("Maths::SphericalBessel Hankel testdata", "[hL1][Bessel][unit]") {
 
     REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-7));
 
-    // if (std::abs(d.value) > 1.0e-9) {
-    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
-    //           Approx(-d.value).epsilon(1e-6));
-    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
-    //           Approx(-d.value).margin(1e-12));
-    // } else if (d.k < 9) {
-    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
-    //           Approx(-d.value).epsilon(1e-2));
-    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
-    //           Approx(-d.value).margin(1e-12));
-    // } else {
-    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
-    //           Approx(-d.value).epsilon(1e-1));
-    //   REQUIRE(SphericalBessel::PsiL(d.k, d.x, true) ==
-    //           Approx(-d.value).margin(1e-12));
-    // }
+    //! test also for the imaginary parts
+    if (std::abs(d.value.real()) < 1.0e-9) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
+    } else if (std::abs(d.value.real()) < 1.0e30) {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
+      REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e26));
+    } else {
+      REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-12));
+    }
   }
 }
 
@@ -507,18 +502,51 @@ TEST_CASE("Maths::SphericalBessel jL complex testdata",
 TEST_CASE("Maths::SphericalBessel jL * hL test data",
           "[jLComplex][hL1][Bessel][unit][gJ]") {
 
-  fmt::print(
-    " k  Re(x)    Im(x)   Re(jL * hL1)   Im(jL * hL1)   Re(exp.)    Im(exp.)   "
-    "d(Re)   d(Im) \n");
+  // std::ifstream file("~/Users/uqaskouf_local/Library/CloudStorage/"
+  //                    "OneDrive-TheUniversityofQueensland/Documents/PhD/"
+  //                    "VertexCorrections/PhotonPropData.txt");
+
+  // if (!file.is_open()) {
+  //   std::cerr << "Could not open file" << std::endl;
+  // }
+
+  // std::string line;
+
+  // std::vector<UnitTest::ComplexBesselTableTestData> d_vec;
+
+  // while (std::getline(file, line)) {
+  //   std::istringstream line_stream(line);
+  //   std::vector<double> current_line_numbs;
+  //   double value;
+
+  //   // get all numbers in current line
+  //   while (line_stream >> value) {
+  //     current_line_numbs.push_back(value);
+  //   }
+
+  //   UnitTest::ComplexBesselTableTestData table_values;
+  //   table_values.k = current_line_numbs[0];
+  //   table_values.x =
+  //     std::complex<double>(current_line_numbs[1], current_line_numbs[2]);
+  //   table_values.x2_scale = current_line_numbs[3];
+  //   table_values.x =
+  //     std::complex<double>(current_line_numbs[4], current_line_numbs[5]);
+  //   d_vec.push_back(table_values);
+  // }
+
+  // file.close();
+
+  fmt::print(" k  Re(x)    Im(x)   Re(jL * hL1)   Im(jL * hL1)   Re(exp.)    "
+             "Im(exp.)   "
+             "d(Re)   d(Im) \n");
 
   for (auto i = 0ul; i < UnitTest::jL_x_hL_DATA.size(); i++) {
-
     const auto d = UnitTest::jL_x_hL_DATA[i];
 
     auto code_value = SphericalBessel::jL_complex(d.k, d.x2_scale * d.x) *
                       SphericalBessel::hL1(d.k, d.x);
 
-    if (i * 110 % 3 == 0) {
+    if (i % 100 == 0) {
       fmt::print("{:2}  {:.1e}  {:.1e}  {:.6e}  {:.6e}  {:.6e}  {:.6e}  {:.1e} "
                  " {:.1e}\n",
                  d.k, d.x.real(), d.x.imag(), code_value.real(),
@@ -528,7 +556,7 @@ TEST_CASE("Maths::SphericalBessel jL * hL test data",
     }
 
     //! test also for the imaginary parts
-    if (std::abs(d.value.real()) < 1.0e-9) {
+    if (std::abs(d.value.real()) < 1.0e-16) {
       REQUIRE(code_value.real() == Approx(d.value.real()).epsilon(1e-6));
       REQUIRE(code_value.real() == Approx(d.value.real()).margin(1e-12));
     } else if (std::abs(d.value.real()) < 1.0e30) {
