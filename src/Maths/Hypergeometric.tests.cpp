@@ -1,5 +1,5 @@
 #include "Maths/Hypergeometric.hpp"
-#include "Hypergeometric.testdata.cpp"
+#include "Hypergeometric.testdata.hpp"
 #include "catch2/catch.hpp"
 #include "fmt/format.hpp"
 #include <cmath>
