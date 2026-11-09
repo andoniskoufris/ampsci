@@ -30,7 +30,9 @@ Parameters::Parameters(IO::InputBlock input)
     positron(input.get("positron", std::string{""})),
     type(parseSplineType(input.get<std::string>("type", "Derevianko"))),
     orthogonalise(input.get("orthogonalise", false)),
-    verbose(input.get("verbose", true)) {
+    verbose(input.get("verbose", true)),
+    nmax(input.get("nmax", 0ul)),
+    lmax(input.get("lmax", -1)) {
   // The same options are used for both the Basis and Spectrum blocks
   input.check(
     {{"", "Options for 'Basis' and 'Spectrum'. Spectrum is the same as "
@@ -44,6 +46,11 @@ Parameters::Parameters(IO::InputBlock input)
             "1.0e-2]"},
      {"rmax", "maximum cavity radius [40.0]"},
      {"states", "states to keep (e.g., 30spdf20ghi)"},
+     {"nmax", "Maximum n for each l from l=0 up to l=lmax. Must be used with "
+              "lmax input option, otherwise reverts to \"states\""},
+     {"lmax", "Maximum partial wave to construct basis from. For each partial "
+              "wave, constructs states up to principal quantum number nmax. If "
+              "nmax not also set then reverts \"states\""},
      {"orthogonalise",
       "Force orthogonal to core (Basis) or valence (Spectrum) [false]"},
      {"print", "Print all spline energies (for testing) [false]"},
@@ -57,7 +64,8 @@ Parameters::Parameters(IO::InputBlock input)
 Parameters::Parameters(const std::string &istates, std::size_t in,
                        std::size_t ik, std::vector<double> ir0, double irmax,
                        const std::string &ipositron, SplineType itype,
-                       bool iorthogonalise, bool iverbose)
+                       bool iorthogonalise, bool iverbose, std::size_t inmax,
+                       int ilmax)
   : states(istates),
     n(in),
     k(ik),
@@ -66,7 +74,9 @@ Parameters::Parameters(const std::string &istates, std::size_t in,
     positron(ipositron),
     type(itype),
     orthogonalise(iorthogonalise),
-    verbose(iverbose) {}
+    verbose(iverbose),
+    nmax(inmax),
+    lmax(ilmax) {}
 
 //==============================================================================
 std::vector<double> default_r0(SplineType type) {
@@ -90,7 +100,7 @@ std::vector<DiracSpinor> form_basis(const Parameters &params,
   // Forms the pseudo-spectrum basis by diagonalising Hamiltonian over B-splines
 
   const auto &[states_str, n_spl, k_spl, r0_in, rmax_spl, tmp_positron_str,
-               basis_type, ortho, verbose] = params;
+               basis_type, ortho, verbose, n_max, l_max] = params;
 
   // First internal knot for each l; last entry used for all higher l
   const auto r0_list = r0_in.empty() ? default_r0(basis_type) : r0_in;
@@ -101,7 +111,15 @@ std::vector<DiracSpinor> form_basis(const Parameters &params,
     tmp_positron_str == "true"  ? states_str :
                                   tmp_positron_str;
 
-  const auto nklst = AtomData::listOfStates_singlen(states_str);
+  std::vector<AtomData::DiracConfig> nklst;
+
+  if (!(n_max == 0) && !(l_max < 0)) {
+    nklst = AtomData::listOfStates_nlmax(n_max, l_max);
+  } else {
+    nklst = AtomData::listOfStates_singlen(states_str);
+  }
+
+  //! I haven't made this compatible with what I did above for the non-positronic states
   const auto nklst_positron = AtomData::listOfStates_singlen(positron_str);
 
   std::vector<DiracSpinor> basis;

@@ -1502,14 +1502,16 @@ std::pair<int, int> J_min_max(const std::vector<DiracSpinor> &orbs,
 
 // For the calculation of the many-potential term for the self-energy
 // takes in a single valence state and then works out from the max_kappa_index we are interested in including in the sum over kappa in E_many the max J we would need given that kappa value
-std::pair<int, int> J_min_max(const DiracSpinor &a, size_t max_kappa_index) {
+std::pair<int, int> J_min_max(const DiracSpinor &a, size_t min_kappa_index,
+                              size_t max_kappa_index) {
 
-  int J_min = a.twoj() / 2; // running minimum j
-  int J_max = J_min;        // running maximum j
+  int J_min = std::abs(a.twoj() - Angular::kindex_to_twoj(min_kappa_index)) /
+              2;     // running minimum j
+  int J_max = J_min; // running maximum j
 
   auto ka = a.kappa();
 
-  for (auto i = 0ul; i <= max_kappa_index; i++) {
+  for (auto i = min_kappa_index; i <= max_kappa_index; i++) {
     const auto ki = Angular::kindex_to_kappa(i);
     // j = |k|-0.5
     // Jmin = |ja-ji| = | |ka| - |ki| |
@@ -1544,8 +1546,8 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
               const std::vector<std::vector<MBPT::ComplexGMatrix>> &g_2_plus,
               const std::vector<std::vector<MBPT::ComplexRMatrix>> &g_J,
               const std::vector<std::complex<double>> &w_grid,
-              const std::vector<std::complex<double>> &w_weights, size_t num_k,
-              int J_min) {
+              const std::vector<std::complex<double>> &w_weights,
+              size_t min_k_index, size_t num_k, int J_min) {
 
   const auto Iunit = std::complex<double>(0.0, 1.0);
 
@@ -1566,7 +1568,7 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
   for (auto ki = 0ul; ki < num_k; ki++) {
     for (auto wi = 0ul; wi < w_grid.size(); wi++) {
       const auto g2 = g_2_plus[ki][wi];
-      const auto k = Angular::kindex_to_kappa(ki);
+      const auto k = Angular::kindex_to_kappa(ki + min_k_index);
       // j = |k|-0.5
       // Jmin = |jv-ji| = | |kv| - |ki| |
       // Jmax = jv+ji   = |kv| + |ki| - 1
@@ -1578,13 +1580,13 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
 
       for (auto i = 0ul; i < feyn.num_subgrid_pts(); i++) {
         const auto si = g2.index_to_fullgrid(i);
-        const auto ri = rgrid.r(si);
+        // const auto ri = rgrid.r(si);
         auto sum_j = std::complex<double>(0.0, 0.0);
 
         for (auto j = 0ul; j < feyn.num_subgrid_pts(); j++) {
 
           const auto sj = g2.index_to_fullgrid(j);
-          const auto rj = rgrid.r(sj);
+          // const auto rj = rgrid.r(sj);
 
           auto J_sum = std::complex<double>(0.0, 0.0);
 
@@ -1618,9 +1620,9 @@ SE_many_highE(const DiracSpinor &Fv, const MBPT::Feynman &feyn,
             J_term -= gJp1 * AII_ab_JL(g2, Fv, Fv, J, k, k, SJ_Jp1, i, j);
             J_sum += twoJp1 * J_term;
           } // J
-          sum_j += J_sum * rj * drdu[sj] * du;
+          sum_j += J_sum * drdu[sj] * du;
         } // rj
-        sum_i += sum_j * ri * drdu[si] * du;
+        sum_i += sum_j * drdu[si] * du;
       } // ri
       E_k[ki] += factor * sum_i * w_weights[wi]; // take the real part
     } // w
@@ -1731,12 +1733,19 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
       "Number of radial points for Green's function (used for stride). [150]"},
      {"stride", "Explicitely set stride. Will override num_points if set."},
      {"kappa", "Kappa value for initial test [default: -1]"},
+     {"min_abs_kappa", "Minimum value of |k| to start the sum from. [1]"},
+     {"max_abs_kappa",
+      "Maximum value of |k| to start the sum from. When used in conjuction "
+      "with num_kappas will work out min_abs_kappa from -min_abs_kappa -> "
+      "max_abs_kappa. [10]"},
      {"num_kappas", "Number of kappas to include in the many-potential part of "
-                    "the QED calculation. [20]"},
+                    "the QED calculation, starting from kappa = -1. [20]"},
      {"wmax", "The maximum imaginary omega value to integrate over. [1e5]"},
      {"w0", "Location of first logarithmic grid point on Wick rotation "
             "integral. [1.0e-4]"},
-     {"w_num_pts", "Number of grid points in frequency integration. [130]"}});
+     {"w_num_pts", "Number of grid points in frequency integration. [130]"},
+     {"use_basis",
+      "Use basis to construct the bound state Green's function. [false]"}});
 
   // If we are just requesting 'help', don't run module:
   if (input.has_option("help")) {
@@ -1861,15 +1870,47 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto valence = wf.valence();
 
   // Read in options for the number of kappas and frequency grid
-  // number of kappa to include in sum over k, i.e. max kappa index
-  const auto num_k = size_t(input.get("num_kappas", 20));
+  const auto min_abs_kappa = input.get<int>("min_abs_kappa");
+  const auto max_abs_kappa = input.get<int>("max_abs_kappa");
+  auto num_k = input.get<size_t>("num_kappas", 20);
+  int min_k;
+  int max_k;
+
+  if (min_abs_kappa.has_value()) {
+    min_k = -min_abs_kappa.value();
+    if (max_abs_kappa.has_value()) {
+      max_k = max_abs_kappa.value();
+      auto num_kappas =
+        int(Angular::kappa_to_kindex(max_k) - Angular::kappa_to_kindex(min_k)) +
+        1;
+      assert(num_kappas >= 0 &&
+             "max_abs_kappa must be bigger than min_abs_kappa!");
+      num_k = size_t(num_kappas);
+    } else {
+      const auto min_k_index = Angular::kappa_to_kindex(min_k);
+      const auto max_k_index = min_k_index + num_k - 1;
+      max_k = Angular::kindex_to_kappa(max_k_index);
+    }
+  } else if (max_abs_kappa.has_value()) {
+    max_k = max_abs_kappa.value();
+    const auto max_k_index = Angular::kappa_to_kindex(max_k);
+    if (int(max_k_index - num_k + 1) >= 0) {
+      min_k = Angular::kindex_to_kappa(max_k_index - num_k + 1);
+    } else {
+      min_k = -1;
+      num_k = max_k_index + 1;
+    }
+  } else {
+    min_k = 0;
+    max_k = Angular::kindex_to_kappa(num_k - 1);
+  }
+
+  const auto min_kappa_index = Angular::kappa_to_kindex(min_k);
+
   // index of maximum kappa (since indexing starts from 0 need to subtract 1)
-  const auto max_kappa_index = num_k - 1;
+  const auto max_kappa_index = min_kappa_index + num_k - 1;
   // kappa value corresponding to max kappa index
-  const auto k_max = Angular::kindex_to_kappa(max_kappa_index);
-  // // finds minimum and maximum J we will ever need based on the rule |ji - jv| <= J <= ji + jv
-  // const auto [J_min, J_max] = J_min_max(valence, max_kappa_index);
-  // const auto num_J = J_max - J_min + 1;
+  // const auto max_k = Angular::kindex_to_kappa(max_kappa_index);
 
   //! Create omega grid and weights
   // Re(w) = e0 = 0.9 * e_{1s} (Shabaev's choice)
@@ -1889,12 +1930,22 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto w_weights = omega_gw.second;
   const auto w_num_pts = w_grid.size();
 
+  const auto use_basis = input.get("use_basis", false);
+  const auto green_method = use_basis ? "basis" : "integration";
+  const auto basis = use_basis ? &wf.basis() : nullptr;
+
   std::cout << "Calculating the many-potential contribution with:\n";
-  std::cout << "num_kappa =  " << num_k << " (kappa_max = " << k_max << ")\n";
+  std::cout << "num_kappa =  " << num_k << "\n";
+  std::cout << "k_min     =  " << min_k << "  (ki = " << min_kappa_index
+            << ")\n";
+  std::cout << "k_max     =  " << max_k << "  (ki = " << max_kappa_index
+            << ")\n";
   std::cout << "w0        =  " << w0 << "\n";
   std::cout << "w_max     =  " << wmax << "\n";
   std::cout << "w_num_pts =  " << w_num_pts << "\n";
-  std::cout << "Re(w)     =  " << "0.9 * E_{1s} = " << w_real << "\n\n";
+  std::cout << "Re(w)     =  " << "0.9 * E_{1s} = " << w_real << "\n";
+  std::cout << "\nUsing " << green_method
+            << " method for bound Green's function\n\n";
 
   using namespace MBPT;
 
@@ -1909,10 +1960,10 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 #pragma omp parallel for
   for (auto iw = 0ul; iw < w_num_pts; iw++) {
     for (auto ik = 0ul; ik < num_k; ik++) {
-      const auto k = Angular::kindex_to_kappa(ik);
+      const auto k = Angular::kindex_to_kappa(ik + min_kappa_index);
       // physical energy is alpha^2 * w (?)
       const auto w = w_grid[iw];
-      g_2_plus[ik][iw] = Fy.green_2plus(k, w);
+      g_2_plus[ik][iw] = Fy.green_2plus(k, w, basis);
       // has_nans(g_2_plus[ik][iw]);
     }
   }
@@ -1951,15 +2002,15 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     // Many-potential contributions
     // really need to put all this into a class like Feynman
 
-    //!! could move all of this into the function for Emany_high
+    // could move all of this into the function for Emany_high!!!!
     using namespace MBPT;
     // finds minimum and maximum J we will need for this particular v based on the rule |ji - jv| <= J <= ji + jv
-    const auto [J_min, J_max] = J_min_max(v, max_kappa_index);
+    const auto [J_min, J_max] = J_min_max(v, min_kappa_index, max_kappa_index);
     const auto num_J = size_t(J_max - J_min + 1);
 
+    // std::cout << "\n\n(J_min, J_max) = (" << J_min << ", " << J_max << ")\n\n";
+
     // index first with J then with omega
-    // we have one more than num_J since in the sum over L inside the J summation, we will need L = J+1
-    // this could be sped up. Here I am calculating the photon propagators for the minimum and maximum J's we will need for any valence state v. But we won't necessarily need all of these. instead we only need the ones for J_min and J_max given that kv is this particular value. Will save time since the photon propagators need to be calculated from scratch for each v anyway due to energy dependence
     auto g_J = std::vector<std::vector<ComplexRMatrix>>(
       num_J, std::vector<ComplexRMatrix>(
                w_num_pts, ComplexRMatrix(Fy.i0(), Fy.stride(),
@@ -1967,19 +2018,18 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
 
     // Record starting time
     auto start2 = std::chrono::high_resolution_clock::now();
-// fill a table of g_J(ev - w) for each possible J we could need and each frequency w
+// fill a table of g_J(ev - w) for each J we will need and each frequency w
 #pragma omp parallel for collapse(2)
     for (auto ji = 0ul; ji < num_J; ji++) {
       for (auto wi = 0ul; wi < w_num_pts; wi++) {
         const auto J = J_min + int(ji);
         // evaluate Bessel functions at alpha * |w|, just like Breit (?)
         // const auto w = std::abs((v.en() - w_grid[wi])) * PhysConst::alpha;
-        // straightforward definition - seems to give nonsense
         auto w = (Ev - w_grid[wi]) * PhysConst::alpha;
         if (w.imag() < 0.0) {
           w *= -1.0;
         }
-        g_J[ji][wi] = g_L(J, w, Fy);
+        g_J[ji][wi] = g_L(J, w, Fy); // stupid notation
       }
     }
     // Record ending time
@@ -1990,8 +2040,8 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
               << duration2.count() << " seconds\n\n";
     std::cout << std::flush;
 
-    const auto Emany_high =
-      SE_many_highE(v, Fy, g_2_plus, g_J, w_grid, w_weights, num_k, J_min);
+    const auto Emany_high = SE_many_highE(
+      v, Fy, g_2_plus, g_J, w_grid, w_weights, min_kappa_index, num_k, J_min);
 
     fmt::print("{:<5}  {:>+7.6f}  {:>+7.7f}  {:>+7.7f} {:>+7.7f}  {:>+7.7f}  "
                "{:>+7.7f}\n",
@@ -2001,7 +2051,7 @@ void GreenQED(const IO::InputBlock &input, const Wavefunction &wf) {
     auto E_high_sum = std::complex<double>(0.0, 0.0);
     std::cout << "Many-potential contribution: " << std::endl;
     for (auto ki = 0u; ki < num_k; ki++) {
-      const auto k = Angular::kindex_to_kappa(ki);
+      const auto k = Angular::kindex_to_kappa(ki + min_kappa_index);
       E_high_sum += Emany_high[ki];
       std::cout << "k = " << k << "  :  " << Emany_high[ki]
                 << "  ;  Cum. total : " << E_high_sum << std::endl;

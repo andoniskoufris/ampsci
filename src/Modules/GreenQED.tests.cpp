@@ -41,7 +41,7 @@ TEST_CASE("G2 Green's function", "[GreenQED][G2]") {
   const std::size_t imax = wf.grid().getIndex(rmax_target);
   assert(imax > i0 && "Require rmax > r0");
 
-  const std::size_t size = 50ul;
+  const std::size_t size = 120ul;
   const auto stride = std::max(1ul, (imax - i0) / (size - 1));
 
   assert(size > 1 && stride > 0);
@@ -63,15 +63,12 @@ TEST_CASE("G2 Green's function", "[GreenQED][G2]") {
   MBPT::Feynman Fy(wf.vHF(), i0, stride, size, {}, 1, include_G, verbose, "",
                    construct_qpq);
 
-  // number of kappa to include in sum over k, i.e. max kappa index
-  const int num_k = 100;
-  // index of maximum kappa (since indexing starts from 0 need to subtract 1)
-  const int max_kappa_index = num_k - 1;
-  // kappa value corresponding to max kappa index
-  const auto k_max = Angular::kindex_to_kappa(max_kappa_index);
-  // // finds minimum and maximum J we will ever need based on the rule |ji - jv| <= J <= ji + jv
-  // const auto [J_min, J_max] = J_min_max(valence, max_kappa_index);
-  // const auto num_J = J_max - J_min + 1;
+  const int min_k = 40;
+  const int min_ki = Angular::kappa_to_kindex(min_k);
+  const int max_k = 50;
+  assert(Angular::kappa_to_kindex(max_k) - min_ki >= 0);
+
+  const auto num_k = Angular::kappa_to_kindex(max_k) - min_ki;
 
   //! Create omega grid and weights
   // Re(w) = e0 = 0.9 * e_{1s} (Shabaev's choice)
@@ -83,16 +80,17 @@ TEST_CASE("G2 Green's function", "[GreenQED][G2]") {
                              1.0 / PhysConst::alpha2); // add back 1/α^2
 
   // defines number of points from zero to -Re(w) + i\infty
-  const size_t w_num_pos_pts = 60;
+  const size_t w_num_pos_pts = 30;
   const auto w0 = 1.0e-4;
-  const auto wmax = 20000.0;
+  const auto wmax = 15000.0;
   const auto omega_gw = Module::create_w_grid(w_real, w0, wmax, w_num_pos_pts);
   const auto w_grid = omega_gw.first;
   const auto w_weights = omega_gw.second;
   const auto w_num_pts = w_grid.size();
 
   std::cout << "Calculating the many-potential contribution with:\n";
-  std::cout << "num_kappa =  " << num_k << " (kappa_max = " << k_max << ")\n";
+  std::cout << "k_min     =  " << min_k << "\n";
+  std::cout << "k_max     =  " << max_k << "\n";
   std::cout << "w0        =  " << w0 << "\n";
   std::cout << "w_max     =  " << wmax << "\n";
   std::cout << "w_num_pts =  " << w_num_pts << "\n";
@@ -111,7 +109,7 @@ TEST_CASE("G2 Green's function", "[GreenQED][G2]") {
 #pragma omp parallel for
   for (auto iw = 0ul; iw < w_num_pts; iw++) {
     for (auto ik = 0ul; ik < num_k; ik++) {
-      const auto k = Angular::kindex_to_kappa(ik);
+      const auto k = Angular::kindex_to_kappa(ik + min_ki);
       // physical energy is alpha^2 * w (?)
       const auto w = w_grid[iw];
       g_2_plus[ik][iw] = Fy.green_2plus(k, w);
@@ -143,10 +141,13 @@ TEST_CASE("G2 Green's function", "[GreenQED][G2]") {
           const auto y =
             wf.grid().r(g_2_plus.front().front().index_to_fullgrid(iy));
           counter += 1;
-          if (counter % 40000 == 0) {
-            fmt::print("{:2}  {:.3e}  {:.3e}  {:.2e}  {:.2e}  {:.6e}  {:.6e}\n",
-                       k, w.real(), w.imag(), x, y, g2.ff(ix, iy).real(),
-                       g2.ff(ix, iy).imag());
+          if (std::abs(k) > 25) {
+            if (counter % 40000 == 0) {
+              fmt::print(
+                "{:2}  {:.3e}  {:.3e}  {:.2e}  {:.2e}  {:.6e}  {:.6e}\n", k,
+                w.real(), w.imag(), x, y, g2.ff(ix, iy).real(),
+                g2.ff(ix, iy).imag());
+            }
             if (g2.ff(ix, iy).real() > thres) {
               std::cout << "\nBigger than " << thres << " at k = " << k
                         << " and w = " << w << "  : Re[G_ff(" << x << ", " << y

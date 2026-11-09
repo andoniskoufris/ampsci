@@ -530,6 +530,20 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
   }
   const auto abs_k = std::abs(k);
 
+  auto sqrt1mw = std::sqrt(1.0 - PhysConst::alpha2 * en) / PhysConst::alpha;
+  auto sqrt1pw = std::sqrt(1.0 + PhysConst::alpha2 * en) / PhysConst::alpha;
+
+  // branch cut from (mc^2, \infty) => Im[sqrt(1 - w)] >= 0
+  // if not then choose other branch (multiply by -1)
+  if (sqrt1mw.imag() < 0.0) {
+    sqrt1mw *= -1.0;
+  }
+  // branch cut from (-infty, -mc^2) => Re[sqrt(1 + w)] >= 0
+  // if not then choose other branch (multiply by -1)
+  if (sqrt1pw.real() < 0.0) {
+    sqrt1pw *= -1.0;
+  }
+
   // wronskian inverse
   const auto winv =
     qip::factorial(abs_k - 1) / (4.0 * mu * mu * qip::factorial(2 * abs_k));
@@ -542,12 +556,8 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
       const auto sj = gk.index_to_fullgrid(j);
       const double rj = m_grid->r(sj);
       const double rirj = ri * rj;
-      const double r_factor = std::pow(rirj, -3.0 / 2.0);
+      const double r_factor = std::pow(rirj, -1.0 / 2.0);
       const auto factor = r_factor * -winv;
-      const auto sqrt1mw =
-        std::sqrt(1.0 - PhysConst::alpha2 * en) / PhysConst::alpha;
-      const auto sqrt1pw =
-        std::sqrt(1.0 + PhysConst::alpha2 * en) / PhysConst::alpha;
 
       const auto two_mu_ri = 2.0 * mu * ri;
       const auto two_mu_rj = 2.0 * mu * rj;
@@ -560,6 +570,11 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
       // auto Wp_Mm = 0.0;
       auto Wp_Mp = Hypergeometric::Whittaker_WM(0.5, abs_k, 0.5, abs_k,
                                                 two_mu_ri, two_mu_rj);
+
+      // auto Wm_Mm = 1.0;
+      // auto Wm_Mp = 1.0;
+      // auto Wp_Mm = 1.0;
+      // auto Wp_Mp = 1.0;
 
       Wm_Mm *= k * abs_k;
       Wm_Mp *= k * k;
@@ -618,12 +633,12 @@ Feynman::green_2plus(int k, std::complex<double> en,
   ComplexGMatrix g0V(m_i0, m_stride, m_subgrid_points, true, m_grid);
   ComplexGMatrix Vg0(m_i0, m_stride, m_subgrid_points, true, m_grid);
 
-  // has factors of 1/ri and 1/rj (from X0 and XI) but _NO_ integration measures
+  // missing factors of 1/ri and 1/rj (from X0 and XI) but _NO_ integration measures
   // we subtract mc^2 from en to ensure that the poles are at the total relativistic energies En = en + mc^2
   ComplexGMatrix g_bound =
     basis ? Feynman::green_basis(k, en - 1.0 / PhysConst::alpha2, *basis) :
             Feynman::green(k, en - 1.0 / PhysConst::alpha2);
-  // has no integration measures or factors of 1/ri or 1/rj, like g_bound
+
   const ComplexGMatrix g_free = Feynman::green_free(k, en);
 
   //! will need to change this to add on Kohn-Sham, local potential, etc. down the line
@@ -636,11 +651,11 @@ Feynman::green_2plus(int k, std::complex<double> en,
       const auto sj = g0V.index_to_fullgrid(j);
       // while I'm here I might as well include the drj integration measure and rj for the integration
       const auto dr = m_grid->drdu(sj) * dus;
-      const auto rj = m_grid->r(sj);
-      g0V.ff(i, j) = g_free.ff(i, j) * V[sj] * rj * dr;
-      g0V.fg(i, j) = g_free.fg(i, j) * V[sj] * rj * dr;
-      g0V.gf(i, j) = g_free.gf(i, j) * V[sj] * rj * dr;
-      g0V.gg(i, j) = g_free.gg(i, j) * V[sj] * rj * dr;
+      // const auto rj = m_grid->r(sj);
+      g0V.ff(i, j) = g_free.ff(i, j) * V[sj] * dr;
+      g0V.fg(i, j) = g_free.fg(i, j) * V[sj] * dr;
+      g0V.gf(i, j) = g_free.gf(i, j) * V[sj] * dr;
+      g0V.gg(i, j) = g_free.gg(i, j) * V[sj] * dr;
 
       // for testing
       // g0V.ff(i, j) = rj * dr;

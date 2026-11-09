@@ -520,6 +520,20 @@ std::vector<DiracConfig> listOfStates_singlen(const std::string &in_list) {
 }
 
 //==============================================================================
+std::vector<DiracConfig> listOfStates_nlmax(std::size_t n_max, int l_max) {
+  std::vector<DiracConfig> state_list;
+
+  for (auto l = 0; l <= l_max; l++) {
+    if (l != 0) {
+      state_list.emplace_back(n_max, l);
+    }
+    state_list.emplace_back(n_max, -l - 1);
+  }
+
+  return state_list;
+}
+
+//==============================================================================
 std::vector<std::pair<int, int>> n_kappa_list(const std::string &basis_string) {
 
   std::vector<std::pair<int, int>> state_list;

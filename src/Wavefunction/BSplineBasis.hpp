@@ -175,7 +175,8 @@ struct Parameters {
              std::vector<double> r0, double rmax,
              const std::string &positron = "",
              SplineType itype = SplineType::Derevianko,
-             bool in_orthogonalise = false, bool in_verbose = true);
+             bool in_orthogonalise = false, bool in_verbose = true,
+             std::size_t nmax = 0, int lmax = -1);
   /*!
     @brief Reads parameters from an input block.
 
@@ -202,6 +203,9 @@ struct Parameters {
   bool orthogonalise{false};
   //! Print construction details to screen
   bool verbose{true};
+  //-------------------
+  std::size_t nmax{};
+  int lmax{};
 };
 
 /*!
