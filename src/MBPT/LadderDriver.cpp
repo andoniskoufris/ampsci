@@ -24,7 +24,8 @@ namespace {
 void check_L_symmetry(const std::vector<DiracSpinor> &core,
                       const std::vector<DiracSpinor> &excited,
                       const std::vector<DiracSpinor> &valence,
-                      const Coulomb::QkTable &qk, bool include_L4,
+                      const Coulomb::QkTable &qk, bool include_L1,
+                      bool include_L2, bool include_L3, bool include_L4,
                       const Angular::SixJTable &sj,
                       const Coulomb::LkTable *const lk = nullptr);
 } // namespace
@@ -39,7 +40,10 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
                "subset of full "
                "basis), e.g. '30spdf'. Default: include entire excited basis."},
      {"max_k", "maximum k to include in Qk. Put -1 to include all. [8]"},
-     {"include_L4", "Inlcude 4th Ladder diagram [false]"},
+     {"include_L4", "Include 4th Ladder diagram [false]"},
+     {"include_L1", "Include 1st ladder diagram [true]"},
+     {"include_L2", "Include 2nd ladder diagram [true]"},
+     {"include_L3", "Include 3rd ladder diagram [true]"},
      {"sigma_method",
       "Method for the ladder correlation potential Sigma_L. Options:\n"
       "   - basis  : projection Sigma_L = sum_i L|i><i| onto the basis; "
@@ -89,7 +93,15 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   const auto min_n_core = input.get("min_n_core", 1);
   const auto basis_str = input.get<std::string>("basis", "");
   const auto max_k = input.get("max_k", 8);
+  const auto include_L1 = input.get("include_L1", true);
+  const auto include_L2 = input.get("include_L2", true);
+  const auto include_L3 = input.get("include_L3", true);
   const auto include_L4 = input.get("include_L4", false);
+
+  if (!include_L1 && !include_L2 && !include_L3 && !include_L4) {
+    std::cout << "\nError: Must include one of L1, L2, L3 or L4\n\n";
+    std::abort();
+  }
 
   // Method for Sigma_L: basis projection, ratio (rescale Sigma(2) terms by
   // L/Q; Dzuba), or direct (open the external line exactly)
@@ -147,6 +159,9 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   std::cout << "basis        = " << DiracSpinor::state_config(excited) << "\n";
   std::cout << "min_n (core) = " << min_n_core << "\n";
   std::cout << std::boolalpha;
+  std::cout << "include_L1   = " << include_L1 << "\n";
+  std::cout << "include_L2   = " << include_L2 << "\n";
+  std::cout << "include_L3   = " << include_L3 << "\n";
   std::cout << "include_L4   = " << include_L4 << "\n";
   std::cout << "sigma_method = " << parseSigmaLMethod(method) << "\n";
   std::cout << "each_valence = " << each_valence << "\n";
@@ -159,9 +174,12 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // in/out file names (default based on atom identity)
   const auto ident = wf.identity();
   const auto Qk_file = input.get("Qk_file", ident + ".qk.abf"s);
+  const auto lk1 = include_L4 ? "_l1" : ""s;
+  const auto lk2 = include_L4 ? "_l2" : ""s;
+  const auto lk3 = include_L4 ? "_l3" : ""s;
   const auto lk4 = include_L4 ? "_l4" : ""s;
-  const auto Lk_file =
-    input.get<std::string>("Lk_file", ident + lk4 + ".lk.abf"s);
+  const auto Lk_file = input.get<std::string>(
+    "Lk_file", ident + lk1 + lk2 + lk3 + lk4 + ".lk.abf"s);
   const auto sl_file = input.get<std::string>("sl_file", ident + ".sl.abf"s);
   const auto from_scratch = input.get("from_scratch", false);
 
@@ -230,8 +248,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // iterations below re-iterate the existing table.
   std::cout << "\nInitial fill of Lk table: core + valence\n" << std::flush;
   const auto n_lk_initial = lk.count();
-  MBPT::fill_Lk_mnib(&lk, qk, excited, holes, core_and_val, include_L4, sjt,
-                     max_k, true);
+  MBPT::fill_Lk_mnib(&lk, qk, excited, holes, core_and_val, include_L1,
+                     include_L2, include_L3, include_L4, sjt, max_k, true);
   const auto n_lk_after = lk.count();
   if (n_lk_initial != n_lk_after) {
     fmt::print("Calculated {} new Lk integrals\n", n_lk_after - n_lk_initial);
@@ -261,8 +279,9 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   // Iterate for core states:
   for (int it = 1; it <= max_it; ++it) {
     std::cout << "\ncore it:" << it << "\n";
-    MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, holes, include_L4, sjt,
-                         &lk, a_damp, true);
+    MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, holes, include_L1,
+                         include_L2, include_L3, include_L4, sjt, &lk, a_damp,
+                         true);
     // for the damping, don't swap; lk and lk_prev must match before next iter
     lk = lk_next;
     lk.write(Lk_file);
@@ -293,7 +312,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
   for (int it = 1; it <= max_it; ++it) {
     std::cout << "\nvalence it:" << it << "\n";
     MBPT::update_Lk_mnib(&lk_next, qk, excited, holes, unconverged_valence,
-                         include_L4, sjt, &lk, a_damp, true);
+                         include_L1, include_L2, include_L3, include_L4, sjt,
+                         &lk, a_damp, true);
     lk = lk_next;
     lk.write(Lk_file);
     for (std::size_t i = 0; i < valence.size(); ++i) {
@@ -487,7 +507,8 @@ void ladder(const IO::InputBlock &input, const Wavefunction &wf) {
 
   // Use this to check the symmetries
   if (check_symmetry)
-    check_L_symmetry(holes, excited, valence, qk, include_L4, sjt, &lk);
+    check_L_symmetry(holes, excited, valence, qk, include_L1, include_L2,
+                     include_L3, include_L4, sjt, &lk);
 }
 
 //==============================================================================
@@ -495,7 +516,8 @@ namespace {
 void check_L_symmetry(const std::vector<DiracSpinor> &core,
                       const std::vector<DiracSpinor> &excited,
                       const std::vector<DiracSpinor> &valence,
-                      const Coulomb::QkTable &qk, bool include_L4,
+                      const Coulomb::QkTable &qk, bool include_L1,
+                      bool include_L2, bool include_L3, bool include_L4,
                       const Angular::SixJTable &sj,
                       const Coulomb::LkTable *const lk) {
   std::cout << "\ncheck_L_symmetry\n";
@@ -530,10 +552,10 @@ void check_L_symmetry(const std::vector<DiracSpinor> &core,
     for (int k = k0; k <= kI; ++k) {
       ++count;
       auto Qkmnab = qk.Q(k, m, n, a, b);
-      auto lkmnab =
-        MBPT::Lkmnij(k, m, n, a, b, qk, core, excited, include_L4, sj);
-      auto lknmba =
-        MBPT::Lkmnij(k, n, m, b, a, qk, core, excited, include_L4, sj);
+      auto lkmnab = MBPT::Lkmnij(k, m, n, a, b, qk, core, excited, include_L1,
+                                 include_L2, include_L3, include_L4, sj);
+      auto lknmba = MBPT::Lkmnij(k, n, m, b, a, qk, core, excited, include_L1,
+                                 include_L2, include_L3, include_L4, sj);
 
       auto lkmnab_tab = lk ? lk->Q(k, m, n, a, b) : 0.0;
       auto lknmba_tab = lk ? lk->Q(k, n, m, b, a) : 0.0;

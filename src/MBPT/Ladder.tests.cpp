@@ -143,8 +143,8 @@ TEST_CASE("Ladder: m-scheme check", "[Ladder][unit]") {
     REQUIRE(kI >= k0);
     std::vector<double> Lks;
     for (int k = k0; k <= kI; ++k) {
-      Lks.push_back(
-        MBPT::Lkmnij(k, m, n, i, j, qk, core, excited, true, sjt, nullptr));
+      Lks.push_back(MBPT::Lkmnij(k, m, n, i, j, qk, core, excited, true, true,
+                                 true, true, sjt, nullptr));
     }
     // Coulomb-forbidden-parity components must be present (parity fix)
     const auto [q0, qI] = Coulomb::k_minmax_Q(m, n, i, j);

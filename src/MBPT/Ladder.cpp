@@ -107,14 +107,21 @@ public:
 double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const DiracSpinor &i, const DiracSpinor &j,
               const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
-              const std::vector<DiracSpinor> &excited, bool include_L4,
+              const std::vector<DiracSpinor> &excited, bool include_L1,
+              bool include_L2, bool include_L3, bool include_L4,
               const Angular::SixJTable &SJ, const Coulomb::LkTable *const Lk,
               std::optional<double> e_i, std::optional<double> e_m) {
 
   // nb: i energy enters only L1 and L3; m energy only L2 and L4
-  const auto L123 = L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i) +
-                    L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) +
-                    L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i);
+  const auto l1 =
+    include_L1 ? L1(k, m, n, i, j, qk, excited, SJ, Lk, e_i) : 0.0;
+  const auto l2 =
+    include_L2 ? L2(k, m, n, i, j, qk, core, excited, SJ, Lk, {}, e_m) : 0.0;
+  const auto l3 =
+    include_L3 ? L3(k, m, n, i, j, qk, core, excited, SJ, Lk, e_i) : 0.0;
+
+  const auto L123 = l1 + l2 + l3;
+
   // Optionally include the hole-hole (L4) ladder diagram
   if (include_L4)
     return L123 + L4(k, m, n, i, j, qk, core, SJ, Lk, e_m);
@@ -499,7 +506,8 @@ double L2(int k, const DiracSpinor &m, const DiracSpinor &n,
 void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                   const std::vector<DiracSpinor> &excited,
                   const std::vector<DiracSpinor> &core,
-                  const std::vector<DiracSpinor> &i_orbs, bool include_L4,
+                  const std::vector<DiracSpinor> &i_orbs, bool include_L1,
+                  bool include_L2, bool include_L3, bool include_L4,
                   const Angular::SixJTable &sjt, int max_k, bool print) {
 
   // const double a_damp = 0.35;
@@ -564,7 +572,8 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
   const auto Lk_function = [&](int k, const DiracSpinor &m,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
-    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, nullptr);
+    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L1, include_L2,
+                  include_L3, include_L4, sjt, nullptr);
   };
 
   lk->fill(basis, Lk_function, Lk_SR, kmax, print);
@@ -575,8 +584,10 @@ GMatrix Sigma_ladder(const DiracSpinor &v, const std::vector<DiracSpinor> &core,
                      const std::vector<DiracSpinor> &excited,
                      const std::vector<DiracSpinor> &projection,
                      const Coulomb::QkTable &qk, const Coulomb::LkTable *lk,
-                     const Angular::SixJTable &sjt, bool include_L4, double r0,
-                     double rmax, std::size_t stride, bool include_G) {
+                     const Angular::SixJTable &sjt, bool include_L1,
+                     bool include_L2, bool include_L3, bool include_L4,
+                     double r0, double rmax, std::size_t stride,
+                     bool include_G) {
 
   // Ladder correction to the correlation potential, evaluated at energy e_v.
   // The exchange is folded into the Coulomb vertex via W = Q + P (mirrors
@@ -701,10 +712,11 @@ GMatrix Sigma_ladder(const DiracSpinor &v, const std::vector<DiracSpinor> &core,
             // Use stored table entry when we have it (see note above):
             const bool in_table =
               lk && Fi.en() == en_v && lk->contains(k, m, n, Fi, a);
-            const auto Lkmnia = in_table ?
-                                  lk->Q(k, m, n, Fi, a) :
-                                  Lkmnij(k, m, n, Fi, a, qk, core, excited,
-                                         include_L4, sjt, lk, en_v);
+            const auto Lkmnia =
+              in_table ?
+                lk->Q(k, m, n, Fi, a) :
+                Lkmnij(k, m, n, Fi, a, qk, core, excited, include_L1,
+                       include_L2, include_L3, include_L4, sjt, lk, en_v);
             if (Lkmnia == 0.0)
               continue;
             Sd_t.add(Wkv, Fi, Lkmnia / (f_kkjj * dele));
@@ -752,10 +764,11 @@ GMatrix Sigma_ladder(const DiracSpinor &v, const std::vector<DiracSpinor> &core,
             // Use stored table entry when we have it (see note above):
             const bool in_table =
               lk && Fi.en() == en_v && lk->contains(k, Fi, n, a, b);
-            const auto Lkinab = in_table ?
-                                  lk->Q(k, Fi, n, a, b) :
-                                  Lkmnij(k, Fi, n, a, b, qk, core, excited,
-                                         include_L4, sjt, lk, {}, en_v);
+            const auto Lkinab =
+              in_table ?
+                lk->Q(k, Fi, n, a, b) :
+                Lkmnij(k, Fi, n, a, b, qk, core, excited, include_L1,
+                       include_L2, include_L3, include_L4, sjt, lk, {}, en_v);
             if (Lkinab == 0.0)
               continue;
             Sd_t.add(Wkv, Fi, Lkinab / (f_kkjj * dele));
@@ -1429,7 +1442,8 @@ Sigma_ladder_direct(const DiracSpinor &v, const std::vector<DiracSpinor> &core,
 void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                     const std::vector<DiracSpinor> &excited,
                     const std::vector<DiracSpinor> &core,
-                    const std::vector<DiracSpinor> &update_i, bool include_L4,
+                    const std::vector<DiracSpinor> &update_i, bool include_L1,
+                    bool include_L2, bool include_L3, bool include_L4,
                     const Angular::SixJTable &sjt,
                     const Coulomb::LkTable *const lk_prev, double a_damp,
                     bool print) {
@@ -1440,7 +1454,8 @@ void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
   const auto Lk_function = [&](int k, const DiracSpinor &m,
                                const DiracSpinor &n, const DiracSpinor &i,
                                const DiracSpinor &b) -> double {
-    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L4, sjt, lk_prev);
+    return Lkmnij(k, m, n, i, b, qk, core, excited, include_L1, include_L2,
+                  include_L3, include_L4, sjt, lk_prev);
   };
 
   // Empty update_i => update everything.

@@ -75,7 +75,8 @@ inline std::pair<int, int> k_minmax_L(int kap_a, int kap_b, int kap_c,
 double Lkmnij(int k, const DiracSpinor &m, const DiracSpinor &n,
               const DiracSpinor &i, const DiracSpinor &j,
               const Coulomb::QkTable &qk, const std::vector<DiracSpinor> &core,
-              const std::vector<DiracSpinor> &excited, bool include_L4,
+              const std::vector<DiracSpinor> &excited, bool include_L1,
+              bool include_L2, bool include_L3, bool include_L4,
               const Angular::SixJTable &SJ,
               const Coulomb::LkTable *const Lk = nullptr,
               std::optional<double> e_i = {}, std::optional<double> e_m = {});
@@ -200,7 +201,8 @@ double L4(int k, const DiracSpinor &m, const DiracSpinor &n,
 void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                   const std::vector<DiracSpinor> &excited,
                   const std::vector<DiracSpinor> &core,
-                  const std::vector<DiracSpinor> &i_orbs, bool include_L4,
+                  const std::vector<DiracSpinor> &i_orbs, bool include_L1,
+                  bool include_L2, bool include_L3, bool include_L4,
                   const Angular::SixJTable &sjt, int max_k = -1,
                   bool print = true);
 
@@ -232,7 +234,8 @@ void fill_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
 void update_Lk_mnib(Coulomb::LkTable *lk, const Coulomb::QkTable &qk,
                     const std::vector<DiracSpinor> &excited,
                     const std::vector<DiracSpinor> &core,
-                    const std::vector<DiracSpinor> &update_i, bool include_L4,
+                    const std::vector<DiracSpinor> &update_i, bool include_L1,
+                    bool include_L2, bool include_L3, bool include_L4,
                     const Angular::SixJTable &sjt,
                     const Coulomb::LkTable *const lk_prev, double a_damp,
                     bool print);
@@ -400,9 +403,11 @@ GMatrix Sigma_ladder(const DiracSpinor &v, const std::vector<DiracSpinor> &core,
                      const std::vector<DiracSpinor> &excited,
                      const std::vector<DiracSpinor> &projection,
                      const Coulomb::QkTable &qk, const Coulomb::LkTable *lk,
-                     const Angular::SixJTable &sjt, bool include_L4 = false,
-                     double r0 = 1.0e-4, double rmax = 30.0,
-                     std::size_t stride = 4, bool include_G = false);
+                     const Angular::SixJTable &sjt, bool include_L1 = true,
+                     bool include_L2 = true, bool include_L3 = true,
+                     bool include_L4 = false, double r0 = 1.0e-4,
+                     double rmax = 30.0, std::size_t stride = 4,
+                     bool include_G = false);
 
 /*!
   @brief Vertex (ket) form of the ladder integral L^k_mnia over the external
