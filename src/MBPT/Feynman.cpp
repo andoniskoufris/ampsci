@@ -530,19 +530,23 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
   }
   const auto abs_k = std::abs(k);
 
-  auto sqrt1mw = std::sqrt(1.0 - PhysConst::alpha2 * en) / PhysConst::alpha;
-  auto sqrt1pw = std::sqrt(1.0 + PhysConst::alpha2 * en) / PhysConst::alpha;
+  // auto sqrt1mw = std::sqrt(1.0 - PhysConst::alpha2 * en) / PhysConst::alpha;
+  // auto sqrt1pw = std::sqrt(1.0 + PhysConst::alpha2 * en) / PhysConst::alpha;
 
-  // branch cut from (mc^2, \infty) => Im[sqrt(1 - w)] >= 0
-  // if not then choose other branch (multiply by -1)
-  if (sqrt1mw.imag() < 0.0) {
-    sqrt1mw *= -1.0;
-  }
-  // branch cut from (-infty, -mc^2) => Re[sqrt(1 + w)] >= 0
-  // if not then choose other branch (multiply by -1)
-  if (sqrt1pw.real() < 0.0) {
-    sqrt1pw *= -1.0;
-  }
+  // // branch cut from (mc^2, \infty) => Re[sqrt(1 - w)] <= 0
+  // // if not then choose other branch (multiply by -1)
+  // if (sqrt1mw.real() > 0.0) {
+  //   sqrt1mw *= -1.0;
+  // }
+  // // branch cut from (-infty, -mc^2) => Re[sqrt(1 + w)] >= 0
+  // // if not then choose other branch (multiply by -1)
+  // if (sqrt1pw.real() < 0.0) {
+  //   sqrt1pw *= -1.0;
+  // }
+
+  // instead of using sqrt(1 - w) and sqrt(1 + w) just note that we will always end up with  sqrt(1 +/- w) * sqrt(1 +/- w), etc.
+  const auto onemw = (1.0 - PhysConst::alpha2 * en) / PhysConst::alpha2;
+  const auto onepw = (1.0 + PhysConst::alpha2 * en) / PhysConst::alpha2;
 
   // wronskian inverse
   const auto winv =
@@ -589,25 +593,21 @@ ComplexGMatrix Feynman::green_free(int k, std::complex<double> en) const {
       using namespace qip::overloads;
 
       // gk.ff(ri,rj) = -winv * phiI.f(ri) * phi0.f(rj)^T (no conjugate)
-      gk.ff(i, j) =
-        factor * sqrt1pw * sqrt1pw * (Wm_Mm - Wm_Mp + Wp_Mm - Wp_Mp);
+      gk.ff(i, j) = factor * onepw * (Wm_Mm - Wm_Mp + Wp_Mm - Wp_Mp);
       gk.ff(j, i) = gk.ff(i, j);
 
       if (!m_include_G)
         continue;
 
-      gk.fg(i, j) =
-        factor * sqrt1pw * sqrt1mw * (Wm_Mm + Wm_Mp + Wp_Mm + Wp_Mp);
+      gk.fg(i, j) = factor * mu * (Wm_Mm + Wm_Mp + Wp_Mm + Wp_Mp);
       // gk.fg(i, j) = -winv * std::exp(std::log(phiI_pos) + std::log(phi0_neg));
       gk.gf(j, i) = gk.fg(i, j);
 
-      gk.gf(i, j) =
-        factor * sqrt1mw * sqrt1pw * (Wm_Mm - Wm_Mp - Wp_Mm + Wp_Mp);
+      gk.gf(i, j) = factor * mu * (Wm_Mm - Wm_Mp - Wp_Mm + Wp_Mp);
       // gk.gf(i, j) = -winv * std::exp(std::log(phiI_neg) + std::log(phi0_pos));
       gk.fg(j, i) = gk.gf(i, j);
 
-      gk.gg(i, j) =
-        factor * sqrt1mw * sqrt1mw * (Wm_Mm + Wm_Mp - Wp_Mm - Wp_Mp);
+      gk.gg(i, j) = factor * onemw * (Wm_Mm + Wm_Mp - Wp_Mm - Wp_Mp);
       // gk.gg(i, j) = -winv * std::exp(std::log(phiI_neg) + std::log(phi0_neg));
       gk.gg(j, i) = gk.gg(i, j);
     }
